@@ -35,8 +35,15 @@ const S = {
 // ─────────────────────────────────────────────────────────
 function setupSystem() {
   const props = PropertiesService.getScriptProperties();
+  // Allow force re-setup by passing true: setupSystem(true)
   if (props.getProperty(PROP_SETUP) === "true") {
-    Logger.log("✅ Already set up. Sheet ID: " + props.getProperty(PROP_SHEET_ID));
+    Logger.log("✅ Already set up. Run diagnose() to check status.");
+    Logger.log("To reset everything, run resetAndSetup() instead.");
+    // Still re-seed the PIN in case it was lost
+    if (!props.getProperty(PROP_PIN)) {
+      props.setProperty(PROP_PIN, "1234");
+      Logger.log("🔑 PIN re-seeded to 1234");
+    }
     return;
   }
 
@@ -143,6 +150,7 @@ function doGet(e) {
   const p = e.parameter;
   try {
     switch(p.action) {
+      case "ping":            return _ok(testPing());
       case "getOrders":       return _ok(getOrders(p.status));
       case "getMenu":         return _ok(getMenu(p.category));
       case "getTables":       return _ok(getTables());
@@ -237,8 +245,22 @@ function _updateRow(sheetName, colIndex, idValue, updates) {
 //  AUTH
 // ─────────────────────────────────────────────────────────
 function verifyPin(pin) {
-  const stored = PropertiesService.getScriptProperties().getProperty(PROP_PIN) || "1234";
-  return { verified: String(pin) === String(stored) };
+  var props  = PropertiesService.getScriptProperties();
+  var stored = props.getProperty(PROP_PIN);
+
+  // If setupSystem was never run, PIN property is null — seed it now
+  if (!stored) {
+    props.setProperty(PROP_PIN, "1234");
+    stored = "1234";
+  }
+
+  var match = String(pin).trim() === String(stored).trim();
+  if (match) {
+    return { verified: true };
+  } else {
+    // Return as an error so the front-end sees success:false
+    throw new Error("Incorrect PIN");
+  }
 }
 
 function setPin(pin) {
