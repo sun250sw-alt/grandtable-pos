@@ -5,7 +5,7 @@
 
 const POS_CONFIG = {
   GOOGLE_CLIENT_ID : "335894427389-lj497464m2a7anusn9d5e75ekojkguva.apps.googleusercontent.com",  // ← replace after setup
-  APPS_SCRIPT_URL  : "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec", // ← replace
+  APPS_SCRIPT_URL  : "https://script.google.com/macros/s/AKfycbw_wZUJlXgLcoNOz-hfLeLtpNbfC0vxxmZrHL3KjwOqrhPTajGJWV-J8L-XbdVmPIdV7w/exec", // ← replace
   ADMIN_EMAIL      : "YOUR_SHOP_GMAIL@gmail.com",  // ← the ONE master shop Google account
   RESTAURANT_NAME  : "The Grand Table",
   CURRENCY         : "Rs.",
