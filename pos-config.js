@@ -5,8 +5,8 @@
 
 const POS_CONFIG = {
   GOOGLE_CLIENT_ID : "335894427389-lj497464m2a7anusn9d5e75ekojkguva.apps.googleusercontent.com",  // ← replace after setup
-  APPS_SCRIPT_URL  : "https://script.google.com/macros/s/AKfycbxk3LCYdU4CkIAr2zEEqzVTW4UiZETsBOr4LMq2T52ZvoX8QrxI2gqavj7iz1ljqJ-q/exec", // ← replace
-  ADMIN_EMAIL      : "sun250.sw@gmail.com",  // ← the ONE master shop Google account
+  APPS_SCRIPT_URL  : "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec", // ← replace
+  ADMIN_EMAIL      : "YOUR_SHOP_GMAIL@gmail.com",  // ← the ONE master shop Google account
   RESTAURANT_NAME  : "The Grand Table",
   CURRENCY         : "Rs.",
   TAX_RATE         : 0.10,
@@ -197,8 +197,9 @@ window.POS_AUTH = (() => {
         updateDots();
         if (entered.length === 4) {
           btn.disabled = true;
-          const res = await POS_API.post({ action: "verifyPin", pin: entered });
-          if (res.success) {
+          var res = await POS_API.post({ action: "verifyPin", pin: entered });
+          // res.success = API reached OK, res.data.verified = PIN matched
+          if (res && res.success && res.data && res.data.verified) {
             document.body.removeChild(overlay);
             onSuccess && onSuccess(session);
           } else {
@@ -404,5 +405,29 @@ window.POS_API = (() => {
     get : (date) => get({ action:"getAnalytics", date }),
   };
 
-  return { get, post, poll, Orders, Menu, Tables, Inventory, Drivers, Team, Settings, Analytics };
+  // Test the Apps Script connection — call this from browser console: POS_API.testConnection()
+  async function testConnection() {
+    console.log("Testing connection to Apps Script...");
+    try {
+      var res = await get({ action: "ping" });
+      if (res && res.success) {
+        console.log("✅ Connected!", res.data);
+        console.log("Sheet ready:", res.data.sheetReady);
+        console.log("PIN ready:  ", res.data.pinReady);
+        console.log("Setup done: ", res.data.setupDone);
+        if (!res.data.setupDone) {
+          console.warn("⚠️ setupSystem() has not been run in Apps Script! Run it now.");
+        }
+        return res.data;
+      } else {
+        console.error("❌ API responded but with error:", res);
+        return null;
+      }
+    } catch(e) {
+      console.error("❌ Cannot reach Apps Script. Check APPS_SCRIPT_URL in pos-config.js", e);
+      return null;
+    }
+  }
+
+  return { get, post, poll, testConnection, Orders, Menu, Tables, Inventory, Drivers, Team, Settings, Analytics };
 })();
