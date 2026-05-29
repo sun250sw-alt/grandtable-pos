@@ -464,7 +464,9 @@
             return () => clearInterval(t);
         }, []);
 
-        const currentItems = MENU_DATA[categories[activeCat]];
+        const activeMenuData = liveMenu || MENU_DATA;
+        const categories2 = Object.keys(activeMenuData);
+        const currentItems = activeMenuData[categories2[activeCat] || categories2[0]] || [];
         const tickerDouble = [...TICKER_MSGS, ...TICKER_MSGS];
 
         return (
