@@ -289,42 +289,28 @@
 <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    const INITIAL_ORDERS = [
-        {
-            id: "ORD-001", table: 3, waiter: "John", status: "new",
-            createdAt: Date.now() - 3 * 60 * 1000,
-            items: [
-                { id: 1, name: "Burger Deluxe", qty: 2, note: "No onions on one", checked: false },
-                { id: 2, name: "Fish & Chips", qty: 1, note: "", checked: false },
-                { id: 3, name: "Coca Cola", qty: 3, note: "", checked: false },
-            ]
-        },
-        {
-            id: "ORD-002", table: 5, waiter: "Sarah", status: "preparing",
-            createdAt: Date.now() - 8 * 60 * 1000,
-            items: [
-                { id: 1, name: "Steak", qty: 1, note: "Medium rare", checked: true },
-                { id: 2, name: "Caesar Salad", qty: 1, note: "", checked: false },
-                { id: 3, name: "Garlic Bread", qty: 2, note: "", checked: true },
-            ]
-        },
-        {
-            id: "ORD-003", table: 1, waiter: "Mike", status: "new",
-            createdAt: Date.now() - 1 * 60 * 1000,
-            items: [
-                { id: 1, name: "Spring Rolls", qty: 2, note: "", checked: false },
-                { id: 2, name: "Chicken Wings", qty: 1, note: "Extra spicy", checked: false },
-            ]
-        },
-        {
-            id: "ORD-004", table: 7, waiter: "Emma", status: "ready",
-            createdAt: Date.now() - 15 * 60 * 1000,
-            items: [
-                { id: 1, name: "Pasta Carbonara", qty: 2, note: "", checked: true },
-                { id: 2, name: "Grilled Chicken", qty: 1, note: "", checked: true },
-            ]
-        },
-    ];
+    // Orders loaded live from Google Sheet
+    const INITIAL_ORDERS = [];
+
+    // Convert sheet row to kitchen order format
+    function sheetToKitchenOrder(row) {
+        let items = [];
+        try { items = JSON.parse(row.Items || "[]"); } catch(e) {}
+        return {
+            id       : row.OrderID,
+            table    : row.TableNumber,
+            waiter   : row.WaiterName || "Staff",
+            status   : row.Status || "new",
+            createdAt: row.OrderTime ? new Date(row.OrderTime).getTime() : Date.now(),
+            items    : items.map((it,i) => ({
+                id     : i,
+                name   : it.name || it.Name || "Item",
+                qty    : it.qty  || it.quantity || 1,
+                note   : it.note || "",
+                checked: false,
+            }))
+        };
+    }
 
     function formatTime(ms) {
         const totalSec = Math.floor(ms / 1000);
@@ -428,17 +414,43 @@
         const [filter, setFilter] = useState('active');
         const [soundOn, setSoundOn] = useState(true);
 
-        // Simulate new orders coming in (replace with Google Sheets polling)
+        // Poll Google Sheet for live orders every 5 seconds
         useEffect(() => {
-            const interval = setInterval(() => {
-                // This is where you'd poll Google Sheets for new orders
-                // fetch(`YOUR_APPS_SCRIPT_URL?action=getOrders`)
-            }, 5000);
+            async function fetchOrders() {
+                if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
+                try {
+                    const res = await window.POS_GAPI.Orders.getAll();
+                    if (res && res.data) {
+                        const active = res.data
+                            .filter(o => o.Status !== "served" && o.Status !== "closed")
+                            .map(sheetToKitchenOrder);
+                        setOrders(prev => {
+                            // Preserve checked state for existing items
+                            return active.map(newO => {
+                                const existing = prev.find(p => p.id === newO.id);
+                                if (!existing) return newO;
+                                return { ...newO, items: newO.items.map((it,i) => ({
+                                    ...it,
+                                    checked: existing.items[i] ? existing.items[i].checked : false
+                                }))};
+                            });
+                        });
+                    }
+                } catch(e) { console.error("Kitchen poll error:", e); }
+            }
+            fetchOrders();
+            const interval = setInterval(fetchOrders, POS_CONFIG.POLL_MS);
             return () => clearInterval(interval);
         }, []);
 
-        const updateStatus = (orderId, newStatus) => {
-            if (newStatus === 'served') {
+        const updateStatus = async (orderId, newStatus) => {
+            // Update in sheet
+            if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+                try {
+                    await window.POS_GAPI.Orders.update({ orderId, status: newStatus });
+                } catch(e) { console.error("Status update failed:", e); }
+            }
+            if (newStatus === "served") {
                 setOrders(orders.filter(o => o.id !== orderId));
             } else {
                 setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
