@@ -7,7 +7,7 @@
 const POS_CONFIG = {
   // ← Replace with your Google OAuth Client ID
   // Get it from: console.cloud.google.com → APIs & Services → Credentials
-  GOOGLE_CLIENT_ID : "335894427389-lj497464m2a7anusn9d5e75ekojkguva.apps.googleusercontent.com",
+  GOOGLE_CLIENT_ID : "71442167797-qgsvc6vr78im4uvh82kj00e2o8inrd11.apps.googleusercontent.com",
 
   RESTAURANT_NAME  : "Grand Table POS",  // default, overridden by each user's setup
   CURRENCY         : "LKR",
