@@ -301,7 +301,8 @@ var _lastSend = 0;
 function sendLocationToSheet() {
   if (!APP.gps || !APP.session || Date.now()-_lastSend < 30000) return;
   _lastSend = Date.now();
-  POS_API.post({ action:"updateDriverLocation", data:{
+  var api = window.POS_GAPI; if(!api || !api.getSheetId || !api.getSheetId()) return;
+  api.post && api.post({ action:"updateDriverLocation", data:{
     email: APP.session.email, lat: APP.gps.lat, lng: APP.gps.lng,
     accuracy: APP.gps.acc, ts: new Date().toISOString()
   }}).catch(function(){});
@@ -572,7 +573,7 @@ function updateStatus(id, status) {
       time: new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}), earn:4.80 });
     document.getElementById("st-earn").textContent = "Rs." + APP.earn.today.toFixed(2);
     document.getElementById("st-del").textContent  = APP.earn.dels;
-    POS_API.Deliveries.update({ deliveryId:id, status:"delivered" }).catch(function(){});
+    var api = window.POS_GAPI || window.POS_API; if(api && api.Deliveries) api.Deliveries.update({ deliveryId: id, status: 'delivered' }).catch(function(){});
   } else {
     APP.orders = APP.orders.map(function(o){ return o.id===id ? Object.assign({},o,{status:status}) : o; });
     POS_API.Deliveries.update({ deliveryId:id, status:status }).catch(function(){});
