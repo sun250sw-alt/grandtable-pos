@@ -295,16 +295,23 @@ async function loadAll() {
   const email = SESSION.email;
   const m     = STATE.month;
   const y     = STATE.year;
+  const api   = window.POS_GAPI || window.POS_API;
 
-  const [rotaRes, clockingsRes, hoursRes] = await Promise.all([
-    POS_API.Team.getRota(email, m, y),
-    POS_API.Team.getClockings(email, m),
-    POS_API.Team.getHours(email, m, y),
-  ]);
-
-  STATE.rota      = rotaRes.data    || DEMO_ROTA;
-  STATE.clockings = clockingsRes.data || DEMO_CLOCKINGS;
-  STATE.hours     = hoursRes.data   || DEMO_HOURS;
+  if (!api || !api.getSheetId || !api.getSheetId()) {
+    // Not connected yet — use demo data
+    STATE.rota      = DEMO_ROTA;
+    STATE.clockings = DEMO_CLOCKINGS;
+    STATE.hours     = DEMO_HOURS;
+  } else {
+    const [rotaRes, clockingsRes, hoursRes] = await Promise.all([
+      api.Team.getRota(email, m, y),
+      api.Team.getClockings(email, m),
+      api.Team.getHours(email, m, y),
+    ]);
+    STATE.rota      = (rotaRes      && rotaRes.data)      || DEMO_ROTA;
+    STATE.clockings = (clockingsRes && clockingsRes.data) || DEMO_CLOCKINGS;
+    STATE.hours     = (hoursRes     && hoursRes.data)     || DEMO_HOURS;
+  }
 
   // Check today's clocking status
   const todayStr = new Date().toISOString().split("T")[0];
@@ -577,7 +584,8 @@ async function handleClockIn() {
   const btn = document.querySelector(".clock-in-btn");
   if (btn) { btn.disabled = true; btn.textContent = "Clocking in…"; }
 
-  const res = await POS_API.Team.clockIn(SESSION.email, SESSION.name);
+  const api = window.POS_GAPI || window.POS_API;
+  const res = await api.Team.clockIn({ email:SESSION.email, name:SESSION.name });
   if (res.data && res.data.clockedIn) {
     STATE.clockedIn   = true;
     STATE.clockInTime = res.data.clockedIn;
@@ -595,7 +603,8 @@ async function handleClockOut() {
   const btn = document.querySelector(".clock-out-btn");
   if (btn) { btn.disabled = true; btn.textContent = "Clocking out…"; }
 
-  const res = await POS_API.Team.clockOut(SESSION.email);
+  const api = window.POS_GAPI || window.POS_API;
+  const res = await api.Team.clockOut({ email:SESSION.email });
   if (res.data && res.data.clockedOut) {
     STATE.clockedIn   = false;
     STATE.clockInTime = null;
