@@ -291,7 +291,9 @@ function tickClock() {
 //  QUEUE
 // ═══════════════════════════════════════════════════════
 function loadQueue() {
-  POS_API.Orders.getAll("new,preparing").then(function(res) {
+  var api = window.POS_GAPI || window.POS_API;
+  if (!api || !api.getSheetId || !api.getSheetId()) { STATE.queue = DEMO_QUEUE; renderQueue(); return; }
+  api.Orders.getAll("new").then(function(res) {
     var orders = (res && res.data) ? res.data : null;
     if (orders && orders.length > 0) {
       STATE.queue = buildQueueFromOrders(orders);
@@ -376,7 +378,8 @@ function selectDish(idx) {
     '<div>Loading recipe for ' + item.dish + '…</div></div>';
 
   // Try to load from API, fallback to local
-  POS_API.Recipes.get(item.dish).then(function(res) {
+  var api = window.POS_GAPI || window.POS_API;
+  api.Recipes.get(item.dish).then(function(res) {
     if (res && res.data && res.data.Steps) {
       var r = res.data;
       // Parse JSON fields if stored as strings
