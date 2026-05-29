@@ -466,54 +466,67 @@
         const { useState, useEffect } = React;
 
         // Sample data - Replace with Google Sheets API calls
-        const SAMPLE_MENU = [
-            // Appetizers
-            { id: 1, name: "Spring Rolls", category: "Appetizers", price: 6.99, description: "Crispy vegetable rolls" },
-            { id: 2, name: "Chicken Wings", category: "Appetizers", price: 8.99, description: "Buffalo or BBQ" },
-            { id: 3, name: "Garlic Bread", category: "Appetizers", price: 4.99, description: "With cheese" },
-            { id: 4, name: "Soup of the Day", category: "Appetizers", price: 5.99, description: "Ask server" },
-            
-            // Main Course
-            { id: 5, name: "Burger Deluxe", category: "Main Course", price: 12.99, description: "Beef, cheese, fries" },
-            { id: 6, name: "Grilled Chicken", category: "Main Course", price: 14.99, description: "With vegetables" },
-            { id: 7, name: "Fish & Chips", category: "Main Course", price: 13.99, description: "Beer battered cod" },
-            { id: 8, name: "Pasta Carbonara", category: "Main Course", price: 11.99, description: "Creamy bacon pasta" },
-            { id: 9, name: "Steak", category: "Main Course", price: 24.99, description: "8oz ribeye" },
-            { id: 10, name: "Caesar Salad", category: "Main Course", price: 9.99, description: "With grilled chicken" },
-            
-            // Beverages
-            { id: 11, name: "Coca Cola", category: "Beverages", price: 2.99, description: "Regular or Diet" },
-            { id: 12, name: "Fresh Juice", category: "Beverages", price: 4.99, description: "Orange or Apple" },
-            { id: 13, name: "Coffee", category: "Beverages", price: 2.49, description: "Hot or Iced" },
-            { id: 14, name: "Water", category: "Beverages", price: 0.00, description: "Complimentary" },
-            
-            // Desserts
-            { id: 15, name: "Chocolate Cake", category: "Desserts", price: 6.99, description: "Rich chocolate" },
-            { id: 16, name: "Ice Cream", category: "Desserts", price: 4.99, description: "Three scoops" },
-            { id: 17, name: "Apple Pie", category: "Desserts", price: 5.99, description: "With ice cream" },
-        ];
-
-        const SAMPLE_TABLES = [
-            { id: 1, number: 1, capacity: 2, status: "available" },
-            { id: 2, number: 2, capacity: 4, status: "available" },
-            { id: 3, number: 3, capacity: 4, status: "occupied", guests: 3 },
-            { id: 4, number: 4, capacity: 6, status: "available" },
-            { id: 5, number: 5, capacity: 2, status: "occupied", guests: 2 },
-            { id: 6, number: 6, capacity: 4, status: "available" },
-            { id: 7, number: 7, capacity: 8, status: "available" },
-            { id: 8, number: 8, capacity: 2, status: "available" },
-        ];
+        // Data loaded live from Google Sheet via POS_GAPI
+        const SAMPLE_MENU   = [];
+        const SAMPLE_TABLES = [];
 
         function WaiterApp() {
-            const [tables, setTables] = useState(SAMPLE_TABLES);
-            const [selectedTable, setSelectedTable] = useState(null);
-            const [menuItems, setMenuItems] = useState(SAMPLE_MENU);
+            const [tables, setTables]               = useState([]);
+            const [selectedTable, setSelectedTable]   = useState(null);
+            const [menuItems, setMenuItems]             = useState([]);
             const [selectedCategory, setSelectedCategory] = useState("All");
-            const [orderItems, setOrderItems] = useState([]);
-            const [searchQuery, setSearchQuery] = useState("");
-            const [showTableModal, setShowTableModal] = useState(false);
-            const [notification, setNotification] = useState(null);
-            const [waiterName, setWaiterName] = useState("John Doe");
+            const [orderItems, setOrderItems]           = useState([]);
+            const [searchQuery, setSearchQuery]         = useState("");
+            const [showTableModal, setShowTableModal]   = useState(false);
+            const [notification, setNotification]       = useState(null);
+            const [loading, setLoading]                 = useState(true);
+            const [waiterName, setWaiterName]           = useState(
+                window.POS_GAPI && window.POS_GAPI.getSession()
+                    ? window.POS_GAPI.getSession().name : "Staff");
+
+            // Load live data from Google Sheet on mount
+            const { useEffect } = React;
+            useEffect(() => {
+                async function loadData() {
+                    try {
+                        const [menuRes, tableRes] = await Promise.all([
+                            window.POS_GAPI.Menu.getAll(),
+                            window.POS_GAPI.Tables.getAll(),
+                        ]);
+                        if (menuRes && menuRes.data) {
+                            setMenuItems(menuRes.data.map((item, i) => ({
+                                id      : item.ItemID || i,
+                                name    : item.Name,
+                                category: item.Category,
+                                price   : parseFloat(item.Price) || 0,
+                                description: item.Description || "",
+                                emoji   : item.Emoji || "🍽️",
+                            })));
+                        }
+                        if (tableRes && tableRes.data) {
+                            setTables(tableRes.data.map(t => ({
+                                id      : t.TableID,
+                                number  : parseInt(t.TableNumber),
+                                capacity: parseInt(t.Capacity) || 4,
+                                status  : t.Status || "available",
+                                guests  : parseInt(t.Guests) || 0,
+                            })));
+                        }
+                    } catch(e) {
+                        console.error("Failed to load data:", e);
+                        showNotification("Could not load from Sheet — check connection", "error");
+                    }
+                    setLoading(false);
+                }
+                if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+                    loadData();
+                    // Poll for updates every 5 seconds
+                    const interval = setInterval(loadData, POS_CONFIG.POLL_MS);
+                    return () => clearInterval(interval);
+                } else {
+                    setLoading(false);
+                }
+            }, []);
 
             const categories = ["All", ...new Set(menuItems.map(item => item.category))];
 
@@ -563,29 +576,33 @@
                 return orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             };
 
-            const handleSendToKitchen = () => {
+            const handleSendToKitchen = async () => {
                 if (orderItems.length === 0) {
                     showNotification("Please add items to the order!", "error");
                     return;
                 }
 
-                // Here you would send to Google Sheets
-                console.log("Sending to kitchen:", {
-                    table: selectedTable,
-                    items: orderItems,
-                    total: calculateTotal(),
-                    waiter: waiterName,
-                    timestamp: new Date().toISOString()
-                });
-
-                showNotification(`Order sent to kitchen for Table ${selectedTable.number}!`);
-                
-                // Update table status
-                setTables(tables.map(t => 
-                    t.id === selectedTable.id ? { ...t, status: "occupied", guests: t.guests || 2 } : t
-                ));
-                
-                setOrderItems([]);
+                // Save order to Google Sheet
+                try {
+                    const subtotal = calculateTotal();
+                    await window.POS_GAPI.Orders.create({
+                        tableNumber  : selectedTable.number,
+                        waiterName   : waiterName,
+                        items        : orderItems.map(i => ({ name:i.name, qty:i.quantity, price:i.price })),
+                        subtotal     : subtotal,
+                        notes        : "",
+                    });
+                    await window.POS_GAPI.Tables.update({
+                        tableNumber  : selectedTable.number,
+                        status       : "occupied",
+                        currentWaiter: waiterName,
+                        guests       : selectedTable.guests || 2,
+                    });
+                    showNotification(`Order sent to kitchen for Table ${selectedTable.number}!`);
+                    setOrderItems([]);
+                } catch(e) {
+                    showNotification("Failed to save order: " + e.message, "error");
+                }
             };
 
             const handlePrintBill = () => {
@@ -605,16 +622,22 @@
                 });
             };
 
-            const handleCloseTable = () => {
+            const handleCloseTable = async () => {
                 if (!selectedTable) return;
 
-                setTables(tables.map(t => 
-                    t.id === selectedTable.id ? { ...t, status: "available", guests: null } : t
-                ));
-                
-                showNotification(`Table ${selectedTable.number} closed!`);
-                setSelectedTable(null);
-                setOrderItems([]);
+                try {
+                    await window.POS_GAPI.Tables.update({
+                        tableNumber  : selectedTable.number,
+                        status       : "available",
+                        currentWaiter: "",
+                        guests       : 0,
+                    });
+                    showNotification(`Table ${selectedTable.number} closed!`);
+                    setSelectedTable(null);
+                    setOrderItems([]);
+                } catch(e) {
+                    showNotification("Failed to close table: " + e.message, "error");
+                }
             };
 
             return (
