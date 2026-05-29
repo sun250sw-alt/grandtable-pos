@@ -1079,6 +1079,38 @@
       },
     };
 
+
+    // ── Live data loader ─────────────────────────────────────
+    const { useState: _us, useEffect: _ue } = React;
+
+    function useLiveData(fetchFn, deps=[]) {
+        const [data, setData]       = _us(null);
+        const [loading, setLoading] = _us(true);
+        _ue(() => {
+            async function load() {
+                if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) { setLoading(false); return; }
+                try {
+                    const res = await fetchFn();
+                    if (res && res.data) setData(res.data);
+                } catch(e) { console.error("Load error:", e); }
+                setLoading(false);
+            }
+            load();
+            const iv = setInterval(load, POS_CONFIG.POLL_MS);
+            return () => clearInterval(iv);
+        }, deps);
+        return { data, loading };
+    }
+
+    async function saveMenuItem(item) {
+        if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
+        if (item.id && String(item.id).startsWith("MENU")) {
+            await window.POS_GAPI.Menu.update({ itemId: item.id, ...item });
+        } else {
+            await window.POS_GAPI.Menu.add(item);
+        }
+    }
+
     const NAV = [
         { icon: "📊", label: "Dashboard", section: "overview" },
         { icon: "📋", label: "Menu Management", section: "menu" },
