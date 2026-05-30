@@ -1,1 +1,1173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="pos-config.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manager Portal - Restaurant POS</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #1a1a2e; }
 
+        .layout { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+
+        /* Sidebar */
+        .sidebar {
+            background: #1a1a2e;
+            color: white;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-logo {
+            padding: 24px 20px;
+            font-size: 20px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            letter-spacing: 0.5px;
+        }
+
+        .sidebar-logo span { font-size: 12px; font-weight: 400; opacity: 0.7; display: block; margin-top: 2px; }
+
+        .nav-section { padding: 20px 12px 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: rgba(255,255,255,0.3); }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 11px 16px;
+            margin: 2px 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            color: rgba(255,255,255,0.6);
+            transition: all 0.2s;
+        }
+
+        .nav-item:hover { background: rgba(255,255,255,0.07); color: white; }
+        .nav-item.active { background: rgba(102,126,234,0.25); color: #667eea; font-weight: 600; }
+        .nav-item .icon { font-size: 18px; width: 22px; text-align: center; }
+
+        .sidebar-bottom {
+            margin-top: auto;
+            padding: 16px;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            font-size: 13px;
+            color: rgba(255,255,255,0.4);
+        }
+
+        /* Main */
+        .main { overflow-y: auto; }
+
+        .page-header {
+            background: white;
+            padding: 20px 28px;
+            border-bottom: 1px solid #e8e8e8;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .page-title { font-size: 22px; font-weight: 700; }
+        .page-subtitle { font-size: 13px; color: #888; margin-top: 2px; }
+
+        .header-actions { display: flex; gap: 10px; }
+
+        .btn { padding: 9px 18px; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.2s; }
+        .btn:hover { transform: translateY(-1px); }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-success { background: #27ae60; color: white; }
+        .btn-danger { background: #e74c3c; color: white; }
+        .btn-ghost { background: transparent; border: 2px solid #e0e0e0; color: #333; }
+
+        .page-content { padding: 24px 28px; }
+
+        /* Stat Cards */
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        .stat-card-label { font-size: 13px; color: #888; margin-bottom: 8px; font-weight: 500; }
+        .stat-card-value { font-size: 28px; font-weight: 800; margin-bottom: 6px; }
+        .stat-card-change { font-size: 12px; }
+        .change-up { color: #27ae60; }
+        .change-down { color: #e74c3c; }
+
+        /* Charts area */
+        .charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+        .chart-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        .chart-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+
+        /* Simple bar chart */
+        .bar-chart { display: flex; align-items: flex-end; gap: 8px; height: 140px; }
+
+        .bar-group { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; }
+        .bar { background: #667eea; border-radius: 4px 4px 0 0; width: 100%; transition: all 0.3s; min-height: 4px; }
+        .bar:hover { background: #764ba2; }
+        .bar-label { font-size: 11px; color: #888; }
+        .bar-value { font-size: 10px; color: #667eea; font-weight: 600; }
+
+        /* Top items */
+        .top-item-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #f5f5f5;
+        }
+
+        .top-item-row:last-child { border-bottom: none; }
+        .top-item-name { font-size: 14px; font-weight: 500; }
+        .top-item-bar { flex: 1; height: 6px; background: #f5f5f5; border-radius: 3px; margin: 0 12px; }
+        .top-item-fill { height: 100%; background: #667eea; border-radius: 3px; }
+        .top-item-count { font-size: 14px; font-weight: 700; color: #667eea; }
+
+        /* Tables */
+        .data-table { width: 100%; border-collapse: collapse; }
+        .data-table th { text-align: left; padding: 12px 16px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #888; border-bottom: 2px solid #f0f0f0; }
+        .data-table td { padding: 14px 16px; font-size: 14px; border-bottom: 1px solid #f5f5f5; }
+        .data-table tr:hover td { background: #fafafa; }
+        .data-table tr:last-child td { border-bottom: none; }
+
+        .badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+        .badge-green { background: #d5f5e3; color: #27ae60; }
+        .badge-yellow { background: #fef9e7; color: #f39c12; }
+        .badge-red { background: #fdedec; color: #e74c3c; }
+        .badge-blue { background: #ebf5fb; color: #3498db; }
+        .badge-gray { background: #f4f6f7; color: #888; }
+
+        .table-card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden; margin-bottom: 20px; }
+        .table-card-header { padding: 16px 20px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
+        .table-card-title { font-size: 16px; font-weight: 700; }
+
+        /* Form Elements */
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #444; }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 10px 14px; border: 2px solid #e8e8e8; border-radius: 8px; font-size: 14px; transition: border-color 0.2s; }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: #667eea; }
+
+        /* Modal */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; }
+        .modal { background: white; border-radius: 16px; padding: 28px; width: 520px; max-width: 90vw; box-shadow: 0 24px 60px rgba(0,0,0,0.2); }
+        .modal h3 { font-size: 20px; font-weight: 700; margin-bottom: 20px; }
+        .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+        /* Staff cards */
+        .staff-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+        .staff-card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); text-align: center; }
+        .staff-avatar { width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #667eea, #764ba2); display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; color: white; margin: 0 auto 12px; }
+        .staff-name { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
+        .staff-role { font-size: 13px; color: #888; margin-bottom: 10px; }
+        .staff-stats { display: flex; justify-content: center; gap: 16px; font-size: 12px; color: #555; }
+
+        /* Inventory */
+        .inventory-alert { background: #fff8e7; border: 1px solid #f39c12; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 14px; color: #b7770d; display: flex; align-items: center; gap: 8px; }
+
+
+        /* Recipe editor styles */
+        .recipe-modal { max-width: 680px; width: 95vw; max-height: 90vh; overflow-y: auto; }
+        .recipe-section { margin-bottom: 20px; }
+        .recipe-section-title {
+            font-size: 13px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 1px; color: #667eea; margin-bottom: 12px;
+            padding-bottom: 6px; border-bottom: 2px solid #eef0ff;
+        }
+        .ingredient-row-edit {
+            display: grid; grid-template-columns: 1fr auto auto; gap: 8px;
+            margin-bottom: 8px; align-items: center;
+        }
+        .step-card-edit {
+            background: #f9fafb; border-radius: 10px; padding: 14px;
+            margin-bottom: 10px; border-left: 3px solid #667eea; position: relative;
+        }
+        .step-num-badge {
+            background: #667eea; color: white; width: 24px; height: 24px;
+            border-radius: 50%; display: inline-flex; align-items: center;
+            justify-content: center; font-size: 12px; font-weight: 700;
+            margin-right: 8px; flex-shrink: 0;
+        }
+        .step-header-row { display: flex; align-items: center; margin-bottom: 10px; }
+        .step-title-input { flex: 1; }
+        .timer-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+        .remove-btn {
+            background: #fee2e2; border: none; color: #e74c3c; border-radius: 6px;
+            padding: 4px 10px; cursor: pointer; font-size: 12px; font-weight: 700;
+        }
+        .add-step-btn {
+            width: 100%; padding: 11px; border: 2px dashed #667eea; background: #f0f0ff;
+            color: #667eea; border-radius: 10px; cursor: pointer; font-weight: 700;
+            font-size: 13px; transition: all .2s;
+        }
+        .add-step-btn:hover { background: #e8e8ff; }
+        .recipe-btn {
+            background: #f0f0ff; border: none; color: #667eea; border-radius: 8px;
+            padding: 5px 12px; cursor: pointer; font-size: 12px; font-weight: 700;
+        }
+        .difficulty-select { padding: 8px 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 13px; }
+
+        .search-input { padding: 10px 16px; border: 2px solid #e8e8e8; border-radius: 8px; font-size: 14px; width: 280px; }
+        .search-input:focus { outline: none; border-color: #667eea; }
+    </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+    const { useState } = React;
+
+    const SALES_DATA = [
+        { day: 'Mon', revenue: 1240 }, { day: 'Tue', revenue: 980 },
+        { day: 'Wed', revenue: 1560 }, { day: 'Thu', revenue: 1380 },
+        { day: 'Fri', revenue: 2100 }, { day: 'Sat', revenue: 2680 }, { day: 'Sun', revenue: 1920 },
+    ];
+
+    const TOP_ITEMS = [
+        { name: "Burger Deluxe", count: 124 }, { name: "Fish & Chips", count: 98 },
+        { name: "Steak", count: 87 }, { name: "Pasta Carbonara", count: 76 }, { name: "Caesar Salad", count: 65 },
+    ];
+
+    const STAFF = [
+        { name: "John Doe", role: "Waiter", status: "active", orders: 18, tips: "Rs.42" },
+        { name: "Sarah Lee", role: "Waiter", status: "active", orders: 22, tips: "Rs.58" },
+        { name: "Mike Chen", role: "Waiter", status: "break", orders: 15, tips: "Rs.35" },
+        { name: "Emma Brown", role: "Chef", status: "active", orders: 0, tips: "—" },
+        { name: "Tom Wilson", role: "Chef", status: "active", orders: 0, tips: "—" },
+        { name: "Lisa Park", role: "Manager", status: "active", orders: 0, tips: "—" },
+    ];
+
+    const INVENTORY = [
+        { item: "Beef Patties", unit: "kg", qty: 4.5, reorder: 5, status: "low" },
+        { item: "Chicken Breast", unit: "kg", qty: 8.0, reorder: 4, status: "ok" },
+        { item: "Pasta", unit: "kg", qty: 12.0, reorder: 3, status: "ok" },
+        { item: "Cheddar Cheese", unit: "kg", qty: 1.2, reorder: 2, status: "critical" },
+        { item: "Brioche Buns", unit: "pcs", qty: 24, reorder: 30, status: "low" },
+        { item: "Coca Cola (can)", unit: "pcs", qty: 120, reorder: 50, status: "ok" },
+        { item: "Cooking Oil", unit: "L", qty: 15, reorder: 5, status: "ok" },
+        { item: "Parmesan", unit: "kg", qty: 0.5, reorder: 1, status: "critical" },
+    ];
+
+    const MENU_ITEMS = [
+        { id: 1, name: "Burger Deluxe", category: "Main Course", price: 12.99, status: "active" },
+        { id: 2, name: "Fish & Chips", category: "Main Course", price: 13.99, status: "active" },
+        { id: 3, name: "Steak", category: "Main Course", price: 24.99, status: "active" },
+        { id: 4, name: "Pasta Carbonara", category: "Main Course", price: 11.99, status: "active" },
+        { id: 5, name: "Spring Rolls", category: "Appetizers", price: 6.99, status: "active" },
+        { id: 6, name: "Chicken Wings", category: "Appetizers", price: 8.99, status: "active" },
+        { id: 7, name: "Chocolate Cake", category: "Desserts", price: 6.99, status: "active" },
+        { id: 8, name: "Seasonal Special", category: "Main Course", price: 18.99, status: "inactive" },
+    ];
+
+    const maxRevenue = Math.max(...SALES_DATA.map(d => d.revenue));
+    const maxCount = Math.max(...TOP_ITEMS.map(i => i.count));
+
+    function Dashboard() {
+        return (
+            <>
+                <div className="stats-grid">
+                    {[
+                        { label: "Today's Revenue", value: "Rs.1,842", change: "↑ 12% vs yesterday", up: true },
+                        { label: "Orders Today", value: "87", change: "↑ 8 more than yesterday", up: true },
+                        { label: "Avg Order Value", value: "Rs.21.17", change: "↓ Rs.1.20 vs last week", up: false },
+                        { label: "Tables Occupied", value: "6 / 10", change: "60% occupancy", up: true },
+                    ].map((stat, i) => (
+                        <div key={i} className="stat-card">
+                            <div className="stat-card-label">{stat.label}</div>
+                            <div className="stat-card-value">{stat.value}</div>
+                            <div className={`stat-card-change ${stat.up ? 'change-up' : 'change-down'}`}>{stat.change}</div>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="charts-grid">
+                    <div className="chart-card">
+                        <div className="chart-title">Weekly Revenue</div>
+                        <div className="bar-chart">
+                            {SALES_DATA.map((d, i) => (
+                                <div key={i} className="bar-group">
+                                    <div className="bar-value">Rs.{d.revenue}</div>
+                                    <div className="bar" style={{ height: `${(d.revenue / maxRevenue) * 110}px` }}/>
+                                    <div className="bar-label">{d.day}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="chart-card">
+                        <div className="chart-title">Top Selling Items</div>
+                        {TOP_ITEMS.map((item, i) => (
+                            <div key={i} className="top-item-row">
+                                <div className="top-item-name">{item.name}</div>
+                                <div className="top-item-bar">
+                                    <div className="top-item-fill" style={{ width: `${(item.count / maxCount) * 100}%` }}/>
+                                </div>
+                                <div className="top-item-count">{item.count}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="table-card">
+                    <div className="table-card-header">
+                        <div className="table-card-title">Recent Orders</div>
+                    </div>
+                    <table className="data-table">
+                        <thead>
+                            <tr><th>Order ID</th><th>Table</th><th>Waiter</th><th>Items</th><th>Total</th><th>Status</th><th>Time</th></tr>
+                        </thead>
+                        <tbody>
+                            {[
+                                { id: "ORD-087", table: 3, waiter: "John", items: 4, total: "Rs.38.50", status: "served", time: "2 min ago" },
+                                { id: "ORD-086", table: 7, waiter: "Sarah", items: 2, total: "Rs.21.00", status: "ready", time: "8 min ago" },
+                                { id: "ORD-085", table: 1, waiter: "Mike", items: 6, total: "Rs.72.40", status: "preparing", time: "14 min ago" },
+                                { id: "ORD-084", table: 5, waiter: "Sarah", items: 3, total: "Rs.44.97", status: "served", time: "22 min ago" },
+                            ].map((order, i) => (
+                                <tr key={i}>
+                                    <td><strong>{order.id}</strong></td>
+                                    <td>Table {order.table}</td>
+                                    <td>{order.waiter}</td>
+                                    <td>{order.items} items</td>
+                                    <td><strong>{order.total}</strong></td>
+                                    <td><span className={`badge ${order.status === 'served' ? 'badge-green' : order.status === 'ready' ? 'badge-blue' : 'badge-yellow'}`}>{order.status}</span></td>
+                                    <td style={{ color: '#888' }}>{order.time}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </>
+        );
+    }
+
+    // ── Default empty recipe ──────────────────────────────
+    const EMPTY_RECIPE = {
+      prepTime:"5 min", cookTime:"15 min", difficulty:"Medium",
+      ingredients:[{ name:"", amount:"", unit:"pcs" }],
+      steps:[{ title:"", description:"", timerMin:"0", timerSec:"0", tip:"" }]
+    };
+    const RECIPE_UNITS = ["pcs","g","kg","ml","L","tsp","tbsp","cup","slice","portion"];
+    const RECIPE_DIFFS = ["Easy","Medium","Hard","Chef Special"];
+
+    
+    function MenuManagement() {
+      const [items, setItems]         = React.useState(MENU_ITEMS);
+      const [showModal, setShowModal] = React.useState(false);
+      const [showRecipe, setShowRecipe] = React.useState(false);
+      const [editItem, setEditItem]   = React.useState(null);
+      const [search, setSearch]       = React.useState("");
+      const [form, setForm]           = React.useState({ name:"", category:"Main Course", price:"", status:"active" });
+
+      // Recipe state
+      const [recipe, setRecipe] = React.useState({
+        prepTime:"5 min", cookTime:"15 min", difficulty:"Medium",
+        ingredients:[ {name:"",amount:""} ],
+        steps:[ {title:"", description:"", timerSec:0, tip:""} ]
+      });
+
+      const filtered = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()));
+
+      const handleSave = () => {
+        if (!form.name || !form.price) return;
+        setItems([...items, { ...form, id: Date.now(), price: parseFloat(form.price) }]);
+        setShowModal(false);
+        setForm({ name:"", category:"Main Course", price:"", status:"active" });
+      };
+
+      const toggleStatus = (id) => {
+        setItems(items.map(i => i.id===id ? {...i, status: i.status==="active"?"inactive":"active"} : i));
+      };
+
+      const openRecipeEditor = (item) => {
+        setEditItem(item);
+        // Load existing recipe or blank template
+        const existing = RECIPE_DATA[item.name];
+        if (existing) {
+          setRecipe({
+            prepTime   : existing.prepTime   || "5 min",
+            cookTime   : existing.cookTime   || "15 min",
+            difficulty : existing.difficulty || "Medium",
+            ingredients: existing.ingredients.length ? existing.ingredients : [{name:"",amount:""}],
+            steps      : existing.steps.length ? existing.steps : [{title:"",description:"",timerSec:0,tip:""}],
+          });
+        } else {
+          setRecipe({ prepTime:"5 min", cookTime:"15 min", difficulty:"Medium",
+            ingredients:[{name:"",amount:""}],
+            steps:[{title:"",description:"",timerSec:0,tip:""}] });
+        }
+        setShowRecipe(true);
+      };
+
+      // Ingredient helpers
+      const addIngredient   = () => setRecipe(r=>({...r, ingredients:[...r.ingredients,{name:"",amount:""}]}));
+      const removeIngredient = (i) => setRecipe(r=>({...r, ingredients:r.ingredients.filter((_,j)=>j!==i)}));
+      const updateIngredient = (i,field,val) => setRecipe(r=>({...r, ingredients:r.ingredients.map((ing,j)=>j===i?{...ing,[field]:val}:ing)}));
+
+      // Step helpers
+      const addStep    = () => setRecipe(r=>({...r, steps:[...r.steps,{title:"",description:"",timerSec:0,tip:""}]}));
+      const removeStep = (i) => setRecipe(r=>({...r, steps:r.steps.filter((_,j)=>j!==i)}));
+      const updateStep = (i,field,val) => setRecipe(r=>({...r, steps:r.steps.map((s,j)=>j===i?{...s,[field]:val}:s)}));
+
+      const saveRecipe = () => {
+        // Save to Apps Script
+        const payload = {
+          action: "saveRecipe",
+          data: {
+            dishName   : editItem.name,
+            prepTime   : recipe.prepTime,
+            cookTime   : recipe.cookTime,
+            difficulty : recipe.difficulty,
+            ingredients: JSON.stringify(recipe.ingredients.filter(i=>i.name)),
+            steps      : JSON.stringify(recipe.steps.filter(s=>s.title)),
+          }
+        };
+        // POS_API.post(payload);  // uncomment when connected
+        RECIPE_DATA[editItem.name] = {
+          prepTime   : recipe.prepTime,
+          cookTime   : recipe.cookTime,
+          difficulty : recipe.difficulty,
+          ingredients: recipe.ingredients,
+          steps      : recipe.steps,
+        };
+        setShowRecipe(false);
+        alert("Recipe saved for " + editItem.name + "! It will appear in Kitchen Prep Display.");
+      };
+
+      return (
+        <>
+          <div className="table-card">
+            <div className="table-card-header">
+              <div className="table-card-title">Menu Items ({items.length})</div>
+              <div style={{display:"flex",gap:"10px"}}>
+                <input className="search-input" placeholder="🔍 Search items..."
+                       value={search} onChange={e=>setSearch(e.target.value)} />
+                <button className="btn btn-primary" onClick={()=>setShowModal(true)}>+ Add Item</button>
+              </div>
+            </div>
+            <table className="data-table">
+              <thead>
+                <tr><th>Name</th><th>Category</th><th>Price (LKR)</th><th>Status</th><th>Recipe</th><th>Actions</th></tr>
+              </thead>
+              <tbody>
+                {filtered.map(item => (
+                  <tr key={item.id}>
+                    <td><strong>{item.name}</strong></td>
+                    <td><span className="badge badge-blue">{item.category}</span></td>
+                    <td><strong>LKR {parseFloat(item.price).toLocaleString()}</strong></td>
+                    <td><span className={`badge ${item.status==="active"?"badge-green":"badge-gray"}`}>{item.status}</span></td>
+                    <td>
+                      {RECIPE_DATA[item.name]
+                        ? <span className="badge badge-green">✓ Has Recipe</span>
+                        : <span className="badge badge-yellow">No Recipe</span>}
+                    </td>
+                    <td style={{display:"flex",gap:"6px"}}>
+                      <button className="btn btn-ghost" style={{padding:"5px 10px",fontSize:"12px"}}
+                              onClick={()=>toggleStatus(item.id)}>
+                        {item.status==="active"?"Disable":"Enable"}
+                      </button>
+                      <button className="btn btn-primary" style={{padding:"5px 10px",fontSize:"12px",background:"#667eea"}}
+                              onClick={()=>openRecipeEditor(item)}>
+                        📋 Recipe
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Add menu item modal */}
+          {showModal && (
+            <div className="modal-overlay">
+              <div className="modal">
+                <h3>Add Menu Item</h3>
+                <div className="form-grid">
+                  <div className="form-group" style={{gridColumn:"1/-1"}}>
+                    <label>Item Name</label>
+                    <input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="e.g. Grilled Salmon" />
+                  </div>
+                  <div className="form-group">
+                    <label>Category</label>
+                    <select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>
+                      <option>Appetizers</option><option>Main Course</option>
+                      <option>Desserts</option><option>Beverages</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Price (LKR)</label>
+                    <input type="number" value={form.price} onChange={e=>setForm({...form,price:e.target.value})} placeholder="0" />
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  <button className="btn btn-ghost" onClick={()=>setShowModal(false)}>Cancel</button>
+                  <button className="btn btn-primary" onClick={handleSave}>Save Item</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Recipe editor modal */}
+          {showRecipe && editItem && (
+            <div className="modal-overlay">
+              <div className="modal recipe-modal">
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px"}}>
+                  <h3 style={{margin:0}}>📋 Recipe Editor — {editItem.name}</h3>
+                  <button className="remove-btn" style={{padding:"6px 14px"}} onClick={()=>setShowRecipe(false)}>✕ Close</button>
+                </div>
+
+                {/* Meta */}
+                <div className="recipe-section">
+                  <div className="recipe-section-title">Recipe Info</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px"}}>
+                    <div className="form-group" style={{margin:0}}>
+                      <label>Prep Time</label>
+                      <input value={recipe.prepTime} onChange={e=>setRecipe({...recipe,prepTime:e.target.value})} placeholder="e.g. 5 min" />
+                    </div>
+                    <div className="form-group" style={{margin:0}}>
+                      <label>Cook Time</label>
+                      <input value={recipe.cookTime} onChange={e=>setRecipe({...recipe,cookTime:e.target.value})} placeholder="e.g. 15 min" />
+                    </div>
+                    <div className="form-group" style={{margin:0}}>
+                      <label>Difficulty</label>
+                      <select className="difficulty-select" style={{width:"100%"}} value={recipe.difficulty} onChange={e=>setRecipe({...recipe,difficulty:e.target.value})}>
+                        <option>Easy</option><option>Medium</option><option>Hard</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ingredients */}
+                <div className="recipe-section">
+                  <div className="recipe-section-title">Ingredients</div>
+                  {recipe.ingredients.map((ing,i)=>(
+                    <div key={i} className="ingredient-row-edit">
+                      <input style={{padding:"8px 10px",border:"2px solid #e8e8e8",borderRadius:"8px",fontSize:"13px"}}
+                             value={ing.name} placeholder="e.g. Beef patty (180g)"
+                             onChange={e=>updateIngredient(i,"name",e.target.value)} />
+                      <input style={{padding:"8px 10px",border:"2px solid #e8e8e8",borderRadius:"8px",fontSize:"13px",width:"90px"}}
+                             value={ing.amount} placeholder="e.g. 1 pc"
+                             onChange={e=>updateIngredient(i,"amount",e.target.value)} />
+                      <button className="remove-btn" onClick={()=>removeIngredient(i)}>✕</button>
+                    </div>
+                  ))}
+                  <button className="recipe-btn" onClick={addIngredient} style={{marginTop:"4px"}}>+ Add Ingredient</button>
+                </div>
+
+                {/* Steps */}
+                <div className="recipe-section">
+                  <div className="recipe-section-title">Preparation Steps (shown in Kitchen Prep Display)</div>
+                  {recipe.steps.map((step,i)=>(
+                    <div key={i} className="step-card-edit">
+                      <div className="step-header-row">
+                        <span className="step-num-badge">{i+1}</span>
+                        <input className="step-title-input"
+                               style={{flex:1,padding:"8px 10px",border:"2px solid #e8e8e8",borderRadius:"8px",fontSize:"14px",fontWeight:600}}
+                               value={step.title} placeholder="Step title e.g. Grill the Patty"
+                               onChange={e=>updateStep(i,"title",e.target.value)} />
+                        <button className="remove-btn" style={{marginLeft:"8px"}} onClick={()=>removeStep(i)}>✕ Remove</button>
+                      </div>
+                      <div className="form-group" style={{marginBottom:"8px"}}>
+                        <label style={{fontSize:"11px",color:"#888",marginBottom:"4px",display:"block"}}>Instructions</label>
+                        <textarea
+                          style={{width:"100%",padding:"8px 10px",border:"2px solid #e8e8e8",borderRadius:"8px",fontSize:"13px",
+                                  resize:"vertical",minHeight:"60px",fontFamily:"inherit"}}
+                          value={step.description} placeholder="Describe exactly what to do in this step…"
+                          onChange={e=>updateStep(i,"description",e.target.value)} />
+                      </div>
+                      <div className="timer-row">
+                        <div className="form-group" style={{margin:0}}>
+                          <label style={{fontSize:"11px",color:"#888",marginBottom:"4px",display:"block"}}>⏱ Timer (seconds, 0 = no timer)</label>
+                          <input type="number" min="0"
+                                 style={{width:"100%",padding:"8px 10px",border:"2px solid #e8e8e8",borderRadius:"8px",fontSize:"13px"}}
+                                 value={step.timerSec} placeholder="e.g. 240 for 4 minutes"
+                                 onChange={e=>updateStep(i,"timerSec",parseInt(e.target.value)||0)} />
+                        </div>
+                        <div style={{fontSize:"12px",color:"#667eea",padding:"8px 0",alignSelf:"flex-end",fontWeight:600}}>
+                          {step.timerSec > 0 ? "⏱ " + Math.floor(step.timerSec/60) + "m " + (step.timerSec%60 ? (step.timerSec%60)+"s" : "") : "No timer"}
+                        </div>
+                      </div>
+                      <div className="form-group" style={{margin:0}}>
+                        <label style={{fontSize:"11px",color:"#888",marginBottom:"4px",display:"block"}}>💡 Chef Tip (optional)</label>
+                        <input
+                          style={{width:"100%",padding:"8px 10px",border:"2px solid #e8e8e8",borderRadius:"8px",fontSize:"13px"}}
+                          value={step.tip} placeholder="e.g. Don't press the patty — keeps juices in"
+                          onChange={e=>updateStep(i,"tip",e.target.value)} />
+                      </div>
+                    </div>
+                  ))}
+                  <button className="add-step-btn" onClick={addStep}>+ Add Step</button>
+                </div>
+
+                <div className="modal-actions" style={{borderTop:"2px solid #eee",paddingTop:"16px"}}>
+                  <div style={{fontSize:"12px",color:"#888",flex:1}}>
+                    💡 Steps will appear live in Kitchen Prep Display
+                  </div>
+                  <button className="btn btn-ghost" onClick={()=>setShowRecipe(false)}>Cancel</button>
+                  <button className="btn btn-success" onClick={saveRecipe}>✅ Save Recipe</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      );
+    }
+
+    
+
+    function Inventory() {
+        const [inv, setInv] = useState(INVENTORY);
+        const criticalItems = inv.filter(i => i.status === 'critical' || i.status === 'low');
+
+        return (
+            <>
+                {criticalItems.length > 0 && (
+                    <div className="inventory-alert">
+                        ⚠️ <strong>{criticalItems.length} items</strong> need restocking: {criticalItems.map(i => i.item).join(', ')}
+                    </div>
+                )}
+                <div className="table-card">
+                    <div className="table-card-header">
+                        <div className="table-card-title">Stock Levels</div>
+                        <button className="btn btn-success">+ Add Stock</button>
+                    </div>
+                    <table className="data-table">
+                        <thead><tr><th>Item</th><th>In Stock</th><th>Unit</th><th>Reorder At</th><th>Status</th><th>Action</th></tr></thead>
+                        <tbody>
+                            {inv.map((item, i) => (
+                                <tr key={i}>
+                                    <td><strong>{item.item}</strong></td>
+                                    <td style={{ fontWeight: 700, color: item.status === 'critical' ? '#e74c3c' : item.status === 'low' ? '#f39c12' : '#27ae60' }}>{item.qty}</td>
+                                    <td>{item.unit}</td>
+                                    <td>{item.reorder} {item.unit}</td>
+                                    <td><span className={`badge ${item.status === 'critical' ? 'badge-red' : item.status === 'low' ? 'badge-yellow' : 'badge-green'}`}>{item.status}</span></td>
+                                    <td>
+                                        <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: '12px' }}
+                                            onClick={() => setInv(inv.map((it, j) => j === i ? { ...it, qty: it.qty + 5, status: 'ok' } : it))}>
+                                            + Restock
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </>
+        );
+    }
+
+    function StaffManagement() {
+        return (
+            <>
+                <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'flex-end' }}>
+                    <button className="btn btn-primary">+ Add Staff</button>
+                </div>
+                <div className="staff-grid">
+                    {STAFF.map((s, i) => (
+                        <div key={i} className="staff-card">
+                            <div className="staff-avatar">{s.name.charAt(0)}</div>
+                            <div className="staff-name">{s.name}</div>
+                            <div className="staff-role">{s.role}</div>
+                            <span className={`badge ${s.status === 'active' ? 'badge-green' : 'badge-yellow'}`}>{s.status}</span>
+                            <div className="staff-stats" style={{ marginTop: '12px' }}>
+                                {s.role === 'Waiter' && <>
+                                    <span>📋 {s.orders} orders</span>
+                                    <span>💷 {s.tips} tips</span>
+                                </>}
+                                {s.role === 'Chef' && <span>👨‍🍳 On kitchen</span>}
+                                {s.role === 'Manager' && <span>🏠 In charge</span>}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </>
+        );
+    }
+
+
+    // ── SAMPLE DATA for Rota/Clockings ──
+    const ROTA_STAFF = ["John Doe","Sarah Lee","Mike Chen","Emma Brown","Tom Wilson"];
+    const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+
+
+    function StaffWithDrivers() {
+      const [subTab, setSubTab] = React.useState("staff");
+      const [drivers, setDrivers] = React.useState([
+        { name:"Alex Driver", email:"alex@gmail.com", phone:"+44 7700 900001", vehicle:"Honda CB125", plate:"DL19 XYZ", status:"active", rating:4.9, approved:true },
+        { name:"Maria Lopez",  email:"maria@gmail.com", phone:"+44 7700 900002", vehicle:"Toyota Prius", plate:"EK21 ABC", status:"active", rating:4.8, approved:true },
+      ]);
+      const [showAdd, setShowAdd] = React.useState(false);
+      const [form, setForm]       = React.useState({ name:"", email:"", phone:"", vehicle:"", plate:"" });
+
+      function addDriver() {
+        setDrivers([...drivers, { ...form, status:"active", rating:5.0, approved:true }]);
+        setForm({ name:"", email:"", phone:"", vehicle:"", plate:"" });
+        setShowAdd(false);
+      }
+
+      return (
+        <>
+          <div style={{ display:"flex", gap:"8px", marginBottom:"16px" }}>
+            {["staff","drivers"].map(t=>(
+              <button key={t} className={`btn ${subTab===t?"btn-primary":"btn-ghost"}`}
+                      onClick={()=>setSubTab(t)} style={{textTransform:"capitalize"}}>
+                {t==="staff"?"👤 Staff":"🚗 Drivers"}
+              </button>
+            ))}
+          </div>
+
+          {subTab==="staff" && (
+            <>
+              <div style={{ marginBottom:"16px", display:"flex", justifyContent:"flex-end" }}>
+                <button className="btn btn-primary">+ Add Staff Member</button>
+              </div>
+              <div className="staff-grid">
+                {STAFF.map((s,i)=>(
+                  <div key={i} className="staff-card">
+                    <div className="staff-avatar">{s.name.charAt(0)}</div>
+                    <div className="staff-name">{s.name}</div>
+                    <div className="staff-role">{s.role}</div>
+                    <span className={`badge ${s.status==="active"?"badge-green":"badge-yellow"}`}>{s.status}</span>
+                    <div className="staff-stats" style={{ marginTop:"12px" }}>
+                      {s.role==="Waiter"&&<><span>📋 {s.orders} orders</span><span>💷 {s.tips}</span></>}
+                      {s.role==="Chef"&&<span>👨‍🍳 On kitchen</span>}
+                      {s.role==="Manager"&&<span>🏠 In charge</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {subTab==="drivers" && (
+            <>
+              <div style={{ marginBottom:"16px", display:"flex", justifyContent:"flex-end" }}>
+                <button className="btn btn-primary" onClick={()=>setShowAdd(true)}>+ Approve Driver Gmail</button>
+              </div>
+              <div className="table-card">
+                <table className="data-table">
+                  <thead>
+                    <tr><th>Name</th><th>Gmail</th><th>Vehicle</th><th>Rating</th><th>Status</th><th>Action</th></tr>
+                  </thead>
+                  <tbody>
+                    {drivers.map((d,i)=>(
+                      <tr key={i}>
+                        <td><strong>{d.name}</strong></td>
+                        <td style={{fontSize:"13px",color:"#888"}}>{d.email}</td>
+                        <td>{d.vehicle} · {d.plate}</td>
+                        <td>⭐ {d.rating}</td>
+                        <td><span className={`badge ${d.approved?"badge-green":"badge-red"}`}>
+                          {d.approved?"✓ Approved":"Revoked"}
+                        </span></td>
+                        <td>
+                          <button className="btn btn-ghost" style={{padding:"4px 12px",fontSize:"12px"}}
+                            onClick={()=>setDrivers(drivers.map((dr,j)=>j===i?{...dr,approved:!dr.approved}:dr))}>
+                            {d.approved?"Revoke":"Re-approve"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {showAdd && (
+                <div className="modal-overlay">
+                  <div className="modal">
+                    <h3>Approve Driver Google Account</h3>
+                    <div className="form-group">
+                      <label>Full Name</label>
+                      <input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Jane Smith"/>
+                    </div>
+                    <div className="form-group">
+                      <label>Gmail Address ← must match exactly</label>
+                      <input value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="janesmith@gmail.com"/>
+                    </div>
+                    <div className="form-grid">
+                      <div className="form-group">
+                        <label>Phone</label>
+                        <input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})}/>
+                      </div>
+                      <div className="form-group">
+                        <label>Vehicle</label>
+                        <input value={form.vehicle} onChange={e=>setForm({...form,vehicle:e.target.value})}/>
+                      </div>
+                    </div>
+                    <div className="modal-actions">
+                      <button className="btn btn-ghost" onClick={()=>setShowAdd(false)}>Cancel</button>
+                      <button className="btn btn-success" onClick={addDriver}>✓ Approve Driver</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </>
+      );
+    }
+
+    function RotaManager() {
+      const today  = new Date();
+      const monday = new Date(today);
+      monday.setDate(today.getDate() - ((today.getDay()+6)%7));
+
+      const [weekOffset, setWeekOffset] = React.useState(0);
+      const [rota, setRota]             = React.useState({});
+      const [showModal, setShowModal]   = React.useState(false);
+      const [editCell, setEditCell]     = React.useState(null);
+      const [form, setForm]             = React.useState({ start:"09:00", end:"17:00", role:"Waiter", notes:"" });
+
+      function getWeekDates() {
+        return DAYS.map((_,i) => {
+          const d = new Date(monday);
+          d.setDate(monday.getDate() + weekOffset*7 + i);
+          return d;
+        });
+      }
+
+      const weekDates = getWeekDates();
+      const weekLabel = `${weekDates[0].toLocaleDateString("en-GB",{day:"numeric",month:"short"})} – ${weekDates[6].toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}`;
+
+      function cellKey(staff, date) {
+        return staff + "|" + date.toISOString().split("T")[0];
+      }
+
+      function openCell(staff, date) {
+        const key      = cellKey(staff, date);
+        const existing = rota[key];
+        setEditCell({ staff, date, key });
+        setForm(existing || { start:"09:00", end:"17:00", role:"Waiter", notes:"" });
+        setShowModal(true);
+      }
+
+      function saveShift() {
+        if (!editCell) return;
+        setRota({ ...rota, [editCell.key]: form });
+        setShowModal(false);
+      }
+
+      function clearShift() {
+        if (!editCell) return;
+        const { [editCell.key]: _, ...rest } = rota;
+        setRota(rest);
+        setShowModal(false);
+      }
+
+      function calcH(start, end) {
+        const [sh,sm] = start.split(":").map(Number);
+        const [eh,em] = end.split(":").map(Number);
+        return +((eh*60+em-sh*60-sm)/60).toFixed(1);
+      }
+
+      const todayStr = new Date().toISOString().split("T")[0];
+
+      return (
+        <>
+          {/* Week navigator */}
+          <div className="table-card" style={{ marginBottom:"16px" }}>
+            <div className="table-card-header">
+              <div style={{ display:"flex", alignItems:"center", gap:"12px" }}>
+                <button className="btn btn-ghost" style={{padding:"6px 14px"}} onClick={()=>setWeekOffset(w=>w-1)}>‹ Prev</button>
+                <div className="table-card-title">📅 {weekLabel}</div>
+                <button className="btn btn-ghost" style={{padding:"6px 14px"}} onClick={()=>setWeekOffset(w=>w+1)}>Next ›</button>
+              </div>
+              <div style={{ display:"flex", gap:"8px" }}>
+                <button className="btn btn-ghost" onClick={()=>setWeekOffset(0)}>This Week</button>
+                <button className="btn btn-primary">Publish Rota</button>
+              </div>
+            </div>
+            {/* Rota grid */}
+            <div style={{ overflowX:"auto" }}>
+              <table className="data-table" style={{ minWidth:"700px" }}>
+                <thead>
+                  <tr>
+                    <th style={{width:"120px"}}>Staff</th>
+                    {weekDates.map((d,i) => {
+                      const str = d.toISOString().split("T")[0];
+                      const isToday = str === todayStr;
+                      return (
+                        <th key={i} style={{ textAlign:"center", background: isToday?"#f0f0ff":"", minWidth:"90px" }}>
+                          <div>{DAYS[i]}</div>
+                          <div style={{ fontWeight:400, color:"#aaa", fontSize:"11px" }}>
+                            {d.toLocaleDateString("en-GB",{day:"numeric",month:"short"})}
+                          </div>
+                        </th>
+                      );
+                    })}
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ROTA_STAFF.map(staff => {
+                    let totalHrs = 0;
+                    return (
+                      <tr key={staff}>
+                        <td><strong style={{fontSize:"13px"}}>{staff}</strong></td>
+                        {weekDates.map((date,i) => {
+                          const key   = cellKey(staff,date);
+                          const shift = rota[key];
+                          if (shift) totalHrs += calcH(shift.start, shift.end);
+                          return (
+                            <td key={i} style={{ textAlign:"center", padding:"6px", cursor:"pointer" }}
+                                onClick={()=>openCell(staff,date)}>
+                              {shift
+                                ? <div style={{ background:"#eef0ff", borderRadius:"8px", padding:"6px 4px",
+                                                borderLeft:"3px solid #667eea", fontSize:"11px" }}>
+                                    <div style={{ fontWeight:700, color:"#1a1a2e" }}>
+                                      {shift.start}–{shift.end}
+                                    </div>
+                                    <div style={{ color:"#667eea" }}>{calcH(shift.start,shift.end)}h</div>
+                                  </div>
+                                : <div style={{ background:"#f9f9f9", borderRadius:"8px", padding:"6px",
+                                                color:"#ddd", fontSize:"11px" }}>+ Add</div>
+                              }
+                            </td>
+                          );
+                        })}
+                        <td style={{ fontWeight:700, color:"#667eea", textAlign:"center" }}>
+                          {totalHrs > 0 ? totalHrs.toFixed(1)+"h" : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Shift modal */}
+          {showModal && editCell && (
+            <div className="modal-overlay">
+              <div className="modal">
+                <h3>
+                  {editCell.staff} — {editCell.date.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"})}
+                </h3>
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>Shift Start</label>
+                    <input type="time" value={form.start} onChange={e=>setForm({...form,start:e.target.value})}/>
+                  </div>
+                  <div className="form-group">
+                    <label>Shift End</label>
+                    <input type="time" value={form.end} onChange={e=>setForm({...form,end:e.target.value})}/>
+                  </div>
+                  <div className="form-group" style={{gridColumn:"1/-1"}}>
+                    <label>Role / Station</label>
+                    <select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}>
+                      <option>Waiter</option><option>Chef</option><option>Bar</option>
+                      <option>Host</option><option>Manager</option><option>Kitchen</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{gridColumn:"1/-1"}}>
+                    <label>Notes (optional)</label>
+                    <input value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})}
+                           placeholder="e.g. Cover for Sarah, training shift"/>
+                  </div>
+                </div>
+                <div style={{ background:"#f0f0ff", borderRadius:"8px", padding:"10px 14px",
+                              fontSize:"13px", color:"#667eea", marginBottom:"16px" }}>
+                  ⏱ Duration: <strong>{calcH(form.start,form.end)} hours</strong>
+                </div>
+                <div className="modal-actions">
+                  {rota[editCell.key] &&
+                    <button className="btn btn-danger" onClick={clearShift}>Remove Shift</button>}
+                  <button className="btn btn-ghost" onClick={()=>setShowModal(false)}>Cancel</button>
+                  <button className="btn btn-primary" onClick={saveShift}>Save Shift</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      );
+    }
+
+    function TeamClockings() {
+      const DEMO = [
+        { name:"John Doe",   date:"2026-05-21", clockIn:"09:03", clockOut:"17:05", hours:8.0,  status:"complete" },
+        { name:"Sarah Lee",  date:"2026-05-21", clockIn:"11:58", clockOut:"",      hours:null, status:"active"   },
+        { name:"Emma Brown", date:"2026-05-21", clockIn:"08:55", clockOut:"17:00", hours:8.1,  status:"complete" },
+        { name:"John Doe",   date:"2026-05-20", clockIn:"09:00", clockOut:"17:02", hours:8.0,  status:"complete" },
+        { name:"Sarah Lee",  date:"2026-05-20", clockIn:"12:03", clockOut:"20:07", hours:8.1,  status:"complete" },
+        { name:"Mike Chen",  date:"2026-05-20", clockIn:"14:00", clockOut:"22:05", hours:8.1,  status:"complete" },
+      ];
+      const [search, setSearch] = React.useState("");
+      const filtered = DEMO.filter(c =>
+        c.name.toLowerCase().includes(search.toLowerCase())
+      );
+      return (
+        <div className="table-card">
+          <div className="table-card-header">
+            <div className="table-card-title">🕐 All Staff Clockings</div>
+            <input className="search-input" placeholder="🔍 Search staff..."
+                   value={search} onChange={e=>setSearch(e.target.value)}/>
+          </div>
+          <table className="data-table">
+            <thead>
+              <tr><th>Staff</th><th>Date</th><th>Clock In</th><th>Clock Out</th><th>Hours</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {filtered.map((c,i)=>(
+                <tr key={i}>
+                  <td><strong>{c.name}</strong></td>
+                  <td>{new Date(c.date).toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</td>
+                  <td style={{color:"#27ae60",fontWeight:700}}>{c.clockIn}</td>
+                  <td style={{color:"#e74c3c",fontWeight:700}}>{c.clockOut||"—"}</td>
+                  <td style={{fontWeight:700}}>{c.hours!=null?c.hours.toFixed(2)+" hrs":"Working…"}</td>
+                  <td>
+                    <span className={`badge ${c.status==="complete"?"badge-green":"badge-yellow"}`}>
+                      {c.status==="complete"?"✅ Complete":"🟡 Active"}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    
+    // ── RECIPE DATA STORE (in-memory, synced to Sheets) ──────
+    const RECIPE_DATA = {
+      "Burger Deluxe": {
+        prepTime:"5 min", cookTime:"12 min", difficulty:"Easy",
+        ingredients:[
+          {name:"Beef patty (180g)",amount:"1 pc"},{name:"Brioche bun",amount:"1 pc"},
+          {name:"Cheddar cheese",amount:"2 slices"},{name:"Lettuce",amount:"2 leaves"},
+          {name:"Tomato",amount:"2 slices"},{name:"Special sauce",amount:"1 tbsp"},
+          {name:"Fries",amount:"150g"}
+        ],
+        steps:[
+          {title:"Prep Ingredients",description:"Slice tomatoes and lettuce. Pat patty dry. Season both sides with salt and pepper.",timerSec:0,tip:"Patty at room temp for even cooking."},
+          {title:"Cook Fries",description:"Place fries in fryer at 180°C. Shake halfway through.",timerSec:600,tip:"Don't overcrowd the basket!"},
+          {title:"Grill Patty",description:"Place patty on hot grill. DO NOT move. Cook 4 min first side.",timerSec:240,tip:"Resist pressing — keeps juices in."},
+          {title:"Add Cheese & Toast Bun",description:"Add cheese on patty. Place bun face-down on grill.",timerSec:60,tip:null},
+          {title:"Assemble & Serve",description:"Bottom bun → sauce → lettuce → tomato → patty → top bun. Serve immediately.",timerSec:0,tip:"Add sauce to top bun too."},
+        ]
+      },
+      "Steak": {
+        prepTime:"5 min", cookTime:"15 min", difficulty:"Medium",
+        ingredients:[
+          {name:"Ribeye steak (250g)",amount:"1 pc"},{name:"Butter",amount:"30g"},
+          {name:"Garlic cloves",amount:"3 pcs"},{name:"Rosemary",amount:"2 sprigs"},
+          {name:"Sea salt & pepper",amount:"To taste"},{name:"Olive oil",amount:"1 tbsp"}
+        ],
+        steps:[
+          {title:"Bring to Room Temp",description:"Remove steak from fridge 15 minutes before. Pat completely dry with paper towel.",timerSec:900,tip:"Dry surface = better sear."},
+          {title:"Season Generously",description:"Season all sides with sea salt and black pepper. Press seasoning firmly.",timerSec:0,tip:null},
+          {title:"Heat Pan",description:"Cast iron on highest heat 3 minutes until smoking. Add olive oil just before steak.",timerSec:180,tip:"Pan must be screaming hot."},
+          {title:"Sear First Side",description:"Place steak away from you. DO NOT MOVE. Sear 2.5 min.",timerSec:150,tip:"Peek for deep brown crust."},
+          {title:"Flip & Baste",description:"Flip steak. Add butter, garlic, rosemary. Tilt pan and baste continuously.",timerSec:120,tip:"Basting constantly adds flavour."},
+          {title:"Rest the Steak",description:"Remove from heat. Tent loosely with foil. Rest 5 minutes — mandatory.",timerSec:300,tip:"Never skip resting — juices redistribute."},
+          {title:"Slice & Plate",description:"Slice against the grain. Pour resting juices over. Serve with sides.",timerSec:0,tip:null},
+        ]
+      },
+    };
+
+
+    // ── Live data loader ─────────────────────────────────────
+    const { useState: _us, useEffect: _ue } = React;
+
+    function useLiveData(fetchFn, deps=[]) {
+        const [data, setData]       = _us(null);
+        const [loading, setLoading] = _us(true);
+        _ue(() => {
+            async function load() {
+                if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) { setLoading(false); return; }
+                try {
+                    const res = await fetchFn();
+                    if (res && res.data) setData(res.data);
+                } catch(e) { console.error("Load error:", e); }
+                setLoading(false);
+            }
+            load();
+            const iv = setInterval(load, POS_CONFIG.POLL_MS);
+            return () => clearInterval(iv);
+        }, deps);
+        return { data, loading };
+    }
+
+    async function saveMenuItem(item) {
+        if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
+        if (item.id && String(item.id).startsWith("MENU")) {
+            await window.POS_GAPI.Menu.update({ itemId: item.id, ...item });
+        } else {
+            await window.POS_GAPI.Menu.add(item);
+        }
+    }
+
+    const NAV = [
+        { icon: "📊", label: "Dashboard", section: "overview" },
+        { icon: "📋", label: "Menu Management", section: "menu" },
+        { icon: "📦", label: "Inventory", section: "inventory" },
+        { icon: "👥", label: "Staff", section: "staff" },
+    ];
+
+    function ManagerPortal() {
+        const [active, setActive] = useState("overview");
+
+        const titles = { overview: { title: "Dashboard", sub: "Today's overview and analytics" }, menu: { title: "Menu Management", sub: "Add, edit and manage menu items" }, inventory: { title: "Inventory", sub: "Track and manage stock levels" }, staff: { title: "Staff Management", sub: "View and manage your team" }, rota: { title: "Rota Manager", sub: "Build and publish staff schedules" }, clockings: { title: "Team Clockings", sub: "View all staff clock in/out records" } };
+
+        return (
+            <div className="layout">
+                <div className="sidebar">
+                    <div className="sidebar-logo">🍽️ The Grand Table <span>Manager Portal</span></div>
+                    <div className="nav-section">Main</div>
+                    {NAV.map(n => (
+                        <div key={n.section} className={`nav-item ${active === n.section ? 'active' : ''}`} onClick={() => setActive(n.section)}>
+                            <span className="icon">{n.icon}</span>{n.label}
+                        </div>
+                    ))}
+                    <div className="sidebar-bottom">👤 Lisa Park &nbsp;·&nbsp; Manager</div>
+                </div>
+                <div className="main">
+                    <div className="page-header">
+                        <div>
+                            <div className="page-title">{titles[active].title}</div>
+                            <div className="page-subtitle">{titles[active].sub}</div>
+                        </div>
+                    </div>
+                    <div className="page-content">
+                        {active === "overview" && <Dashboard />}
+                        {active === "menu" && <MenuManagement />}
+                        {active === "inventory" && <Inventory />}
+                        {active === "staff" && <StaffWithDrivers />}
+                        {active === "rota" && <RotaManager />}
+                        {active === "clockings" && <TeamClockings />}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    ReactDOM.render(<ManagerPortal />, document.getElementById('root'));
+</script>
+
+<script>
+// ── Grand Table POS Auth init ─────────────────────────
+POS_AUTH.init("manager-portal", {
+  onReady: function(session) {
+    var root = document.getElementById("app-root");
+    if (root) root.style.display = "block";
+    POS_AUTH.renderBadge("user-badge", "manager-portal");
+  },
+  onError: function(msg) { console.error("Auth error:", msg); }
+});
+</script>
+</body>
+</html>
