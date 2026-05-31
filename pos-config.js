@@ -677,7 +677,7 @@ window.POS_AUTH = (() => {
 
   let _pinVerified = false;
 
-  async function init(appId, { onReady, onError } = {}) {
+  async function init(appId, { onReady, onError } = {}) { // Always async now
     const mode = POS_CONFIG.ACCESS[appId] || "session";
 
     if (mode === "public") { onReady && onReady(null); return; }
@@ -692,7 +692,7 @@ window.POS_AUTH = (() => {
     const session = POS_GAPI.getSession();
 
     if (mode === "hub") {
-      // Hub: full sign-in with Drive+Sheets scope
+      await POS_GAPI.loadLibraries();
       const saved = _savedSession();
       if (saved) {
         POS_GAPI.silentSignIn(async (s) => {
@@ -708,9 +708,14 @@ window.POS_AUTH = (() => {
     if (mode === "session") {
       const saved = _savedSession();
       if (saved) {
+        await POS_GAPI.loadLibraries();
         POS_GAPI.silentSignIn(async (s) => {
-          if (s) { onReady && onReady(POS_GAPI.getSession()); }
-          else   { window.location.href = "index.html?redirect=" + encodeURIComponent(location.href); }
+          if (s) {
+            await POS_GAPI.initUserSheet(); // load sheet ID from localStorage
+            onReady && onReady(POS_GAPI.getSession());
+          } else {
+            window.location.href = "index.html?redirect=" + encodeURIComponent(location.href);
+          }
         });
       } else {
         window.location.href = "index.html?redirect=" + encodeURIComponent(location.href);
@@ -721,19 +726,26 @@ window.POS_AUTH = (() => {
     if (mode === "pin") {
       const saved = _savedSession();
       if (!saved) { window.location.href = "index.html?redirect=" + encodeURIComponent(location.href); return; }
+      await POS_GAPI.loadLibraries();
       POS_GAPI.silentSignIn(async (s) => {
         if (!s) { window.location.href = "index.html"; return; }
+        await POS_GAPI.initUserSheet(); // load sheet ID
         _showPinModal(POS_GAPI.getSession(), onReady, onError);
       });
       return;
     }
 
     if (mode === "driver" || mode === "team") {
+      await POS_GAPI.loadLibraries();
       const saved = _savedSession();
       if (saved) {
         POS_GAPI.silentSignIn(async (s) => {
-          if (s) { onReady && onReady(POS_GAPI.getSession()); }
-          else   { _showSignIn(appId, onReady, onError); }
+          if (s) {
+            await POS_GAPI.initUserSheet();
+            onReady && onReady(POS_GAPI.getSession());
+          } else {
+            _showSignIn(appId, onReady, onError);
+          }
         });
       } else {
         _showSignIn(appId, onReady, onError);
@@ -883,5 +895,36 @@ window.POS_AUTH = (() => {
       </div>`;
   }
 
-  return { init, signOut, renderBadge };
+  function openSheet() {
+    const id = POS_GAPI.getSheetId();
+    if (id) {
+      window.open("https://docs.google.com/spreadsheets/d/" + id + "/edit", "_blank");
+    } else {
+      alert("Sheet not connected yet. Please sign in via the Hub first.");
+    }
+  }
+
+  function refreshApp() {
+    window.location.reload();
+  }
+
+  // Inject a small top utility bar into any app
+  function renderUtilBar(containerId, appName) {
+    var s = POS_GAPI.getSession();
+    var el = document.getElementById(containerId);
+    if (!el) return;
+    var sheetId = POS_GAPI.getSheetId();
+    var sheetBtn = sheetId
+      ? '<button onclick="POS_AUTH.openSheet()" style="background:rgba(39,174,96,.15);border:1px solid rgba(39,174,96,.3);color:#27ae60;padding:4px 12px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;">📊 Open Sheet</button>'
+      : '';
+    el.innerHTML =
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+        '<span style="font-size:12px;opacity:.6;">' + (s ? s.name : "") + '</span>' +
+        sheetBtn +
+        '<button onclick="POS_AUTH.refreshApp()" style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.7);padding:4px 12px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;">🔄 Refresh</button>' +
+        '<button onclick="POS_AUTH.signOut()" style="background:rgba(255,255,255,.08);border:none;color:rgba(255,255,255,.4);padding:4px 12px;border-radius:8px;font-size:11px;cursor:pointer;">Sign out</button>' +
+      '</div>';
+  }
+
+  return { init, signOut, renderBadge, renderUtilBar, openSheet, refreshApp };
 })();
