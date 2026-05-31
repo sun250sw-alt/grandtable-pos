@@ -205,7 +205,17 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <div class="logo">🍽️ The <span>Grand</span> Table</div>
     <div class="user-badge">
       <div id="user-badge-name"></div>
+      <div style="display:flex;align-items:center;gap:8px;">
+      <button onclick="if(window.POS_GAPI&&POS_GAPI.getSheetId()){window.open('https://docs.google.com/spreadsheets/d/'+POS_GAPI.getSheetId()+'/edit','_blank')}"
+        style="background:rgba(39,174,96,.15);border:1px solid rgba(39,174,96,.3);color:#27ae60;padding:5px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+        📊 Open Sheet
+      </button>
+      <button onclick="location.reload()"
+        style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.7);padding:5px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+        🔄 Refresh
+      </button>
       <button class="signout-btn" onclick="POS_AUTH.signOut()">Sign out</button>
+    </div>
     </div>
   </div>
 
