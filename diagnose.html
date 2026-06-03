@@ -1,1 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>POS Diagnostics — The Grand Table</title>
+<script src="pos-config.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',monospace;
+  background:#0d1117;color:#e6edf3;min-height:100vh;padding:24px;}
+h1{font-size:20px;font-weight:700;color:#f39c12;margin-bottom:6px;}
+.sub{font-size:13px;color:#8b949e;margin-bottom:24px;}
+.card{background:#161b22;border:1px solid #30363d;border-radius:12px;
+  padding:20px;margin-bottom:16px;}
+.card-title{font-size:13px;font-weight:700;text-transform:uppercase;
+  letter-spacing:1px;color:#8b949e;margin-bottom:14px;}
+.check-row{display:flex;align-items:center;gap:12px;padding:8px 0;
+  border-bottom:1px solid #21262d;font-size:14px;}
+.check-row:last-child{border-bottom:none;}
+.icon{font-size:18px;width:24px;text-align:center;flex-shrink:0;}
+.label{flex:1;}
+.value{font-size:12px;color:#8b949e;max-width:300px;text-align:right;
+  word-break:break-all;}
+.value.ok{color:#27ae60;}
+.value.warn{color:#f39c12;}
+.value.err{color:#e74c3c;}
+.btn{padding:10px 20px;border:none;border-radius:8px;cursor:pointer;
+  font-size:14px;font-weight:700;transition:all .2s;margin-right:8px;margin-bottom:8px;}
+.btn-primary{background:#f39c12;color:#000;}
+.btn-secondary{background:#21262d;color:#e6edf3;border:1px solid #30363d;}
+.btn:hover{opacity:.85;}
+.btn:disabled{opacity:.4;cursor:default;}
+.log-box{background:#0d1117;border:1px solid #21262d;border-radius:8px;
+  padding:14px;font-size:12px;line-height:1.8;max-height:300px;overflow-y:auto;
+  font-family:'Courier New',monospace;}
+.log-ok{color:#27ae60;}
+.log-warn{color:#f39c12;}
+.log-err{color:#e74c3c;}
+.log-info{color:#8b949e;}
+.pin-test-row{display:flex;gap:8px;align-items:center;margin-top:12px;}
+.pin-input{background:#0d1117;border:2px solid #30363d;color:#e6edf3;
+  padding:8px 14px;border-radius:8px;font-size:16px;font-family:'Courier New',monospace;
+  width:120px;letter-spacing:4px;text-align:center;}
+.pin-input:focus{outline:none;border-color:#f39c12;}
+.status-banner{border-radius:10px;padding:14px 18px;margin-bottom:16px;font-size:14px;font-weight:600;}
+.banner-ok{background:rgba(39,174,96,.15);border:1px solid rgba(39,174,96,.3);color:#27ae60;}
+.banner-err{background:rgba(231,76,60,.15);border:1px solid rgba(231,76,60,.3);color:#e74c3c;}
+.banner-warn{background:rgba(243,156,18,.15);border:1px solid rgba(243,156,18,.3);color:#f39c12;}
+</style>
+</head>
+<body>
+<h1>POS System Diagnostics</h1>
+<p class="sub">Use this page to verify your Google Apps Script connection and PIN before going live</p>
 
+<div id="banner" class="status-banner banner-warn">Running checks…</div>
+
+<!-- Config Check -->
+<div class="card">
+  <div class="card-title">1. Configuration (pos-config.js)</div>
+  <div class="check-row">
+    <div class="icon" id="cfg-client-icon">⏳</div>
+    <div class="label">Google Client ID</div>
+    <div class="value" id="cfg-client">checking…</div>
+  </div>
+  <div class="check-row">
+    <div class="icon" id="cfg-url-icon">⏳</div>
+    <div class="label">Apps Script URL</div>
+    <div class="value" id="cfg-url">checking…</div>
+  </div>
+  <div class="check-row">
+    <div class="icon" id="cfg-email-icon">⏳</div>
+    <div class="label">Admin Email</div>
+    <div class="value" id="cfg-email">checking…</div>
+  </div>
+  <div class="check-row">
+    <div class="icon" id="cfg-maps-icon">⏳</div>
+    <div class="label">Maps API Key</div>
+    <div class="value" id="cfg-maps">checking…</div>
+  </div>
+</div>
+
+<!-- API Connection -->
+<div class="card">
+  <div class="card-title">2. Apps Script API Connection</div>
+  <div class="check-row">
+    <div class="icon" id="api-reach-icon">⏳</div>
+    <div class="label">API reachable</div>
+    <div class="value" id="api-reach">testing…</div>
+  </div>
+  <div class="check-row">
+    <div class="icon" id="api-setup-icon">⏳</div>
+    <div class="label">setupSystem() was run</div>
+    <div class="value" id="api-setup">waiting…</div>
+  </div>
+  <div class="check-row">
+    <div class="icon" id="api-sheet-icon">⏳</div>
+    <div class="label">Google Sheet accessible</div>
+    <div class="value" id="api-sheet">waiting…</div>
+  </div>
+  <div class="check-row">
+    <div class="icon" id="api-pin-icon">⏳</div>
+    <div class="label">Admin PIN saved in script</div>
+    <div class="value" id="api-pin">waiting…</div>
+  </div>
+  <div style="margin-top:12px">
+    <button class="btn btn-primary" id="retest-btn" onclick="runAPITest()">Retest Connection</button>
+  </div>
+</div>
+
+<!-- PIN Test -->
+<div class="card">
+  <div class="card-title">3. Test Admin PIN</div>
+  <p style="font-size:13px;color:#8b949e;margin-bottom:12px">
+    Enter any PIN to test the full auth flow. Default is <strong style="color:#f39c12">1234</strong>
+  </p>
+  <div class="pin-test-row">
+    <input class="pin-input" id="pin-input" type="password" maxlength="4" placeholder="1234">
+    <button class="btn btn-primary" onclick="testPIN()">Test PIN</button>
+    <div id="pin-result" style="font-size:14px;font-weight:600;"></div>
+  </div>
+</div>
+
+<!-- Live Sync Test -->
+<div class="card">
+  <div class="card-title">4. Live Data Sync Test</div>
+  <p style="font-size:13px;color:#8b949e;margin-bottom:12px">
+    Checks that orders, menu and tables can be read from the Sheet right now
+  </p>
+  <button class="btn btn-secondary" onclick="testDataSync()">Run Sync Test</button>
+  <div id="sync-results" style="margin-top:12px"></div>
+</div>
+
+<!-- Log -->
+<div class="card">
+  <div class="card-title">Log</div>
+  <div class="log-box" id="log-box"><span class="log-info">Starting diagnostics…</span></div>
+  <div style="margin-top:10px">
+    <button class="btn btn-secondary" onclick="document.getElementById('log-box').innerHTML=''">Clear Log</button>
+  </div>
+</div>
+
+<script>
+var OK   = "✅";
+var WARN = "⚠️";
+var ERR  = "❌";
+var WAIT = "⏳";
+
+function log(msg, type) {
+  var cls = type === "ok" ? "log-ok" : type === "warn" ? "log-warn" : type === "err" ? "log-err" : "log-info";
+  var box = document.getElementById("log-box");
+  box.innerHTML += '<div class="' + cls + '">[' + new Date().toLocaleTimeString() + '] ' + msg + '</div>';
+  box.scrollTop = box.scrollHeight;
+}
+
+function set(id, icon, val, valClass) {
+  document.getElementById(id + "-icon").textContent = icon;
+  var el = document.getElementById(id);
+  el.textContent  = val;
+  el.className    = "value " + (valClass || "");
+}
+
+// 1. Check config values
+function checkConfig() {
+  log("Checking pos-config.js values…");
+  var cfg = window.POS_CONFIG;
+  if (!cfg) { log("POS_CONFIG not found — pos-config.js not loaded!", "err"); return; }
+
+  var clientOk = cfg.GOOGLE_CLIENT_ID && cfg.GOOGLE_CLIENT_ID !== "YOUR_CLIENT_ID.apps.googleusercontent.com";
+  set("cfg-client", clientOk ? OK : ERR, clientOk ? cfg.GOOGLE_CLIENT_ID.substring(0,20)+"…" : "NOT SET — edit pos-config.js", clientOk ? "ok" : "err");
+  log(clientOk ? "✅ Client ID set" : "❌ Client ID not set!", clientOk ? "ok" : "err");
+
+  var urlOk = cfg.APPS_SCRIPT_URL && cfg.APPS_SCRIPT_URL !== "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec";
+  set("cfg-url", urlOk ? OK : ERR, urlOk ? cfg.APPS_SCRIPT_URL.substring(0,40)+"…" : "NOT SET — edit pos-config.js", urlOk ? "ok" : "err");
+  log(urlOk ? "✅ Script URL set" : "❌ Script URL not set!", urlOk ? "ok" : "err");
+
+  var emailOk = cfg.ADMIN_EMAIL && cfg.ADMIN_EMAIL !== "YOUR_ADMIN_GMAIL@gmail.com";
+  set("cfg-email", emailOk ? OK : WARN, emailOk ? cfg.ADMIN_EMAIL : "NOT SET", emailOk ? "ok" : "warn");
+  log(emailOk ? "✅ Admin email set" : "⚠️ Admin email not set", emailOk ? "ok" : "warn");
+
+  var mapsOk = cfg.MAPS_API_KEY && cfg.MAPS_API_KEY !== "YOUR_MAPS_API_KEY";
+  set("cfg-maps", mapsOk ? OK : WARN, mapsOk ? "Set (driver maps enabled)" : "Not set — driver map disabled", mapsOk ? "ok" : "warn");
+  log(mapsOk ? "✅ Maps key set" : "⚠️ Maps key not set — driver map will show placeholder", mapsOk ? "ok" : "warn");
+
+  return urlOk;
+}
+
+// 2. Test API connection
+async function runAPITest() {
+  document.getElementById("retest-btn").disabled = true;
+  log("Testing Apps Script API connection…");
+
+  var urlOk = window.POS_CONFIG &&
+              window.POS_CONFIG.APPS_SCRIPT_URL !== "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec";
+  if (!urlOk) {
+    set("api-reach", ERR, "Cannot test — URL not set in pos-config.js", "err");
+    log("❌ Cannot test — set APPS_SCRIPT_URL first", "err");
+    document.getElementById("retest-btn").disabled = false;
+    setBanner("err", "Cannot test — set your Apps Script URL in pos-config.js first");
+    return;
+  }
+
+  try {
+    var res = await POS_API.testConnection();
+    if (res) {
+      set("api-reach",  OK,   "Connected (" + new Date().toLocaleTimeString() + ")", "ok");
+      set("api-setup",  res.setupDone  ? OK   : ERR,  res.setupDone  ? "Yes"  : "NO — run setupSystem() in Apps Script!", res.setupDone  ? "ok" : "err");
+      set("api-sheet",  res.sheetReady ? OK   : ERR,  res.sheetReady ? "Yes"  : "NO — run setupSystem() in Apps Script!", res.sheetReady ? "ok" : "err");
+      set("api-pin",    res.pinReady   ? OK   : WARN, res.pinReady   ? "Saved" : "Not saved — run setupSystem() or diagnose()", res.pinReady ? "ok" : "warn");
+      log("✅ API reachable. Setup: " + res.setupDone + " | Sheet: " + res.sheetReady + " | PIN: " + res.pinReady, "ok");
+
+      if (!res.setupDone) {
+        log("⚠️ setupSystem() not run! Go to Apps Script editor, select setupSystem in dropdown, click Run", "err");
+        setBanner("err", "setupSystem() has not been run. Open Apps Script editor and run it now.");
+      } else if (!res.sheetReady) {
+        setBanner("err", "Sheet not accessible. Re-run setupSystem() in Apps Script editor.");
+      } else {
+        setBanner("ok", "API connected and sheet ready. Devices will sync.");
+      }
+    } else {
+      set("api-reach", ERR, "No response from API", "err");
+      log("❌ API returned no data", "err");
+      setBanner("err", "Cannot reach Apps Script. Check the URL and that it is deployed as Anyone.");
+    }
+  } catch(e) {
+    set("api-reach", ERR, "Connection failed: " + e.message, "err");
+    log("❌ Connection error: " + e.message, "err");
+    setBanner("err", "Cannot reach Apps Script: " + e.message);
+  }
+  document.getElementById("retest-btn").disabled = false;
+}
+
+// 3. Test PIN
+async function testPIN() {
+  var pin = document.getElementById("pin-input").value.trim();
+  var res = document.getElementById("pin-result");
+  if (pin.length !== 4) { res.textContent = "Enter exactly 4 digits"; res.style.color = "#e74c3c"; return; }
+  log("Testing PIN: " + pin + "…");
+  res.textContent = "Testing…"; res.style.color = "#8b949e";
+  try {
+    var r = await POS_API.post({ action: "verifyPin", pin: pin });
+    if (r && r.success && r.data && r.data.verified) {
+      res.textContent = "✅ Correct PIN!"; res.style.color = "#27ae60";
+      log("✅ PIN " + pin + " is correct", "ok");
+    } else {
+      res.textContent = "❌ Wrong PIN"; res.style.color = "#e74c3c";
+      log("❌ PIN " + pin + " rejected. Check PropertiesService in Apps Script.", "err");
+    }
+  } catch(e) {
+    res.textContent = "❌ API error"; res.style.color = "#e74c3c";
+    log("❌ PIN test failed: " + e.message, "err");
+  }
+}
+document.getElementById("pin-input").addEventListener("keydown", function(e){ if(e.key==="Enter") testPIN(); });
+
+// 4. Sync test
+async function testDataSync() {
+  var el = document.getElementById("sync-results");
+  el.innerHTML = '<div style="color:#8b949e;font-size:13px">Testing…</div>';
+  log("Running sync test…");
+  var tests = [
+    { name:"Menu items",  fn: function(){ return POS_API.Menu.getAll(); }},
+    { name:"Tables",      fn: function(){ return POS_API.Tables.getAll(); }},
+    { name:"Orders",      fn: function(){ return POS_API.Orders.getAll(); }},
+  ];
+  var html = "";
+  for (var i = 0; i < tests.length; i++) {
+    var t = tests[i];
+    try {
+      var r = await t.fn();
+      var count = r && r.data ? (Array.isArray(r.data) ? r.data.length : 1) : 0;
+      html += '<div class="check-row"><div class="icon">' + (r && r.success ? OK : ERR) + '</div>' +
+              '<div class="label">' + t.name + '</div>' +
+              '<div class="value ' + (r && r.success ? "ok" : "err") + '">' +
+              (r && r.success ? count + " records" : "Failed") + '</div></div>';
+      log((r && r.success ? "✅" : "❌") + " " + t.name + ": " + (r && r.success ? count + " records" : "failed"), r && r.success ? "ok" : "err");
+    } catch(e) {
+      html += '<div class="check-row"><div class="icon">' + ERR + '</div><div class="label">' + t.name + '</div><div class="value err">Error: ' + e.message + '</div></div>';
+      log("❌ " + t.name + ": " + e.message, "err");
+    }
+  }
+  el.innerHTML = html;
+}
+
+function setBanner(type, msg) {
+  var b = document.getElementById("banner");
+  b.className = "status-banner banner-" + (type === "ok" ? "ok" : type === "warn" ? "warn" : "err");
+  b.textContent = (type === "ok" ? "✅ " : type === "warn" ? "⚠️ " : "❌ ") + msg;
+}
+
+// Run on load
+(async function() {
+  var urlSet = checkConfig();
+  if (urlSet) {
+    await runAPITest();
+  } else {
+    setBanner("err", "pos-config.js not configured — edit APPS_SCRIPT_URL and GOOGLE_CLIENT_ID first");
+    log("⚠️ Set your APPS_SCRIPT_URL in pos-config.js then reload this page", "warn");
+    set("api-reach", WARN, "Cannot test until URL is set", "warn");
+    set("api-setup", WAIT, "Waiting…", "");
+    set("api-sheet", WAIT, "Waiting…", "");
+    set("api-pin",   WAIT, "Waiting…", "");
+  }
+})();
+</script>
+</body>
+</html>
