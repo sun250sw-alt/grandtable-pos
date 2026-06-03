@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <script src="pos-config.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manager Portal - Restaurant POS</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="pos-config.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #1a1a2e; }
@@ -367,12 +367,29 @@
 
     
     function MenuManagement() {
-      const [items, setItems]         = React.useState(MENU_ITEMS);
+      const [items, setItems]         = React.useState([]);
       const [showModal, setShowModal] = React.useState(false);
       const [showRecipe, setShowRecipe] = React.useState(false);
       const [editItem, setEditItem]   = React.useState(null);
       const [search, setSearch]       = React.useState("");
+      const [saving, setSaving]       = React.useState(false);
       const [form, setForm]           = React.useState({ name:"", category:"Main Course", price:"", status:"active" });
+
+      // Load menu from sheet on mount
+      React.useEffect(() => {
+        async function load() {
+          if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
+          const res = await window.POS_GAPI.Menu.getAll();
+          if (res && res.data) setItems(res.data.map(i => ({
+            id: i.ItemID, name: i.Name, category: i.Category,
+            price: parseFloat(i.Price)||0, status: String(i.Available).toLowerCase()==="false"?"inactive":"active",
+            description: i.Description||"", emoji: i.Emoji||"🍽️"
+          })));
+        }
+        load();
+        const iv = setInterval(load, POS_CONFIG.POLL_MS);
+        return () => clearInterval(iv);
+      }, []);
 
       // Recipe state
       const [recipe, setRecipe] = React.useState({
@@ -383,15 +400,43 @@
 
       const filtered = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()));
 
-      const handleSave = () => {
+      const handleSave = async () => {
         if (!form.name || !form.price) return;
-        setItems([...items, { ...form, id: Date.now(), price: parseFloat(form.price) }]);
+        setSaving(true);
+        try {
+          if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+            await window.POS_GAPI.Menu.add({
+              name: form.name, category: form.category,
+              price: parseFloat(form.price), description: form.description||"",
+              emoji: form.emoji||"🍽️"
+            });
+            // Reload from sheet
+            const res = await window.POS_GAPI.Menu.getAll();
+            if (res && res.data) setItems(res.data.map(i => ({
+              id: i.ItemID, name: i.Name, category: i.Category,
+              price: parseFloat(i.Price)||0,
+              status: String(i.Available).toLowerCase()==="false"?"inactive":"active",
+              description: i.Description||"", emoji: i.Emoji||"🍽️"
+            })));
+          } else {
+            setItems([...items, { ...form, id: Date.now(), price: parseFloat(form.price) }]);
+          }
+        } catch(e) { alert("Save failed: " + e.message); }
+        setSaving(false);
         setShowModal(false);
         setForm({ name:"", category:"Main Course", price:"", status:"active" });
       };
 
-      const toggleStatus = (id) => {
-        setItems(items.map(i => i.id===id ? {...i, status: i.status==="active"?"inactive":"active"} : i));
+      const toggleStatus = async (id) => {
+        const item = items.find(i => i.id === id);
+        if (!item) return;
+        const newAvail = item.status === "active" ? false : true;
+        setItems(items.map(i => i.id===id ? {...i, status: newAvail?"active":"inactive"} : i));
+        if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+          try {
+            await window.POS_GAPI.Menu.update({ itemId: id, available: newAvail });
+          } catch(e) { console.error("Toggle failed:", e); }
+        }
       };
 
       const openRecipeEditor = (item) => {
@@ -424,29 +469,28 @@
       const removeStep = (i) => setRecipe(r=>({...r, steps:r.steps.filter((_,j)=>j!==i)}));
       const updateStep = (i,field,val) => setRecipe(r=>({...r, steps:r.steps.map((s,j)=>j===i?{...s,[field]:val}:s)}));
 
-      const saveRecipe = () => {
-        // Save to Apps Script
-        const payload = {
-          action: "saveRecipe",
-          data: {
-            dishName   : editItem.name,
-            prepTime   : recipe.prepTime,
-            cookTime   : recipe.cookTime,
-            difficulty : recipe.difficulty,
-            ingredients: JSON.stringify(recipe.ingredients.filter(i=>i.name)),
-            steps      : JSON.stringify(recipe.steps.filter(s=>s.title)),
+      const saveRecipe = async () => {
+        setSaving(true);
+        try {
+          if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+            await window.POS_GAPI.Recipes.save({
+              dishName   : editItem.name,
+              prepTime   : recipe.prepTime,
+              cookTime   : recipe.cookTime,
+              difficulty : recipe.difficulty,
+              ingredients: JSON.stringify(recipe.ingredients.filter(i=>i.name)),
+              steps      : JSON.stringify(recipe.steps.filter(s=>s.title)),
+            });
           }
-        };
-        // POS_API.post(payload);  // uncomment when connected
-        RECIPE_DATA[editItem.name] = {
-          prepTime   : recipe.prepTime,
-          cookTime   : recipe.cookTime,
-          difficulty : recipe.difficulty,
-          ingredients: recipe.ingredients,
-          steps      : recipe.steps,
-        };
-        setShowRecipe(false);
-        alert("Recipe saved for " + editItem.name + "! It will appear in Kitchen Prep Display.");
+          // Always update local cache too
+          RECIPE_DATA[editItem.name] = {
+            prepTime: recipe.prepTime, cookTime: recipe.cookTime,
+            difficulty: recipe.difficulty,
+            ingredients: recipe.ingredients, steps: recipe.steps,
+          };
+          setShowRecipe(false);
+        } catch(e) { alert("Recipe save failed: " + e.message); }
+        setSaving(false);
       };
 
       return (
@@ -516,7 +560,7 @@
                 </div>
                 <div className="modal-actions">
                   <button className="btn btn-ghost" onClick={()=>setShowModal(false)}>Cancel</button>
-                  <button className="btn btn-primary" onClick={handleSave}>Save Item</button>
+                  <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving?"Saving...":"Save Item"}</button>
                 </div>
               </div>
             </div>
@@ -619,7 +663,7 @@
                     💡 Steps will appear live in Kitchen Prep Display
                   </div>
                   <button className="btn btn-ghost" onClick={()=>setShowRecipe(false)}>Cancel</button>
-                  <button className="btn btn-success" onClick={saveRecipe}>✅ Save Recipe</button>
+                  <button className="btn btn-success" onClick={saveRecipe} disabled={saving}>{saving?"Saving to Sheet...":"✅ Save Recipe"}</button>
                 </div>
               </div>
             </div>
@@ -707,17 +751,53 @@
 
     function StaffWithDrivers() {
       const [subTab, setSubTab] = React.useState("staff");
-      const [drivers, setDrivers] = React.useState([
-        { name:"Alex Driver", email:"alex@gmail.com", phone:"+44 7700 900001", vehicle:"Honda CB125", plate:"DL19 XYZ", status:"active", rating:4.9, approved:true },
-        { name:"Maria Lopez",  email:"maria@gmail.com", phone:"+44 7700 900002", vehicle:"Toyota Prius", plate:"EK21 ABC", status:"active", rating:4.8, approved:true },
-      ]);
+      const [drivers, setDrivers] = React.useState([]);
       const [showAdd, setShowAdd] = React.useState(false);
+      const [saving, setSaving]   = React.useState(false);
       const [form, setForm]       = React.useState({ name:"", email:"", phone:"", vehicle:"", plate:"" });
+      const [staffList, setStaffList] = React.useState([]);
 
-      function addDriver() {
-        setDrivers([...drivers, { ...form, status:"active", rating:5.0, approved:true }]);
-        setForm({ name:"", email:"", phone:"", vehicle:"", plate:"" });
-        setShowAdd(false);
+      // Load drivers and staff from sheet
+      React.useEffect(() => {
+        async function load() {
+          if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
+          try {
+            const [drRes, stRes] = await Promise.all([
+              window.POS_GAPI.Drivers.getAll(),
+              window.POS_GAPI.Staff.getAll(),
+            ]);
+            if (drRes && drRes.data) setDrivers(drRes.data);
+            if (stRes && stRes.data) setStaffList(stRes.data);
+          } catch(e) { console.error("Staff load:", e); }
+        }
+        load();
+        const iv = setInterval(load, POS_CONFIG.POLL_MS);
+        return () => clearInterval(iv);
+      }, []);
+
+      async function addDriver() {
+        if (!form.name || !form.email) { alert("Name and Gmail are required"); return; }
+        setSaving(true);
+        try {
+          if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+            await window.POS_GAPI.Drivers.add({
+              name: form.name, email: form.email, phone: form.phone,
+              vehicle: form.vehicle, plate: form.plate
+            });
+            // Also add to Staff sheet so team app can verify them
+            await window.POS_GAPI.Staff.add({
+              name: form.name, email: form.email, role: "Driver"
+            });
+            // Reload
+            const res = await window.POS_GAPI.Drivers.getAll();
+            if (res && res.data) setDrivers(res.data);
+          } else {
+            setDrivers([...drivers, { ...form, status:"active", rating:5.0, approved:true }]);
+          }
+          setForm({ name:"", email:"", phone:"", vehicle:"", plate:"" });
+          setShowAdd(false);
+        } catch(e) { alert("Failed to add driver: " + e.message); }
+        setSaving(false);
       }
 
       return (
@@ -776,8 +856,16 @@
                         </span></td>
                         <td>
                           <button className="btn btn-ghost" style={{padding:"4px 12px",fontSize:"12px"}}
-                            onClick={()=>setDrivers(drivers.map((dr,j)=>j===i?{...dr,approved:!dr.approved}:dr))}>
-                            {d.approved?"Revoke":"Re-approve"}
+                            onClick={async ()=>{
+                              const newVal = !d.approved;
+                              setDrivers(drivers.map((dr,j)=>j===i?{...dr,Approved:newVal}:dr));
+                              if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+                                try {
+                                  await window.POS_GAPI.updateRow("Drivers", 2, d.Email||d.email, {Approved: newVal});
+                                } catch(e) { console.error("Revoke failed:", e); }
+                              }
+                            }}>
+                            {(d.approved||d.Approved)?"Revoke":"Re-approve"}
                           </button>
                         </td>
                       </tr>
@@ -810,7 +898,7 @@
                     </div>
                     <div className="modal-actions">
                       <button className="btn btn-ghost" onClick={()=>setShowAdd(false)}>Cancel</button>
-                      <button className="btn btn-success" onClick={addDriver}>✓ Approve Driver</button>
+                      <button className="btn btn-success" onClick={addDriver} disabled={saving}>{saving?"Saving...":"✓ Approve Driver"}</button>
                     </div>
                   </div>
                 </div>
