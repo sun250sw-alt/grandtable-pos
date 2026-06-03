@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <script src="pos-config.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Waiter App - Restaurant POS</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="pos-config.js"></script>
     <style>
         * {
             margin: 0;
@@ -807,16 +807,40 @@
         ReactDOM.render(<WaiterApp />, document.getElementById('root'));
     </script>
 
+
 <script>
-// ── Grand Table POS Auth init ─────────────────────────
-POS_AUTH.init("waiter-app", {
-  onReady: function(session) {
-    var root = document.getElementById("app-root");
-    if (root) root.style.display = "block";
-    POS_AUTH.renderBadge("user-badge", "waiter-app");
-  },
-  onError: function(msg) { console.error("Auth error:", msg); }
-});
+(function() {
+  function startAuth() {
+    if (typeof POS_AUTH === "undefined") {
+      console.error("POS_AUTH not defined - pos-config.js failed to load");
+      document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:sans-serif;background:#f0f0f0"><div style="font-size:40px">⚠️</div><div style="font-size:16px;color:#e74c3c;font-weight:700">pos-config.js not loaded</div><div style="font-size:13px;color:#888">Upload the latest pos-config.js to GitHub</div><button onclick="location.reload()" style="margin-top:8px;padding:8px 20px;background:#667eea;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px">Retry</button></div>';
+      return;
+    }
+    POS_AUTH.init("waiter-app", {
+      onReady: function(session) {
+        var root = document.getElementById("app-root");
+        if (root) root.style.display = "block";
+        setTimeout(function() {
+          if (typeof POS_AUTH.renderUtilBar === "function") {
+            POS_AUTH.renderUtilBar("user-badge", "waiter-app");
+          }
+        }, 500);
+      },
+      onError: function(msg) { console.error("Auth error:", msg); }
+    });
+  }
+
+  if (typeof POS_AUTH !== "undefined") {
+    startAuth();
+  } else {
+    var tries = 0;
+    var iv = setInterval(function() {
+      tries++;
+      if (typeof POS_AUTH !== "undefined") { clearInterval(iv); startAuth(); }
+      else if (tries > 50) { clearInterval(iv); startAuth(); }
+    }, 100);
+  }
+})();
 </script>
 </body>
 </html>
