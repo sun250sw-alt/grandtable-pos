@@ -518,7 +518,7 @@
                     }
                     setLoading(false);
                 }
-                if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+                if (window.POS_GAPI) {
                     loadData();
                     // Poll for updates every 5 seconds
                     const interval = setInterval(loadData, POS_CONFIG.POLL_MS);
