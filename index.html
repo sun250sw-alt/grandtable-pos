@@ -1,6 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+// Auto-redirect to diagnostics if not run in last 24 hours
+(function() {
+  var lastPass = localStorage.getItem("pos_diag_pass");
+  var TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+  var skipDiag = new URLSearchParams(window.location.search).get("skipdg");
+  if (!skipDiag && (!lastPass || Date.now() - parseInt(lastPass) > TWENTY_FOUR_HOURS)) {
+    window.location.href = "diagnose.html";
+  }
+})();
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Grand Table — POS Hub</title>
