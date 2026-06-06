@@ -293,7 +293,12 @@ function tickClock() {
 // ═══════════════════════════════════════════════════════
 function loadQueue() {
   var api = window.POS_GAPI || window.POS_API;
-  if (!api || !api.getSheetId || !api.getSheetId()) { STATE.queue = DEMO_QUEUE; renderQueue(); return; }
+  if (!api) { STATE.queue = DEMO_QUEUE; renderQueue(); return; }
+  // Ensure sheet loaded
+  var ensureSheet = (api.getSheetId && !api.getSheetId() && api.initUserSheet)
+    ? api.initUserSheet() : Promise.resolve();
+  ensureSheet.catch(function(){}).then(function() {
+  if (!api.getSheetId || !api.getSheetId()) { STATE.queue = DEMO_QUEUE; renderQueue(); return; }
   api.Orders.getAll("new").then(function(res) {
     var orders = (res && res.data) ? res.data : null;
     if (orders && orders.length > 0) {
