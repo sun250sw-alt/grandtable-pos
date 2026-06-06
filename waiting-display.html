@@ -585,9 +585,16 @@ async function loadLiveData() {
 
 // Start loading once POS_GAPI is ready
 function waitForGAPI() {
-  if (window.POS_GAPI && window.POS_GAPI.getSheetId && window.POS_GAPI.getSheetId()) {
-    loadLiveData();
-    setInterval(loadLiveData, 5000);
+  if (window.POS_GAPI) {
+    // Try to init sheet if not yet done
+    if (!window.POS_GAPI.getSheetId()) {
+      window.POS_GAPI.initUserSheet && window.POS_GAPI.initUserSheet()
+        .catch(function(){})
+        .then(function() { loadLiveData(); });
+    } else {
+      loadLiveData();
+    }
+    setInterval(loadLiveData, 8000);
   } else {
     setTimeout(waitForGAPI, 1000);
   }
