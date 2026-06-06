@@ -417,7 +417,11 @@
         // Poll Google Sheet for live orders every 5 seconds
         useEffect(() => {
             async function fetchOrders() {
-                if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
+                if (!window.POS_GAPI) return;
+                if (!window.POS_GAPI.getSheetId()) {
+                    try { await window.POS_GAPI.initUserSheet(); } catch(e){}
+                }
+                if (!window.POS_GAPI.getSheetId()) return;
                 try {
                     const res = await window.POS_GAPI.Orders.getAll();
                     if (res && res.data) {
