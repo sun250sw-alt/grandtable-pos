@@ -297,6 +297,10 @@ async function loadAll() {
   const m     = STATE.month;
   const y     = STATE.year;
   const api   = window.POS_GAPI || window.POS_API;
+  // Ensure sheet loaded
+  if (api && !api.getSheetId()) {
+    try { await api.initUserSheet(); } catch(e){}
+  }
 
   if (!api || !api.getSheetId || !api.getSheetId()) {
     // Not connected yet — use demo data
