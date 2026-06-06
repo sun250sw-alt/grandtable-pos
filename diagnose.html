@@ -3,304 +3,804 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>POS Diagnostics — The Grand Table</title>
-<script src="pos-config.js"></script>
+<title>System Diagnostics — Grand Table POS</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',monospace;
-  background:#0d1117;color:#e6edf3;min-height:100vh;padding:24px;}
-h1{font-size:20px;font-weight:700;color:#f39c12;margin-bottom:6px;}
-.sub{font-size:13px;color:#8b949e;margin-bottom:24px;}
-.card{background:#161b22;border:1px solid #30363d;border-radius:12px;
-  padding:20px;margin-bottom:16px;}
-.card-title{font-size:13px;font-weight:700;text-transform:uppercase;
-  letter-spacing:1px;color:#8b949e;margin-bottom:14px;}
-.check-row{display:flex;align-items:center;gap:12px;padding:8px 0;
-  border-bottom:1px solid #21262d;font-size:14px;}
-.check-row:last-child{border-bottom:none;}
-.icon{font-size:18px;width:24px;text-align:center;flex-shrink:0;}
-.label{flex:1;}
-.value{font-size:12px;color:#8b949e;max-width:300px;text-align:right;
-  word-break:break-all;}
-.value.ok{color:#27ae60;}
-.value.warn{color:#f39c12;}
-.value.err{color:#e74c3c;}
-.btn{padding:10px 20px;border:none;border-radius:8px;cursor:pointer;
-  font-size:14px;font-weight:700;transition:all .2s;margin-right:8px;margin-bottom:8px;}
-.btn-primary{background:#f39c12;color:#000;}
-.btn-secondary{background:#21262d;color:#e6edf3;border:1px solid #30363d;}
-.btn:hover{opacity:.85;}
-.btn:disabled{opacity:.4;cursor:default;}
-.log-box{background:#0d1117;border:1px solid #21262d;border-radius:8px;
-  padding:14px;font-size:12px;line-height:1.8;max-height:300px;overflow-y:auto;
-  font-family:'Courier New',monospace;}
-.log-ok{color:#27ae60;}
+  background:#07070f;color:#e6edf3;min-height:100vh;}
+
+.page{max-width:780px;margin:0 auto;padding:28px 20px 60px;}
+
+/* Header */
+.hdr{text-align:center;margin-bottom:36px;}
+.hdr-icon{font-size:44px;margin-bottom:10px;}
+.hdr-title{font-size:24px;font-weight:800;color:#fff;margin-bottom:4px;}
+.hdr-sub{font-size:14px;color:rgba(255,255,255,.4);}
+
+/* Overall status banner */
+.status-banner{border-radius:12px;padding:14px 20px;margin-bottom:24px;
+  display:flex;align-items:center;gap:14px;font-size:15px;font-weight:600;
+  transition:all .4s;}
+.banner-running{background:rgba(52,152,219,.12);border:1px solid rgba(52,152,219,.3);color:#3498db;}
+.banner-pass   {background:rgba(39,174,96,.12); border:1px solid rgba(39,174,96,.3); color:#27ae60;}
+.banner-warn   {background:rgba(243,156,18,.12);border:1px solid rgba(243,156,18,.3);color:#f39c12;}
+.banner-fail   {background:rgba(231,76,60,.12); border:1px solid rgba(231,76,60,.3); color:#e74c3c;}
+.banner-icon{font-size:24px;flex-shrink:0;}
+.banner-text{flex:1;}
+.banner-count{font-size:12px;opacity:.75;margin-top:2px;}
+
+/* Test sections */
+.section{background:#161b22;border:1px solid #30363d;border-radius:14px;
+  overflow:hidden;margin-bottom:14px;}
+.section-hdr{padding:14px 18px;display:flex;align-items:center;gap:10px;
+  background:rgba(255,255,255,.03);border-bottom:1px solid #30363d;
+  cursor:pointer;user-select:none;}
+.section-hdr:hover{background:rgba(255,255,255,.05);}
+.section-title{font-size:14px;font-weight:700;flex:1;}
+.section-badge{font-size:11px;padding:3px 10px;border-radius:8px;font-weight:700;}
+.sbadge-running{background:rgba(52,152,219,.2);color:#3498db;}
+.sbadge-pass   {background:rgba(39,174,96,.2); color:#27ae60;}
+.sbadge-warn   {background:rgba(243,156,18,.2);color:#f39c12;}
+.sbadge-fail   {background:rgba(231,76,60,.2); color:#e74c3c;}
+.sbadge-skip   {background:rgba(255,255,255,.08);color:#8b949e;}
+.section-arrow{font-size:12px;color:#8b949e;transition:transform .2s;}
+.section-arrow.open{transform:rotate(90deg);}
+
+/* Test rows */
+.test-rows{display:none;}
+.test-rows.open{display:block;}
+.test-row{display:grid;grid-template-columns:22px 1fr auto;gap:10px;align-items:start;
+  padding:11px 18px;border-bottom:1px solid rgba(255,255,255,.04);}
+.test-row:last-child{border-bottom:none;}
+.test-icon{font-size:14px;margin-top:1px;text-align:center;}
+.test-info{}
+.test-name{font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:2px;}
+.test-detail{font-size:11px;color:rgba(255,255,255,.4);line-height:1.5;}
+.test-detail.detail-ok  {color:rgba(39,174,96,.8);}
+.test-detail.detail-warn{color:rgba(243,156,18,.8);}
+.test-detail.detail-fail{color:rgba(231,76,60,.8);}
+.test-fix{font-size:10px;color:#3498db;margin-top:3px;line-height:1.5;}
+.test-time{font-size:10px;color:rgba(255,255,255,.25);white-space:nowrap;align-self:start;margin-top:2px;}
+
+/* Spinner */
+.spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(52,152,219,.3);
+  border-top-color:#3498db;border-radius:50%;animation:spin .8s linear infinite;
+  vertical-align:middle;}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Log panel */
+.log-panel{background:#0d1117;border:1px solid #30363d;border-radius:14px;
+  margin-top:20px;overflow:hidden;}
+.log-hdr{padding:13px 18px;display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid #30363d;}
+.log-title{font-size:13px;font-weight:700;color:#e6edf3;}
+.log-actions{display:flex;gap:8px;}
+.log-btn{padding:5px 14px;border-radius:8px;font-size:12px;font-weight:700;
+  cursor:pointer;transition:all .2s;border:none;}
+.log-btn-copy{background:rgba(52,152,219,.2);color:#3498db;border:1px solid rgba(52,152,219,.3);}
+.log-btn-copy:hover{background:rgba(52,152,219,.35);}
+.log-btn-clear{background:rgba(255,255,255,.07);color:#8b949e;}
+.log-body{padding:14px 18px;max-height:320px;overflow-y:auto;
+  font-family:'Courier New',monospace;font-size:12px;line-height:1.8;}
+.log-body::-webkit-scrollbar{width:6px;}
+.log-body::-webkit-scrollbar-track{background:#0d1117;}
+.log-body::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px;}
+.log-line{display:block;}
+.log-ok  {color:#27ae60;}
+.log-fail{color:#e74c3c;}
 .log-warn{color:#f39c12;}
-.log-err{color:#e74c3c;}
 .log-info{color:#8b949e;}
-.pin-test-row{display:flex;gap:8px;align-items:center;margin-top:12px;}
-.pin-input{background:#0d1117;border:2px solid #30363d;color:#e6edf3;
-  padding:8px 14px;border-radius:8px;font-size:16px;font-family:'Courier New',monospace;
-  width:120px;letter-spacing:4px;text-align:center;}
-.pin-input:focus{outline:none;border-color:#f39c12;}
-.status-banner{border-radius:10px;padding:14px 18px;margin-bottom:16px;font-size:14px;font-weight:600;}
-.banner-ok{background:rgba(39,174,96,.15);border:1px solid rgba(39,174,96,.3);color:#27ae60;}
-.banner-err{background:rgba(231,76,60,.15);border:1px solid rgba(231,76,60,.3);color:#e74c3c;}
-.banner-warn{background:rgba(243,156,18,.15);border:1px solid rgba(243,156,18,.3);color:#f39c12;}
+.log-head{color:#3498db;font-weight:700;}
+
+/* Action buttons */
+.action-row{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;}
+.act-btn{padding:13px 24px;border:none;border-radius:10px;font-size:14px;
+  font-weight:700;cursor:pointer;transition:all .2s;flex:1;min-width:140px;}
+.act-btn:hover{transform:translateY(-1px);}
+.act-btn:disabled{opacity:.35;cursor:default;transform:none;}
+.btn-hub    {background:linear-gradient(135deg,#27ae60,#1e8449);color:#fff;}
+.btn-retry  {background:linear-gradient(135deg,#f39c12,#e67e22);color:#000;}
+.btn-wizard {background:rgba(52,152,219,.2);color:#3498db;border:1px solid rgba(52,152,219,.3);}
+.btn-skip   {background:rgba(255,255,255,.08);color:rgba(255,255,255,.5);}
+
+/* Countdown ring */
+.countdown-wrap{display:flex;align-items:center;gap:8px;font-size:13px;color:#27ae60;font-weight:700;}
+.countdown-num{font-size:20px;font-family:'Courier New',monospace;}
+
+/* Progress bar */
+.progress-bar{height:4px;background:#21262d;border-radius:2px;margin-bottom:24px;overflow:hidden;}
+.progress-fill{height:100%;background:linear-gradient(90deg,#667eea,#27ae60);
+  border-radius:2px;transition:width .3s ease;width:0%;}
 </style>
 </head>
 <body>
-<h1>POS System Diagnostics</h1>
-<p class="sub">Use this page to verify your Google Apps Script connection and PIN before going live</p>
+<div class="page">
 
-<div id="banner" class="status-banner banner-warn">Running checks…</div>
+  <div class="hdr">
+    <div class="hdr-icon">🔬</div>
+    <div class="hdr-title">System Diagnostics</div>
+    <div class="hdr-sub">Auto-checking all components before opening the Hub</div>
+  </div>
 
-<!-- Config Check -->
-<div class="card">
-  <div class="card-title">1. Configuration (pos-config.js)</div>
-  <div class="check-row">
-    <div class="icon" id="cfg-client-icon">⏳</div>
-    <div class="label">Google Client ID</div>
-    <div class="value" id="cfg-client">checking…</div>
-  </div>
-  <div class="check-row">
-    <div class="icon" id="cfg-url-icon">⏳</div>
-    <div class="label">Apps Script URL</div>
-    <div class="value" id="cfg-url">checking…</div>
-  </div>
-  <div class="check-row">
-    <div class="icon" id="cfg-email-icon">⏳</div>
-    <div class="label">Admin Email</div>
-    <div class="value" id="cfg-email">checking…</div>
-  </div>
-  <div class="check-row">
-    <div class="icon" id="cfg-maps-icon">⏳</div>
-    <div class="label">Maps API Key</div>
-    <div class="value" id="cfg-maps">checking…</div>
-  </div>
-</div>
+  <div class="progress-bar"><div class="progress-fill" id="prog"></div></div>
 
-<!-- API Connection -->
-<div class="card">
-  <div class="card-title">2. Apps Script API Connection</div>
-  <div class="check-row">
-    <div class="icon" id="api-reach-icon">⏳</div>
-    <div class="label">API reachable</div>
-    <div class="value" id="api-reach">testing…</div>
+  <div class="status-banner banner-running" id="main-banner">
+    <div class="banner-icon">⏳</div>
+    <div class="banner-text">
+      <div>Running diagnostic checks…</div>
+      <div class="banner-count" id="banner-count">0 / 0 tests complete</div>
+    </div>
   </div>
-  <div class="check-row">
-    <div class="icon" id="api-setup-icon">⏳</div>
-    <div class="label">setupSystem() was run</div>
-    <div class="value" id="api-setup">waiting…</div>
-  </div>
-  <div class="check-row">
-    <div class="icon" id="api-sheet-icon">⏳</div>
-    <div class="label">Google Sheet accessible</div>
-    <div class="value" id="api-sheet">waiting…</div>
-  </div>
-  <div class="check-row">
-    <div class="icon" id="api-pin-icon">⏳</div>
-    <div class="label">Admin PIN saved in script</div>
-    <div class="value" id="api-pin">waiting…</div>
-  </div>
-  <div style="margin-top:12px">
-    <button class="btn btn-primary" id="retest-btn" onclick="runAPITest()">Retest Connection</button>
-  </div>
-</div>
 
-<!-- PIN Test -->
-<div class="card">
-  <div class="card-title">3. Test Admin PIN</div>
-  <p style="font-size:13px;color:#8b949e;margin-bottom:12px">
-    Enter any PIN to test the full auth flow. Default is <strong style="color:#f39c12">1234</strong>
-  </p>
-  <div class="pin-test-row">
-    <input class="pin-input" id="pin-input" type="password" maxlength="4" placeholder="1234">
-    <button class="btn btn-primary" onclick="testPIN()">Test PIN</button>
-    <div id="pin-result" style="font-size:14px;font-weight:600;"></div>
-  </div>
-</div>
+  <!-- Sections filled by JS -->
+  <div id="sections"></div>
 
-<!-- Live Sync Test -->
-<div class="card">
-  <div class="card-title">4. Live Data Sync Test</div>
-  <p style="font-size:13px;color:#8b949e;margin-bottom:12px">
-    Checks that orders, menu and tables can be read from the Sheet right now
-  </p>
-  <button class="btn btn-secondary" onclick="testDataSync()">Run Sync Test</button>
-  <div id="sync-results" style="margin-top:12px"></div>
-</div>
-
-<!-- Log -->
-<div class="card">
-  <div class="card-title">Log</div>
-  <div class="log-box" id="log-box"><span class="log-info">Starting diagnostics…</span></div>
-  <div style="margin-top:10px">
-    <button class="btn btn-secondary" onclick="document.getElementById('log-box').innerHTML=''">Clear Log</button>
+  <!-- Log -->
+  <div class="log-panel">
+    <div class="log-hdr">
+      <div class="log-title">📋 Full Diagnostic Log</div>
+      <div class="log-actions">
+        <button class="log-btn log-btn-copy" onclick="copyLog()">📋 Copy Log</button>
+        <button class="log-btn log-btn-clear" onclick="clearLog()">Clear</button>
+      </div>
+    </div>
+    <div class="log-body" id="log-body"></div>
   </div>
+
+  <!-- Action buttons -->
+  <div class="action-row">
+    <button class="act-btn btn-hub" id="btn-hub" disabled onclick="goHub()">
+      🚀 Continue to Hub
+    </button>
+    <button class="act-btn btn-retry" id="btn-retry" onclick="runAll()">
+      🔄 Run Again
+    </button>
+    <button class="act-btn btn-wizard" onclick="window.location.href='setup-wizard.html'">
+      ⚙️ Setup Wizard
+    </button>
+    <button class="act-btn btn-skip" onclick="goHub()">
+      Skip →
+    </button>
+  </div>
+
 </div>
 
 <script>
-var OK   = "✅";
-var WARN = "⚠️";
-var ERR  = "❌";
-var WAIT = "⏳";
+// ═══════════════════════════════════════════════════════════
+//  DIAGNOSTIC ENGINE
+// ═══════════════════════════════════════════════════════════
+var LOG     = [];
+var TOTAL   = 0;
+var PASSED  = 0;
+var WARNED  = 0;
+var FAILED  = 0;
+var CRITICAL_FAIL = false;
 
-function log(msg, type) {
-  var cls = type === "ok" ? "log-ok" : type === "warn" ? "log-warn" : type === "err" ? "log-err" : "log-info";
-  var box = document.getElementById("log-box");
-  box.innerHTML += '<div class="' + cls + '">[' + new Date().toLocaleTimeString() + '] ' + msg + '</div>';
-  box.scrollTop = box.scrollHeight;
+var SECTIONS = [
+  {
+    id:"config", title:"Configuration (pos-config.js)",
+    tests:[
+      { id:"pos_loaded",   name:"pos-config.js loaded",          critical:true  },
+      { id:"client_id",    name:"Google Client ID set",           critical:true  },
+      { id:"admin_email",  name:"Admin email configured",         critical:true  },
+      { id:"currency",     name:"Currency & tax settings",        critical:false },
+    ]
+  },
+  {
+    id:"google", title:"Google API Libraries",
+    tests:[
+      { id:"gapi_loaded",  name:"Google API (gapi) loaded",       critical:true  },
+      { id:"gis_loaded",   name:"Google Identity Services loaded", critical:true  },
+      { id:"session",      name:"Saved session in browser",       critical:false },
+    ]
+  },
+  {
+    id:"sheet", title:"Google Sheet Connection",
+    tests:[
+      { id:"sheet_id",     name:"Sheet ID found",                 critical:true  },
+      { id:"sheet_access", name:"Sheet accessible & readable",    critical:true  },
+      { id:"menu_data",    name:"Menu items in sheet",            critical:false },
+      { id:"table_data",   name:"Tables in sheet",                critical:false },
+      { id:"settings",     name:"Restaurant settings saved",      critical:false },
+      { id:"pin_set",      name:"Admin PIN configured",           critical:false },
+    ]
+  },
+  {
+    id:"apps", title:"App Files Reachable",
+    tests:[
+      { id:"waiter",    name:"waiter-app.html",           critical:false },
+      { id:"kitchen",   name:"kitchen-display.html",      critical:false },
+      { id:"prep",      name:"kitchen-prep-display.html", critical:false },
+      { id:"waiting",   name:"waiting-display.html",      critical:false },
+      { id:"manager",   name:"manager-portal.html",       critical:false },
+      { id:"customer",  name:"customer-app.html",         critical:false },
+      { id:"driver",    name:"driver-app.html",           critical:false },
+      { id:"team",      name:"team-app.html",             critical:false },
+    ]
+  },
+];
+
+// ── Build DOM ─────────────────────────────────────────────
+function buildSections() {
+  TOTAL = SECTIONS.reduce(function(s,sec){ return s + sec.tests.length; }, 0);
+  var html = "";
+  SECTIONS.forEach(function(sec) {
+    html += '<div class="section" id="sec-'+sec.id+'">' +
+      '<div class="section-hdr" onclick="toggleSection(\''+sec.id+'\')">' +
+        '<div class="section-title">'+sec.title+'</div>' +
+        '<span class="section-badge sbadge-running" id="sbadge-'+sec.id+'">Pending</span>' +
+        '<span class="section-arrow" id="sarrow-'+sec.id+'">▶</span>' +
+      '</div>' +
+      '<div class="test-rows open" id="srows-'+sec.id+'">' +
+        sec.tests.map(function(t){
+          return '<div class="test-row" id="trow-'+t.id+'">' +
+            '<div class="test-icon" id="ticon-'+t.id+'">⏸</div>' +
+            '<div class="test-info">' +
+              '<div class="test-name">'+t.name+(t.critical?'<span style="color:#e74c3c;margin-left:4px;font-size:10px">required</span>':'')+'</div>' +
+              '<div class="test-detail" id="tdetail-'+t.id+'">Waiting…</div>' +
+              '<div class="test-fix" id="tfix-'+t.id+'"></div>' +
+            '</div>' +
+            '<div class="test-time" id="ttime-'+t.id+'"></div>' +
+          '</div>';
+        }).join("") +
+      '</div>' +
+    '</div>';
+  });
+  document.getElementById("sections").innerHTML = html;
 }
 
-function set(id, icon, val, valClass) {
-  document.getElementById(id + "-icon").textContent = icon;
-  var el = document.getElementById(id);
-  el.textContent  = val;
-  el.className    = "value " + (valClass || "");
+function toggleSection(id) {
+  var rows  = document.getElementById("srows-"+id);
+  var arrow = document.getElementById("sarrow-"+id);
+  var open  = rows.classList.toggle("open");
+  arrow.classList.toggle("open", open);
 }
 
-// 1. Check config values
-function checkConfig() {
-  log("Checking pos-config.js values…");
-  var cfg = window.POS_CONFIG;
-  if (!cfg) { log("POS_CONFIG not found — pos-config.js not loaded!", "err"); return; }
-
-  var clientOk = cfg.GOOGLE_CLIENT_ID && cfg.GOOGLE_CLIENT_ID !== "YOUR_CLIENT_ID.apps.googleusercontent.com";
-  set("cfg-client", clientOk ? OK : ERR, clientOk ? cfg.GOOGLE_CLIENT_ID.substring(0,20)+"…" : "NOT SET — edit pos-config.js", clientOk ? "ok" : "err");
-  log(clientOk ? "✅ Client ID set" : "❌ Client ID not set!", clientOk ? "ok" : "err");
-
-  var urlOk = cfg.APPS_SCRIPT_URL && cfg.APPS_SCRIPT_URL !== "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec";
-  set("cfg-url", urlOk ? OK : ERR, urlOk ? cfg.APPS_SCRIPT_URL.substring(0,40)+"…" : "NOT SET — edit pos-config.js", urlOk ? "ok" : "err");
-  log(urlOk ? "✅ Script URL set" : "❌ Script URL not set!", urlOk ? "ok" : "err");
-
-  var emailOk = cfg.ADMIN_EMAIL && cfg.ADMIN_EMAIL !== "YOUR_ADMIN_GMAIL@gmail.com";
-  set("cfg-email", emailOk ? OK : WARN, emailOk ? cfg.ADMIN_EMAIL : "NOT SET", emailOk ? "ok" : "warn");
-  log(emailOk ? "✅ Admin email set" : "⚠️ Admin email not set", emailOk ? "ok" : "warn");
-
-  var mapsOk = cfg.MAPS_API_KEY && cfg.MAPS_API_KEY !== "YOUR_MAPS_API_KEY";
-  set("cfg-maps", mapsOk ? OK : WARN, mapsOk ? "Set (driver maps enabled)" : "Not set — driver map disabled", mapsOk ? "ok" : "warn");
-  log(mapsOk ? "✅ Maps key set" : "⚠️ Maps key not set — driver map will show placeholder", mapsOk ? "ok" : "warn");
-
-  return urlOk;
+// ── Test result helpers ───────────────────────────────────
+function setTest(id, status, detail, fix) {
+  var icon   = {pass:"✅",warn:"⚠️",fail:"❌",skip:"⊘",running:"<span class='spin'></span>"}[status]||"⏸";
+  var dcls   = {pass:"detail-ok",warn:"detail-warn",fail:"detail-fail"}[status]||"";
+  var icoEl  = document.getElementById("ticon-"+id);
+  var detEl  = document.getElementById("tdetail-"+id);
+  var fixEl  = document.getElementById("tfix-"+id);
+  var timeEl = document.getElementById("ttime-"+id);
+  if (icoEl) icoEl.innerHTML = icon;
+  if (detEl) { detEl.textContent = detail||""; detEl.className = "test-detail "+dcls; }
+  if (fixEl) fixEl.innerHTML = fix ? "💡 "+fix : "";
+  if (timeEl) timeEl.textContent = new Date().toLocaleTimeString("en-GB");
 }
 
-// 2. Test API connection
-async function runAPITest() {
-  document.getElementById("retest-btn").disabled = true;
-  log("Testing Apps Script API connection…");
+function setSectionBadge(id, status) {
+  var el = document.getElementById("sbadge-"+id);
+  if (!el) return;
+  var labels = {pass:"✓ Pass",warn:"⚠ Warning",fail:"✗ Failed",running:"Running…",skip:"Skipped"};
+  el.textContent  = labels[status]||status;
+  el.className    = "section-badge sbadge-"+status;
+}
 
-  var urlOk = window.POS_CONFIG &&
-              window.POS_CONFIG.APPS_SCRIPT_URL !== "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec";
-  if (!urlOk) {
-    set("api-reach", ERR, "Cannot test — URL not set in pos-config.js", "err");
-    log("❌ Cannot test — set APPS_SCRIPT_URL first", "err");
-    document.getElementById("retest-btn").disabled = false;
-    setBanner("err", "Cannot test — set your Apps Script URL in pos-config.js first");
+function updateProgress() {
+  var done = PASSED + WARNED + FAILED;
+  var pct  = TOTAL > 0 ? Math.round((done/TOTAL)*100) : 0;
+  document.getElementById("prog").style.width = pct + "%";
+  document.getElementById("banner-count").textContent =
+    done + " / " + TOTAL + " tests complete · " + PASSED + " passed · " +
+    WARNED + " warnings · " + FAILED + " failed";
+}
+
+function log(type, msg) {
+  var line = "[" + new Date().toLocaleTimeString("en-GB") + "] " +
+    {pass:"✅",fail:"❌",warn:"⚠️",info:"ℹ️",head:"▶"}[type] + " " + msg;
+  LOG.push({ type:type, text:line });
+  var el   = document.createElement("span");
+  el.className = "log-line log-"+type;
+  el.textContent = line + "\n";
+  var body = document.getElementById("log-body");
+  body.appendChild(el);
+  body.scrollTop = body.scrollHeight;
+}
+
+// ── Run all tests ─────────────────────────────────────────
+async function runAll() {
+  LOG = []; PASSED = 0; WARNED = 0; FAILED = 0; CRITICAL_FAIL = false;
+  document.getElementById("log-body").innerHTML = "";
+  document.getElementById("btn-hub").disabled = true;
+  document.getElementById("main-banner").className = "status-banner banner-running";
+  document.getElementById("main-banner").querySelector(".banner-text div").textContent = "Running diagnostic checks…";
+  buildSections();
+
+  log("head", "=== GRAND TABLE POS DIAGNOSTIC ===");
+  log("info", "Date: " + new Date().toLocaleString());
+  log("info", "Browser: " + navigator.userAgent.split(") ")[0].split("(")[1] + ")");
+  log("info", "URL: " + window.location.href);
+  log("info", "");
+
+  await runConfigTests();
+  await runGoogleAPITests();
+  await runSheetTests();
+  await runAppTests();
+
+  finalize();
+}
+
+// ── SECTION 1: Config ─────────────────────────────────────
+async function runConfigTests() {
+  log("head", "CONFIGURATION");
+  setSectionBadge("config","running");
+  var secFail = false;
+
+  // pos-config.js loaded
+  setTest("pos_loaded","running","Checking…");
+  await delay(200);
+  if (typeof POS_CONFIG !== "undefined" && typeof POS_AUTH !== "undefined") {
+    setTest("pos_loaded","pass","pos-config.js loaded successfully");
+    log("pass","pos-config.js loaded · POS_CONFIG defined · POS_AUTH defined");
+    PASSED++;
+  } else if (typeof POS_CONFIG !== "undefined") {
+    setTest("pos_loaded","warn","POS_CONFIG found but POS_AUTH missing");
+    log("warn","POS_CONFIG defined but POS_AUTH is undefined — check pos-config.js for syntax errors");
+    WARNED++; CRITICAL_FAIL = true; secFail = true;
+  } else {
+    setTest("pos_loaded","fail","pos-config.js not loaded",
+      "Upload pos-config.js to your GitHub repo root and make sure it is included AFTER React/Babel scripts");
+    log("fail","pos-config.js NOT loaded — POS_CONFIG is undefined");
+    FAILED++; CRITICAL_FAIL = true; secFail = true;
+  }
+  updateProgress();
+
+  // Client ID
+  setTest("client_id","running","Checking…");
+  await delay(150);
+  var cfg = typeof POS_CONFIG !== "undefined" ? POS_CONFIG : null;
+  if (cfg && cfg.GOOGLE_CLIENT_ID && !cfg.GOOGLE_CLIENT_ID.includes("YOUR_CLIENT_ID")) {
+    setTest("client_id","pass","Client ID: "+cfg.GOOGLE_CLIENT_ID.substring(0,22)+"…");
+    log("pass","Google Client ID configured: "+cfg.GOOGLE_CLIENT_ID.substring(0,22)+"…");
+    PASSED++;
+  } else {
+    setTest("client_id","fail","Google Client ID not set — still has placeholder value",
+      "Go to console.cloud.google.com → Credentials → copy your OAuth Client ID → paste into pos-config.js GOOGLE_CLIENT_ID");
+    log("fail","Google Client ID NOT configured (still placeholder)");
+    FAILED++; CRITICAL_FAIL = true; secFail = true;
+  }
+  updateProgress();
+
+  // Admin email
+  setTest("admin_email","running","Checking…");
+  await delay(150);
+  if (cfg && cfg.ADMIN_EMAIL && !cfg.ADMIN_EMAIL.includes("YOUR_") && cfg.ADMIN_EMAIL.includes("@")) {
+    setTest("admin_email","pass","Admin email: "+cfg.ADMIN_EMAIL);
+    log("pass","Admin email: "+cfg.ADMIN_EMAIL);
+    PASSED++;
+  } else {
+    setTest("admin_email","fail","Admin email not configured",
+      "Set ADMIN_EMAIL in pos-config.js to your Google account email");
+    log("fail","Admin email not configured");
+    FAILED++; secFail = true;
+  }
+  updateProgress();
+
+  // Currency
+  setTest("currency","running","Checking…");
+  await delay(100);
+  if (cfg && cfg.CURRENCY) {
+    setTest("currency","pass","Currency: "+cfg.CURRENCY+" · Tax: "+(cfg.TAX_RATE*100).toFixed(0)+"% · Delivery: "+cfg.DELIVERY_FEE);
+    log("pass","Currency="+cfg.CURRENCY+", Tax="+cfg.TAX_RATE+", Delivery="+cfg.DELIVERY_FEE);
+    PASSED++;
+  } else {
+    setTest("currency","warn","Currency not set — using defaults");
+    log("warn","Currency/tax not configured — using defaults");
+    WARNED++;
+  }
+  updateProgress();
+  setSectionBadge("config", secFail ? "fail" : "pass");
+  log("info","");
+}
+
+// ── SECTION 2: Google APIs ────────────────────────────────
+async function runGoogleAPITests() {
+  log("head","GOOGLE API LIBRARIES");
+  setSectionBadge("google","running");
+  var secWarn = false;
+
+  // gapi
+  setTest("gapi_loaded","running","Loading Google API…");
+  var gapiOk = await waitFor(function(){ return typeof gapi !== "undefined" && gapi.client; }, 5000);
+  if (gapiOk) {
+    setTest("gapi_loaded","pass","Google API (gapi) loaded and initialised");
+    log("pass","gapi loaded and client initialised");
+    PASSED++;
+  } else {
+    // Try to load it
+    try {
+      await loadScript("https://apis.google.com/js/api.js");
+      await new Promise(function(res){ gapi.load("client",res); });
+      await gapi.client.init({});
+      setTest("gapi_loaded","pass","Google API loaded (delayed load)");
+      log("pass","gapi loaded after delay");
+      PASSED++;
+    } catch(e) {
+      setTest("gapi_loaded","fail","Google API (gapi) failed to load",
+        "Check your internet connection. gapi is loaded from https://apis.google.com");
+      log("fail","gapi failed to load: "+e.message);
+      FAILED++; CRITICAL_FAIL = true;
+    }
+  }
+  updateProgress();
+
+  // GIS
+  setTest("gis_loaded","running","Loading Google Identity Services…");
+  var gisOk = await waitFor(function(){ return typeof google !== "undefined" && google.accounts; }, 5000);
+  if (gisOk) {
+    setTest("gis_loaded","pass","Google Identity Services loaded");
+    log("pass","Google Identity Services (GIS) loaded");
+    PASSED++;
+  } else {
+    try {
+      await loadScript("https://accounts.google.com/gsi/client");
+      setTest("gis_loaded","pass","GIS loaded (delayed)");
+      log("pass","GIS loaded after delay");
+      PASSED++;
+    } catch(e) {
+      setTest("gis_loaded","fail","Google Identity Services failed to load",
+        "Check internet connection. This is required for Google Sign-In.");
+      log("fail","GIS failed: "+e.message);
+      FAILED++; CRITICAL_FAIL = true;
+    }
+  }
+  updateProgress();
+
+  // Session
+  setTest("session","running","Checking saved session…");
+  await delay(200);
+  try {
+    var raw = localStorage.getItem("pos_session");
+    if (raw) {
+      var s = JSON.parse(raw);
+      var age = Math.round((Date.now()-s.ts)/3600000);
+      setTest("session","pass","Session found: "+s.session.email+" ("+age+"h ago)");
+      log("pass","Session found: "+s.session.email+", "+age+"h old");
+      PASSED++;
+    } else {
+      setTest("session","warn","No saved session — user will need to sign in",
+        "Open setup-wizard.html and sign in with your Google account");
+      log("warn","No session in localStorage — user must sign in via setup-wizard.html");
+      WARNED++; secWarn = true;
+    }
+  } catch(e) {
+    setTest("session","warn","Could not read session from browser storage");
+    log("warn","Session read error: "+e.message);
+    WARNED++;
+  }
+  updateProgress();
+  setSectionBadge("google", CRITICAL_FAIL ? "fail" : secWarn ? "warn" : "pass");
+  log("info","");
+}
+
+// ── SECTION 3: Sheet ──────────────────────────────────────
+async function runSheetTests() {
+  log("head","GOOGLE SHEET CONNECTION");
+  setSectionBadge("sheet","running");
+
+  // Sheet ID
+  setTest("sheet_id","running","Looking for sheet ID…");
+  await delay(200);
+  var sheetId = null;
+  try {
+    var cfg = typeof POS_CONFIG !== "undefined" ? POS_CONFIG : null;
+    var email = null;
+    var raw = localStorage.getItem("pos_session");
+    if (raw) email = JSON.parse(raw).session.email;
+    if (email) sheetId = localStorage.getItem("pos_sheet_"+email);
+    if (!sheetId && typeof POS_GAPI !== "undefined" && POS_GAPI.getSheetId()) {
+      sheetId = POS_GAPI.getSheetId();
+    }
+  } catch(e){}
+
+  if (sheetId) {
+    setTest("sheet_id","pass","Sheet ID: "+sheetId.substring(0,20)+"…");
+    log("pass","Sheet ID found: "+sheetId);
+    PASSED++;
+  } else {
+    setTest("sheet_id","fail","No sheet ID found in browser storage",
+      "Run setup-wizard.html to create your Google Drive folder and sheet automatically");
+    log("fail","No sheet ID in localStorage — run setup-wizard.html");
+    FAILED++; CRITICAL_FAIL = true;
+    // Skip remaining sheet tests
+    ["sheet_access","menu_data","table_data","settings","pin_set"].forEach(function(id){
+      setTest(id,"skip","Skipped — no sheet ID");
+      log("info","SKIP: "+id);
+      WARNED++;
+    });
+    updateProgress();
+    setSectionBadge("sheet","fail");
+    log("info","");
     return;
   }
+  updateProgress();
 
+  // Sheet access
+  setTest("sheet_access","running","Reading sheet…");
+  var menuItems = [], tables = [], settings = {};
   try {
-    var res = await POS_API.testConnection();
-    if (res) {
-      set("api-reach",  OK,   "Connected (" + new Date().toLocaleTimeString() + ")", "ok");
-      set("api-setup",  res.setupDone  ? OK   : ERR,  res.setupDone  ? "Yes"  : "NO — run setupSystem() in Apps Script!", res.setupDone  ? "ok" : "err");
-      set("api-sheet",  res.sheetReady ? OK   : ERR,  res.sheetReady ? "Yes"  : "NO — run setupSystem() in Apps Script!", res.sheetReady ? "ok" : "err");
-      set("api-pin",    res.pinReady   ? OK   : WARN, res.pinReady   ? "Saved" : "Not saved — run setupSystem() or diagnose()", res.pinReady ? "ok" : "warn");
-      log("✅ API reachable. Setup: " + res.setupDone + " | Sheet: " + res.sheetReady + " | PIN: " + res.pinReady, "ok");
+    if (typeof POS_GAPI === "undefined") throw new Error("POS_GAPI not available");
 
-      if (!res.setupDone) {
-        log("⚠️ setupSystem() not run! Go to Apps Script editor, select setupSystem in dropdown, click Run", "err");
-        setBanner("err", "setupSystem() has not been run. Open Apps Script editor and run it now.");
-      } else if (!res.sheetReady) {
-        setBanner("err", "Sheet not accessible. Re-run setupSystem() in Apps Script editor.");
-      } else {
-        setBanner("ok", "API connected and sheet ready. Devices will sync.");
-      }
+    // Init if needed
+    if (!POS_GAPI.getSheetId()) {
+      await POS_GAPI.loadLibraries();
+      // Try to set token silently from saved session - just load what we can
+    }
+
+    // Try to read the sheet via Sheets API
+    if (POS_GAPI.getSheetId && POS_GAPI.getSheetId()) {
+      menuItems = (await POS_GAPI.getRows("MenuItems")) || [];
+      tables    = (await POS_GAPI.getRows("Tables")) || [];
+      var settingsRows = (await POS_GAPI.getRows("Settings")) || [];
+      settingsRows.forEach(function(r){ if(r.Key) settings[r.Key]=r.Value; });
+      setTest("sheet_access","pass","Sheet connected · Reading live data");
+      log("pass","Sheet accessible: " + sheetId);
+      PASSED++;
     } else {
-      set("api-reach", ERR, "No response from API", "err");
-      log("❌ API returned no data", "err");
-      setBanner("err", "Cannot reach Apps Script. Check the URL and that it is deployed as Anyone.");
+      // Sheet ID exists but no active session - check if sheet URL works
+      setTest("sheet_access","warn","Sheet ID saved but no active Google session",
+        "Sign in via setup-wizard.html or index.html to establish a session");
+      log("warn","Sheet ID exists but no active session to read it");
+      WARNED++;
     }
   } catch(e) {
-    set("api-reach", ERR, "Connection failed: " + e.message, "err");
-    log("❌ Connection error: " + e.message, "err");
-    setBanner("err", "Cannot reach Apps Script: " + e.message);
+    setTest("sheet_access","warn","Sheet exists but could not read live data: "+e.message,
+      "This is normal if you haven't signed in yet. Sign in via setup-wizard.html");
+    log("warn","Sheet read warning: "+e.message);
+    WARNED++;
   }
-  document.getElementById("retest-btn").disabled = false;
-}
+  updateProgress();
 
-// 3. Test PIN
-async function testPIN() {
-  var pin = document.getElementById("pin-input").value.trim();
-  var res = document.getElementById("pin-result");
-  if (pin.length !== 4) { res.textContent = "Enter exactly 4 digits"; res.style.color = "#e74c3c"; return; }
-  log("Testing PIN: " + pin + "…");
-  res.textContent = "Testing…"; res.style.color = "#8b949e";
-  try {
-    var r = await POS_API.post({ action: "verifyPin", pin: pin });
-    if (r && r.success && r.data && r.data.verified) {
-      res.textContent = "✅ Correct PIN!"; res.style.color = "#27ae60";
-      log("✅ PIN " + pin + " is correct", "ok");
-    } else {
-      res.textContent = "❌ Wrong PIN"; res.style.color = "#e74c3c";
-      log("❌ PIN " + pin + " rejected. Check PropertiesService in Apps Script.", "err");
-    }
-  } catch(e) {
-    res.textContent = "❌ API error"; res.style.color = "#e74c3c";
-    log("❌ PIN test failed: " + e.message, "err");
-  }
-}
-document.getElementById("pin-input").addEventListener("keydown", function(e){ if(e.key==="Enter") testPIN(); });
-
-// 4. Sync test
-async function testDataSync() {
-  var el = document.getElementById("sync-results");
-  el.innerHTML = '<div style="color:#8b949e;font-size:13px">Testing…</div>';
-  log("Running sync test…");
-  var tests = [
-    { name:"Menu items",  fn: function(){ return POS_API.Menu.getAll(); }},
-    { name:"Tables",      fn: function(){ return POS_API.Tables.getAll(); }},
-    { name:"Orders",      fn: function(){ return POS_API.Orders.getAll(); }},
-  ];
-  var html = "";
-  for (var i = 0; i < tests.length; i++) {
-    var t = tests[i];
-    try {
-      var r = await t.fn();
-      var count = r && r.data ? (Array.isArray(r.data) ? r.data.length : 1) : 0;
-      html += '<div class="check-row"><div class="icon">' + (r && r.success ? OK : ERR) + '</div>' +
-              '<div class="label">' + t.name + '</div>' +
-              '<div class="value ' + (r && r.success ? "ok" : "err") + '">' +
-              (r && r.success ? count + " records" : "Failed") + '</div></div>';
-      log((r && r.success ? "✅" : "❌") + " " + t.name + ": " + (r && r.success ? count + " records" : "failed"), r && r.success ? "ok" : "err");
-    } catch(e) {
-      html += '<div class="check-row"><div class="icon">' + ERR + '</div><div class="label">' + t.name + '</div><div class="value err">Error: ' + e.message + '</div></div>';
-      log("❌ " + t.name + ": " + e.message, "err");
-    }
-  }
-  el.innerHTML = html;
-}
-
-function setBanner(type, msg) {
-  var b = document.getElementById("banner");
-  b.className = "status-banner banner-" + (type === "ok" ? "ok" : type === "warn" ? "warn" : "err");
-  b.textContent = (type === "ok" ? "✅ " : type === "warn" ? "⚠️ " : "❌ ") + msg;
-}
-
-// Run on load
-(async function() {
-  var urlSet = checkConfig();
-  if (urlSet) {
-    await runAPITest();
+  // Menu
+  setTest("menu_data","running","Checking menu…");
+  await delay(150);
+  if (menuItems.length > 0) {
+    setTest("menu_data","pass",menuItems.length+" menu items found");
+    log("pass","Menu items: "+menuItems.length);
+    PASSED++;
   } else {
-    setBanner("err", "pos-config.js not configured — edit APPS_SCRIPT_URL and GOOGLE_CLIENT_ID first");
-    log("⚠️ Set your APPS_SCRIPT_URL in pos-config.js then reload this page", "warn");
-    set("api-reach", WARN, "Cannot test until URL is set", "warn");
-    set("api-setup", WAIT, "Waiting…", "");
-    set("api-sheet", WAIT, "Waiting…", "");
-    set("api-pin",   WAIT, "Waiting…", "");
+    setTest("menu_data","warn","Menu data not loaded (need active session)",
+      "Sign in and then re-run diagnostics");
+    log("warn","Menu data not available");
+    WARNED++;
   }
+  updateProgress();
+
+  // Tables
+  setTest("table_data","running","Checking tables…");
+  await delay(150);
+  if (tables.length > 0) {
+    setTest("table_data","pass",tables.length+" tables found");
+    log("pass","Tables: "+tables.length);
+    PASSED++;
+  } else {
+    setTest("table_data","warn","Tables not loaded (need active session)");
+    log("warn","Tables not available");
+    WARNED++;
+  }
+  updateProgress();
+
+  // Settings
+  setTest("settings","running","Checking settings…");
+  await delay(150);
+  if (settings.restaurant_name || settings.currency) {
+    setTest("settings","pass",
+      "Name: "+(settings.restaurant_name||"—")+" · Currency: "+(settings.currency||"—"));
+    log("pass","Settings: "+JSON.stringify(settings));
+    PASSED++;
+  } else {
+    setTest("settings","warn","Settings not loaded (need active session)");
+    log("warn","Settings empty — will load after sign-in");
+    WARNED++;
+  }
+  updateProgress();
+
+  // PIN
+  setTest("pin_set","running","Checking PIN…");
+  await delay(150);
+  if (settings.admin_pin) {
+    setTest("pin_set","pass","Admin PIN is configured");
+    log("pass","Admin PIN: configured");
+    PASSED++;
+  } else if (Object.keys(settings).length > 0) {
+    setTest("pin_set","warn","No PIN in settings — default 1234 will be used");
+    log("warn","Admin PIN not in settings — defaulting to 1234");
+    WARNED++;
+  } else {
+    setTest("pin_set","warn","PIN check skipped — settings not loaded");
+    log("warn","PIN unknown — settings not loaded");
+    WARNED++;
+  }
+  updateProgress();
+
+  var secStatus = FAILED > 0 ? "fail" : WARNED > 0 ? "warn" : "pass";
+  setSectionBadge("sheet", secStatus);
+  log("info","");
+}
+
+// ── SECTION 4: App files ──────────────────────────────────
+async function runAppTests() {
+  log("head","APP FILES");
+  setSectionBadge("apps","running");
+  var base = window.location.href.replace(/[^/]*$/, "");
+  var appMap = {
+    waiter  : "waiter-app.html",
+    kitchen : "kitchen-display.html",
+    prep    : "kitchen-prep-display.html",
+    waiting : "waiting-display.html",
+    manager : "manager-portal.html",
+    customer: "customer-app.html",
+    driver  : "driver-app.html",
+    team    : "team-app.html",
+  };
+
+  var results = await Promise.all(
+    Object.keys(appMap).map(async function(key) {
+      var url = base + appMap[key];
+      try {
+        var r = await fetch(url, {method:"HEAD", cache:"no-cache"});
+        return { key:key, file:appMap[key], ok: r.ok, status: r.status };
+      } catch(e) {
+        return { key:key, file:appMap[key], ok:false, status:"error" };
+      }
+    })
+  );
+
+  results.forEach(function(r) {
+    if (r.ok) {
+      setTest(r.key, "pass", r.file + " · HTTP " + r.status);
+      log("pass", r.file + " reachable (HTTP "+r.status+")");
+      PASSED++;
+    } else {
+      setTest(r.key, "warn", r.file + " returned " + r.status,
+        "Upload " + r.file + " to your GitHub repository");
+      log("warn", r.file + " not reachable ("+r.status+")");
+      WARNED++;
+    }
+    updateProgress();
+  });
+
+  setSectionBadge("apps", "pass");
+  log("info","");
+}
+
+// ── Finalize ──────────────────────────────────────────────
+function finalize() {
+  log("head","SUMMARY");
+  log("info", "Total: "+TOTAL+" tests · Passed: "+PASSED+" · Warned: "+WARNED+" · Failed: "+FAILED);
+
+  var banner = document.getElementById("main-banner");
+  var bannerMsg = banner.querySelector(".banner-text div");
+
+  if (FAILED === 0 && WARNED === 0) {
+    banner.className = "status-banner banner-pass";
+    bannerMsg.textContent = "✅ All systems go — ready to open Hub";
+    log("pass","ALL TESTS PASSED");
+    startCountdown();
+  } else if (FAILED === 0) {
+    banner.className = "status-banner banner-warn";
+    bannerMsg.textContent = "⚠️ Minor warnings — system functional";
+    log("warn","Tests complete with "+WARNED+" warning(s)");
+    document.getElementById("btn-hub").disabled = false;
+    document.getElementById("btn-hub").textContent = "🚀 Continue to Hub";
+  } else {
+    banner.className = "status-banner banner-fail";
+    bannerMsg.textContent = "❌ Critical issues found — fix before continuing";
+    log("fail","CRITICAL FAILURES: "+FAILED+" test(s) failed");
+    document.getElementById("btn-hub").disabled = false;
+    document.getElementById("btn-hub").textContent = "⚠️ Continue Anyway";
+  }
+}
+
+var countdownInterval = null;
+function startCountdown() {
+  var n = 5;
+  var btn = document.getElementById("btn-hub");
+  btn.disabled = false;
+
+  function tick() {
+    btn.textContent = "🚀 Opening Hub in " + n + "s…";
+    if (n <= 0) { clearInterval(countdownInterval); goHub(); }
+    n--;
+  }
+  tick();
+  countdownInterval = setInterval(tick, 1000);
+
+  btn.onclick = function() {
+    clearInterval(countdownInterval);
+    goHub();
+  };
+}
+
+function goHub() {
+  clearInterval(countdownInterval);
+  // Save diagnostic pass timestamp
+  localStorage.setItem("pos_diag_pass", Date.now().toString());
+  window.location.href = "index.html";
+}
+
+// ── Utilities ─────────────────────────────────────────────
+function delay(ms) { return new Promise(function(r){ setTimeout(r,ms); }); }
+
+function waitFor(cond, ms) {
+  return new Promise(function(resolve) {
+    if (cond()) { resolve(true); return; }
+    var start = Date.now();
+    var iv = setInterval(function() {
+      if (cond()) { clearInterval(iv); resolve(true); }
+      else if (Date.now()-start > ms) { clearInterval(iv); resolve(false); }
+    }, 100);
+  });
+}
+
+function loadScript(src) {
+  return new Promise(function(resolve, reject) {
+    var s = document.createElement("script");
+    s.src = src; s.async = true;
+    s.onload = resolve;
+    s.onerror = function(){ reject(new Error("Failed to load: "+src)); };
+    document.head.appendChild(s);
+  });
+}
+
+function copyLog() {
+  var text = "=== GRAND TABLE POS DIAGNOSTIC LOG ===\n" +
+    "Date: " + new Date().toLocaleString() + "\n" +
+    "URL: " + window.location.href + "\n" +
+    "User Agent: " + navigator.userAgent + "\n\n" +
+    LOG.map(function(l){ return l.text; }).join("\n") +
+    "\n\nSUMMARY: "+PASSED+" passed · "+WARNED+" warnings · "+FAILED+" failed";
+
+  navigator.clipboard.writeText(text).then(function() {
+    var btn = document.querySelector(".log-btn-copy");
+    var orig = btn.textContent;
+    btn.textContent = "✅ Copied!";
+    setTimeout(function(){ btn.textContent = orig; }, 2000);
+  }).catch(function() {
+    prompt("Copy this log:", text);
+  });
+}
+
+function clearLog() {
+  LOG = [];
+  document.getElementById("log-body").innerHTML = "";
+}
+
+// ── Load pos-config.js then run ───────────────────────────
+(function bootstrap() {
+  buildSections();
+  log("info", "Loading pos-config.js…");
+
+  // Load Google APIs first
+  var s1 = document.createElement("script");
+  s1.src = "https://apis.google.com/js/api.js";
+  s1.async = true;
+  document.head.appendChild(s1);
+
+  var s2 = document.createElement("script");
+  s2.src = "https://accounts.google.com/gsi/client";
+  s2.async = true;
+  document.head.appendChild(s2);
+
+  // Load pos-config.js
+  var s3 = document.createElement("script");
+  s3.src = "pos-config.js?" + Date.now(); // cache bust
+  s3.onload = function() {
+    log("info", "pos-config.js loaded, starting tests in 1s…");
+    setTimeout(runAll, 1000);
+  };
+  s3.onerror = function() {
+    log("fail", "pos-config.js failed to load from: " + s3.src);
+    log("fail", "Upload pos-config.js to your GitHub repository root folder");
+    document.getElementById("main-banner").className = "status-banner banner-fail";
+    document.getElementById("main-banner").querySelector(".banner-text div").textContent =
+      "❌ pos-config.js not found — upload it to GitHub";
+    // Still run tests to show what's missing
+    setTimeout(runAll, 500);
+  };
+  document.head.appendChild(s3);
 })();
 </script>
 </body>
