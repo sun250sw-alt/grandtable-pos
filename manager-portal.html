@@ -1255,7 +1255,7 @@
         );
     }
 
-    ReactDOM.render(<ManagerPortal />, document.getElementById('root'));
+    window._doRenderPortal = function() { ReactDOM.render(<ManagerPortal />, document.getElementById('root')); };
 </script>
 
 <script>
@@ -1268,6 +1268,149 @@ POS_AUTH.init("manager-portal", {
   },
   onError: function(msg) { console.error("Auth error:", msg); }
 });
+</script>
+
+<script>
+// Manager portal auth: PIN required, React renders only after PIN verified
+(function() {
+  // Show loading screen first
+  document.getElementById("root").innerHTML =
+    '<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;' +
+    'background:#f0f2f5;flex-direction:column;gap:16px;font-family:sans-serif;">' +
+    '<div style="font-size:48px">🍽️</div>' +
+    '<div style="font-size:20px;font-weight:700;color:#667eea">Manager Portal</div>' +
+    '<div style="font-size:14px;color:#888" id="mp-status">Checking auth...</div>' +
+    '</div>';
+
+  function setStatus(msg) {
+    var el = document.getElementById("mp-status");
+    if (el) el.textContent = msg;
+  }
+
+  function boot() {
+    if (typeof POS_AUTH === "undefined" || typeof POS_GAPI === "undefined") {
+      setStatus("Loading scripts...");
+      setTimeout(boot, 200); return;
+    }
+
+    setStatus("Checking session...");
+
+    // Check for saved session
+    var savedRaw = localStorage.getItem("pos_session");
+    if (!savedRaw) {
+      window.location.href = "index.html?redirect=" + encodeURIComponent(location.href);
+      return;
+    }
+
+    // Load Google libraries
+    POS_GAPI.loadLibraries().then(function() {
+      setStatus("Signing in...");
+      POS_GAPI.silentSignIn(function(session) {
+        if (!session) {
+          window.location.href = "index.html?redirect=" + encodeURIComponent(location.href);
+          return;
+        }
+        // Init sheet
+        POS_GAPI.initUserSheet().catch(function(){}).then(function() {
+          setStatus("Verifying PIN...");
+          // Show PIN modal over loading screen
+          showPinModal(session);
+        });
+      });
+    }).catch(function(e) {
+      setStatus("Error loading Google APIs: " + e.message);
+    });
+  }
+
+  function showPinModal(session) {
+    document.getElementById("root").innerHTML =
+      '<div style="position:fixed;inset:0;background:rgba(7,7,15,.97);display:flex;' +
+      'align-items:center;justify-content:center;z-index:9999;font-family:-apple-system,sans-serif;">' +
+      '<div style="background:#111827;border:1px solid rgba(255,255,255,.1);border-radius:24px;' +
+      'padding:40px 32px;width:320px;text-align:center;box-shadow:0 40px 100px rgba(0,0,0,.7);">' +
+      '<div style="font-size:48px;margin-bottom:14px">🔐</div>' +
+      '<h2 style="color:#fff;font-size:20px;font-weight:800;margin-bottom:6px">Manager Access</h2>' +
+      '<p style="color:rgba(255,255,255,.4);font-size:13px;margin-bottom:28px">' +
+        session.name + '<br>Enter your 4-digit PIN</p>' +
+      '<div style="display:flex;justify-content:center;gap:14px;margin-bottom:28px" id="pin-dots">' +
+        [0,1,2,3].map(function(i){ return '<div id="pd'+i+'" style="width:20px;height:20px;border-radius:50%;border:2px solid rgba(255,255,255,.2);background:transparent;transition:all .15s"></div>'; }).join('') +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">' +
+        [1,2,3,4,5,6,7,8,9,'','0','⌫'].map(function(k){
+          return '<button data-k="'+k+'" style="padding:15px 0;border-radius:12px;border:1px solid rgba(255,255,255,.08);' +
+            'background:rgba(255,255,255,.05);color:#fff;font-size:20px;font-weight:600;cursor:pointer;' +
+            (k===''?'opacity:0;pointer-events:none;':'') + '" ' +
+            'onmousedown="this.style.background='rgba(243,156,18,.25)'" ' +
+            'onmouseup="this.style.background='rgba(255,255,255,.05)'">' + k + '</button>';
+        }).join('') +
+      '</div>' +
+      '<div id="pin-err" style="color:#e74c3c;font-size:13px;min-height:18px;margin-bottom:12px"></div>' +
+      '<button onclick="localStorage.removeItem('pos_session');location.href='index.html'" ' +
+        'style="background:none;border:none;color:rgba(255,255,255,.25);font-size:12px;cursor:pointer;">Sign out</button>' +
+      '</div></div>';
+
+    var entered = "";
+    function updateDots() {
+      [0,1,2,3].forEach(function(i) {
+        var d = document.getElementById("pd"+i);
+        if (!d) return;
+        d.style.background  = i < entered.length ? "#f39c12" : "transparent";
+        d.style.borderColor = i < entered.length ? "#f39c12" : "rgba(255,255,255,.2)";
+      });
+    }
+
+    document.querySelectorAll("[data-k]").forEach(function(btn) {
+      var k = btn.dataset.k;
+      if (!k) return;
+      btn.addEventListener("click", function() {
+        if (k === "⌫") { entered = entered.slice(0,-1); document.getElementById("pin-err").textContent=""; updateDots(); return; }
+        if (entered.length >= 4) return;
+        entered += k; updateDots();
+        if (entered.length === 4) {
+          POS_GAPI.Settings.verifyPin(entered).then(function(res) {
+            if (res && res.data && res.data.verified) {
+              // PIN correct - render the portal
+              document.getElementById("root").innerHTML = "";
+              if (typeof window._doRenderPortal === "function") {
+                window._doRenderPortal();
+              }
+              // Add util bar after render
+              setTimeout(function() {
+                if (typeof POS_AUTH !== "undefined" && typeof POS_AUTH.renderUtilBar === "function") {
+                  POS_AUTH.renderUtilBar("user-badge","manager-portal");
+                }
+              }, 600);
+            } else {
+              document.getElementById("pin-err").textContent = "Incorrect PIN — try again";
+              entered = ""; updateDots();
+            }
+          }).catch(function() {
+            // If sheet not connected, allow default PIN 1234
+            if (entered === "1234") {
+              document.getElementById("root").innerHTML = "";
+              if (typeof window._doRenderPortal === "function") window._doRenderPortal();
+            } else {
+              document.getElementById("pin-err").textContent = "Incorrect PIN — try again";
+              entered = ""; updateDots();
+            }
+          });
+        }
+      });
+    });
+  }
+
+  // Start
+  var attempts = 0;
+  var iv = setInterval(function() {
+    attempts++;
+    if (typeof POS_AUTH !== "undefined" && typeof POS_GAPI !== "undefined") {
+      clearInterval(iv); boot();
+    } else if (attempts > 60) {
+      clearInterval(iv);
+      setStatus("Error: pos-config.js not loading. Upload it to GitHub.");
+    }
+  }, 100);
+})();
 </script>
 </body>
 </html>
