@@ -56,24 +56,35 @@ window.POS_GAPI = (() => {
   // ── Load Google API libraries ─────────────────────────────
   function loadLibraries() {
     return new Promise((resolve) => {
-      // Load gapi
-      const s1 = document.createElement("script");
-      s1.src = "https://apis.google.com/js/api.js";
-      s1.onload = () => {
-        gapi.load("client", async () => {
-          await gapi.client.init({});
-          await gapi.client.load("https://sheets.googleapis.com/$discovery/rest?version=v4");
-          await gapi.client.load("https://www.googleapis.com/discovery/v1/apis/drive/v3/rest");
-          resolve();
-        });
-      };
-      document.head.appendChild(s1);
+      if (window.gapi && window.gapi.client && window.google && window.google.accounts) {
+        resolve(); return;
+      }
+      // Check for existing elements
+      let s1 = document.querySelector('script[src="https://apis.google.com/js/api.js"]');
+      if (!s1) {
+        s1 = document.createElement("script");
+        s1.src = "https://apis.google.com/js/api.js";
+        document.head.appendChild(s1);
+      }
+      let s2 = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+      if (!s2) {
+        s2 = document.createElement("script");
+        s2.src = "https://accounts.google.com/gsi/client";
+        s2.async = true;
+        document.head.appendChild(s2);
+      }
 
-      // Load GIS
-      const s2 = document.createElement("script");
-      s2.src = "https://accounts.google.com/gsi/client";
-      s2.async = true;
-      document.head.appendChild(s2);
+      const checkInterval = setInterval(() => {
+        if (window.gapi && window.google && window.google.accounts) {
+          clearInterval(checkInterval);
+          gapi.load("client", async () => {
+            await gapi.client.init({});
+            await gapi.client.load("https://sheets.googleapis.com/$discovery/rest?version=v4");
+            await gapi.client.load("https://www.googleapis.com/discovery/v1/apis/drive/v3/rest");
+            resolve();
+          });
+        }
+      }, 100);
     });
   }
 
@@ -87,7 +98,6 @@ window.POS_GAPI = (() => {
         _accessToken = tokenResponse.access_token;
         gapi.client.setToken({ access_token: _accessToken });
 
-        // Get user profile
         const prof = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
           headers: { Authorization: "Bearer " + _accessToken }
         }).then(r => r.json());
@@ -102,12 +112,10 @@ window.POS_GAPI = (() => {
   }
 
   function silentSignIn(callback) {
-    // Try to restore from saved session
     const saved = _loadSession();
     if (!saved) { callback && callback(null); return; }
     _session = saved.session;
 
-    // Re-request token silently
     _tokenClient = google.accounts.oauth2.initTokenClient({
       client_id : POS_CONFIG.GOOGLE_CLIENT_ID,
       scope     : SCOPES,
@@ -146,7 +154,6 @@ window.POS_GAPI = (() => {
       const raw = localStorage.getItem(LS_SESSION);
       if (!raw) return null;
       const d = JSON.parse(raw);
-      // Expire after 8 hours
       if (Date.now() - d.ts > 8 * 3600 * 1000) {
         localStorage.removeItem(LS_SESSION);
         return null;
@@ -161,22 +168,38 @@ window.POS_GAPI = (() => {
 
   // ── Find or create the user's spreadsheet ─────────────────
   async function initUserSheet(restaurantName) {
-    // 1. Check localStorage first (fastest)
-    const cachedId = localStorage.getItem(LS_SHEET_ID(_session.email));
+    // Restore session if missing
+    if (!_session) {
+      const saved = _loadSession();
+      if (saved) _session = saved.session;
+    }
+
+    let cachedId = null;
+    if (_session && _session.email) {
+      cachedId = localStorage.getItem(LS_SHEET_ID(_session.email));
+    }
+    if (!cachedId) {
+      cachedId = localStorage.getItem("pos_active_sheet_id");
+    }
+
     if (cachedId) {
-      // Verify it still exists
       try {
-        await gapi.client.sheets.spreadsheets.get({ spreadsheetId: cachedId });
         _sheetId = cachedId;
+        localStorage.setItem("pos_active_sheet_id", cachedId);
+        if (_session && _session.email) {
+          localStorage.setItem(LS_SHEET_ID(_session.email), cachedId);
+        }
         await _loadSettings();
         return { sheetId: cachedId, isNew: false };
       } catch(e) {
-        // Sheet was deleted — recreate
-        localStorage.removeItem(LS_SHEET_ID(_session.email));
+        // Cached sheet removed, fallback to search below
       }
     }
 
-    // 2. Search Drive for existing POS sheet
+    if (!_session || !_session.email) {
+      throw new Error("No active Google session to initialize sheet.");
+    }
+
     const name = (restaurantName || _session.name.split(" ")[0]) + " POS";
     try {
       const search = await gapi.client.drive.files.list({
@@ -189,17 +212,16 @@ window.POS_GAPI = (() => {
       if (files.length > 0) {
         _sheetId = files[0].id;
         localStorage.setItem(LS_SHEET_ID(_session.email), _sheetId);
+        localStorage.setItem("pos_active_sheet_id", _sheetId);
         await _loadSettings();
         return { sheetId: _sheetId, isNew: false };
       }
     } catch(e) {}
 
-    // 3. First time — create folder + sheet
     return await _createFolderAndSheet(restaurantName || ((_session.name || "My Restaurant") + " POS"));
   }
 
   async function _createFolderAndSheet(restaurantName) {
-    // Create folder in Drive root
     const folderRes = await gapi.client.drive.files.create({
       resource: {
         name    : restaurantName + " — POS",
@@ -209,7 +231,6 @@ window.POS_GAPI = (() => {
     });
     const folderId = folderRes.result.id;
 
-    // Create spreadsheet inside folder
     const ssRes = await gapi.client.drive.files.create({
       resource: {
         name    : restaurantName + " — POS Database",
@@ -220,15 +241,13 @@ window.POS_GAPI = (() => {
     });
     _sheetId = ssRes.result.id;
     localStorage.setItem(LS_SHEET_ID(_session.email), _sheetId);
+    localStorage.setItem("pos_active_sheet_id", _sheetId);
 
-    // Build all sheets with headers
     await _buildSheets(restaurantName);
-
     return { sheetId: _sheetId, folderId, isNew: true, folderName: restaurantName + " — POS" };
   }
 
   async function _buildSheets(restaurantName) {
-    // Add all tabs at once via batchUpdate
     const tabDefs = [
       { name:"Orders",     headers:["OrderID","TableNumber","CustomerName","WaiterName","Items","Subtotal","Tax","Total","Status","OrderTime","Notes"] },
       { name:"MenuItems",  headers:["ItemID","Name","Category","Price","Description","Available","PrepTime","Emoji"] },
@@ -244,21 +263,18 @@ window.POS_GAPI = (() => {
       { name:"Clockings",  headers:["ClockingID","StaffEmail","StaffName","Date","ClockIn","ClockOut","TotalHours","Status","Notes"] },
     ];
 
-    // Add sheets via batchUpdate
     const addRequests = tabDefs.map(tab => ({
       addSheet: { properties: { title: tab.name } }
     }));
-    // Also delete the default "Sheet1"
     addRequests.unshift({ deleteSheet: { sheetId: 0 } });
 
     try {
       await gapi.client.sheets.spreadsheets.batchUpdate({
         spreadsheetId: _sheetId,
-        resource: { requests: addRequests.slice(1) }, // skip delete first time
+        resource: { requests: addRequests.slice(1) },
       });
     } catch(e) {}
 
-    // Write headers to each sheet
     const headerData = tabDefs.map(tab => ({
       range : tab.name + "!A1",
       values: [tab.headers],
@@ -272,7 +288,6 @@ window.POS_GAPI = (() => {
       },
     });
 
-    // Seed Settings
     const settings = [
       ["restaurant_name", restaurantName],
       ["currency",        POS_CONFIG.CURRENCY],
@@ -283,14 +298,12 @@ window.POS_GAPI = (() => {
     ];
     await _appendRows("Settings", settings);
 
-    // Seed 12 tables
     const tables = [];
     for (let i = 1; i <= 12; i++) {
       tables.push(["TBL-"+i, i, i<=4?2:i<=8?4:6, "available","",0,""]);
     }
     await _appendRows("Tables", tables);
 
-    // Seed menu items
     const menu = [
       ["MENU-1","Burger Deluxe","Main Course",1299,"Beef, cheddar, sauce, fries",true,"12 min","🍔"],
       ["MENU-2","Fish & Chips","Main Course",1399,"Beer-battered cod",true,"15 min","🐟"],
@@ -317,7 +330,9 @@ window.POS_GAPI = (() => {
       const rows = await getRows("Settings");
       _settings = {};
       rows.forEach(r => { if (r.Key) _settings[r.Key] = r.Value; });
-      localStorage.setItem(LS_SETTINGS(_session.email), JSON.stringify(_settings));
+      if (_session && _session.email) {
+        localStorage.setItem(LS_SETTINGS(_session.email), JSON.stringify(_settings));
+      }
     } catch(e) {}
   }
 
@@ -357,7 +372,6 @@ window.POS_GAPI = (() => {
   }
 
   async function updateRow(sheetName, colIndex, matchValue, updates) {
-    // Get all data to find the row
     const res = await gapi.client.sheets.spreadsheets.values.get({
       spreadsheetId: _sheetId,
       range: sheetName,
@@ -386,7 +400,7 @@ window.POS_GAPI = (() => {
     return (prefix || "ID") + "-" + Date.now() + "-" + Math.floor(Math.random()*9000+1000);
   }
 
-  // ── High-level API matching existing POS_API interface ────
+  // ── High-level API ────
 
   const Orders = {
     getAll: async (status) => {
@@ -675,12 +689,8 @@ window.POS_API = window.POS_GAPI;
 // ============================================================
 window.POS_AUTH = (() => {
 
-  let _pinVerified = false;
-
-  async function init(appId, { onReady, onError } = {}) { // Always async now
+  async function init(appId, { onReady, onError } = {}) {
     const mode = POS_CONFIG.ACCESS[appId] || "session";
-
-    if (mode === "public") { onReady && onReady(null); return; }
 
     try {
       await POS_GAPI.loadLibraries();
@@ -689,10 +699,14 @@ window.POS_AUTH = (() => {
       return;
     }
 
+    if (mode === "public") {
+      onReady && onReady(null);
+      return;
+    }
+
     const session = POS_GAPI.getSession();
 
     if (mode === "hub") {
-      await POS_GAPI.loadLibraries();
       const saved = _savedSession();
       if (saved) {
         POS_GAPI.silentSignIn(async (s) => {
@@ -708,10 +722,9 @@ window.POS_AUTH = (() => {
     if (mode === "session") {
       const saved = _savedSession();
       if (saved) {
-        await POS_GAPI.loadLibraries();
         POS_GAPI.silentSignIn(async (s) => {
           if (s) {
-            await POS_GAPI.initUserSheet(); // load sheet ID from localStorage
+            await POS_GAPI.initUserSheet();
             onReady && onReady(POS_GAPI.getSession());
           } else {
             window.location.href = "index.html?redirect=" + encodeURIComponent(location.href);
@@ -726,17 +739,15 @@ window.POS_AUTH = (() => {
     if (mode === "pin") {
       const saved = _savedSession();
       if (!saved) { window.location.href = "index.html?redirect=" + encodeURIComponent(location.href); return; }
-      await POS_GAPI.loadLibraries();
       POS_GAPI.silentSignIn(async (s) => {
         if (!s) { window.location.href = "index.html"; return; }
-        await POS_GAPI.initUserSheet(); // load sheet ID
+        await POS_GAPI.initUserSheet();
         _showPinModal(POS_GAPI.getSession(), onReady, onError);
       });
       return;
     }
 
     if (mode === "driver" || mode === "team") {
-      await POS_GAPI.loadLibraries();
       const saved = _savedSession();
       if (saved) {
         POS_GAPI.silentSignIn(async (s) => {
@@ -790,20 +801,11 @@ window.POS_AUTH = (() => {
       }
       if (wall.parentNode) document.body.removeChild(wall);
 
-      // For hub/setup — init their sheet
       if (appId === "index" || appId === "hub") {
         await POS_GAPI.initUserSheet();
       }
       onReady && onReady(session);
     });
-
-    // Render button after GIS loads
-    const check = setInterval(() => {
-      if (window.google && google.accounts && google.accounts.oauth2) {
-        clearInterval(check);
-        // Button rendered by signIn() flow
-      }
-    }, 100);
   }
 
   function _showPinModal(session, onReady, onError) {
@@ -908,7 +910,6 @@ window.POS_AUTH = (() => {
     window.location.reload();
   }
 
-  // Inject a small top utility bar into any app
   function renderUtilBar(containerId, appName) {
     var s = POS_GAPI.getSession();
     var el = document.getElementById(containerId);
