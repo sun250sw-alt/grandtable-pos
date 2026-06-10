@@ -206,6 +206,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   </div>
 </div>
 
+<div id="loading-placeholder" style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:sans-serif;background:#f0f2f5;">
+  <div style="font-size:40px">🚗</div>
+  <div style="font-size:16px;font-weight:700">Driver Terminal</div>
+  <div style="font-size:13px;color:#888">Verifying driver credentials...</div>
+</div>
+
 <script>
 // ── STATE ─────────────────────────────────────────────────────
 var APP = {
@@ -214,61 +220,24 @@ var APP = {
   tab      : "orders",
   orders   : [],
   history  : [],
-  earn     : { today:21.60, week:142.80, dels:4, km:12.4 },
-  gps      : null,     // {lat,lng,accuracy}
-  map      : null,     // google.maps.Map
-  dirR     : null,     // DirectionsRenderer
-  driverM  : null,     // driver marker
+  earn     : { today:240.00, week:1420.00, dels:1, km:12.4 },
+  gps      : null,     
+  map      : null,     
+  dirR     : null,     
+  driverM  : null,     
   mapReady : false,
   newBanner: false,
 };
 
-// Demo data
 var DEMO_ORDERS = [
   { id:"ORD-082", time:"12:34 PM", status:"pickup",
-    rest:{ name:"The Grand Table", addr:"15 Baker St, London W1U 3AA", lat:51.5237, lng:-0.1585 },
-    cust:{ name:"Mr. James",       addr:"42 Oxford Rd, London W1D 2LN", phone:"+44 7911 123456", lat:51.5150, lng:-0.1416 },
-    items:["Burger Deluxe ×2","Coca Cola ×2"], val:31.97 },
-  { id:"ORD-079", time:"12:18 PM", status:"transit",
-    rest:{ name:"The Grand Table", addr:"15 Baker St, London W1U 3AA", lat:51.5237, lng:-0.1585 },
-    cust:{ name:"Ms. Chen",        addr:"7 Regent St, London W1B 4EA",  phone:"+44 7800 654321", lat:51.5101, lng:-0.1343 },
-    items:["Steak ×1","Caesar Salad ×1","Water ×2"], val:37.97 },
+    rest:{ name:"The Grand Table", addr:"15 Galle Road, Colombo", lat:6.9271, lng:79.8612 },
+    cust:{ name:"Mr. James",       addr:"42 Duplication Rd, Colombo", phone:"+94 77 123 4567", lat:6.9012, lng:79.8562 },
+    items:["Burger Deluxe ×2","Coca Cola ×2"], val:310.00 },
 ];
 var DEMO_HIST = [
-  { id:"ORD-076", addr:"12 Park Lane",        time:"11:52 AM", earn:5.20 },
-  { id:"ORD-073", addr:"88 Bond Street",      time:"11:14 AM", earn:4.80 },
-  { id:"ORD-071", addr:"3 Piccadilly Circus", time:"10:47 AM", earn:6.10 },
-  { id:"ORD-068", addr:"55 Kings Road",       time:"10:12 AM", earn:5.50 },
+  { id:"ORD-076", addr:"12 Park Avenue",        time:"11:52 AM", earn:240.00 },
 ];
-
-// ── AUTH ──────────────────────────────────────────────────────
-POS_AUTH.init("driver-app", {
-  onReady: function(session) {
-    APP.session = session;
-    APP.orders  = DEMO_ORDERS;
-    APP.history = DEMO_HIST;
-    document.getElementById("app").style.display = "flex";
-    // Header
-    var name = (session && session.name) ? session.name : "Driver";
-    var veh  = (session && session.driverData && session.driverData.Vehicle) ? session.driverData.Vehicle : "Vehicle";
-    var plt  = (session && session.driverData && session.driverData.PlateNumber) ? session.driverData.PlateNumber : "";
-    document.getElementById("hdr-av").textContent   = name.charAt(0).toUpperCase();
-    document.getElementById("hdr-name").textContent  = name;
-    document.getElementById("hdr-veh").textContent   = "🚗 " + veh + (plt ? " · " + plt : "");
-    document.getElementById("st-earn").textContent   = "Rs." + APP.earn.today.toFixed(2);
-    document.getElementById("st-del").textContent    = APP.earn.dels;
-    document.getElementById("st-km").textContent     = APP.earn.km + " km";
-    // Start GPS
-    startGPS();
-    // Load Maps
-    loadMapsAPI();
-    // First render
-    render();
-    // Simulate new order after 10s
-    setTimeout(showNewOrderBanner, 10000);
-  },
-  onError: function(e) { console.error("Auth:", e); }
-});
 
 // ── GPS ───────────────────────────────────────────────────────
 function startGPS() {
@@ -288,14 +257,15 @@ function startGPS() {
 function setGPSBar(acc, msg) {
   var dot = document.getElementById("gps-dot");
   var lbl = document.getElementById("gps-lbl");
+  if (!dot || !lbl) return;
   if (!acc) {
     dot.className = "gps-dot-el acc-poor";
     lbl.textContent = msg || "GPS unavailable";
     return;
   }
-  if (acc < 20)      { dot.className = "gps-dot-el acc-good"; lbl.textContent = "GPS locked · ±"+Math.round(acc)+"m"; }
+  if (acc < 20) { dot.className = "gps-dot-el acc-good"; lbl.textContent = "GPS locked · ±"+Math.round(acc)+"m"; }
   else if (acc < 60) { dot.className = "gps-dot-el acc-med";  lbl.textContent = "GPS fair · ±"+Math.round(acc)+"m"; }
-  else               { dot.className = "gps-dot-el acc-poor"; lbl.textContent = "GPS weak · ±"+Math.round(acc)+"m — move outside"; }
+  else { dot.className = "gps-dot-el acc-poor"; lbl.textContent = "GPS weak · ±"+Math.round(acc)+"m"; }
 }
 
 var _lastSend = 0;
@@ -303,10 +273,11 @@ function sendLocationToSheet() {
   if (!APP.gps || !APP.session || Date.now()-_lastSend < 30000) return;
   _lastSend = Date.now();
   var api = window.POS_GAPI; if(!api || !api.getSheetId || !api.getSheetId()) return;
-  api.post && api.post({ action:"updateDriverLocation", data:{
-    email: APP.session.email, lat: APP.gps.lat, lng: APP.gps.lng,
-    accuracy: APP.gps.acc, ts: new Date().toISOString()
-  }}).catch(function(){});
+  api.updateRow && api.updateRow("Drivers", 2, APP.session.email, {
+    Lat: APP.gps.lat,
+    Lng: APP.gps.lng,
+    LastSeen: new Date().toISOString()
+  }).catch(function(){});
 }
 
 // ── GOOGLE MAPS ───────────────────────────────────────────────
@@ -329,7 +300,7 @@ window.mapsReady = function() {
   var el = document.getElementById("gmap");
   if (!el) return;
 
-  var center = APP.gps ? { lat: APP.gps.lat, lng: APP.gps.lng } : { lat:51.505, lng:-0.09 };
+  var center = APP.gps ? { lat: APP.gps.lat, lng: APP.gps.lng } : { lat:6.9271, lng:79.8612 };
 
   APP.map = new google.maps.Map(el, {
     zoom: 14, center: center, mapTypeId: "roadmap",
@@ -347,14 +318,10 @@ window.mapsReady = function() {
 
   APP.mapReady = true;
 
-  // Remove loading overlay if present
   var loading = document.getElementById("map-loading");
   if (loading) loading.remove();
 
-  // Place driver marker
   if (APP.gps) placeDriverMarker();
-
-  // Draw route for first order
   if (APP.orders.length) drawRoute(APP.orders[0]);
 };
 
@@ -381,7 +348,6 @@ var _extraMarkers = [];
 function drawRoute(order) {
   if (!APP.mapReady || !order) return;
 
-  // Clear old markers
   _extraMarkers.forEach(function(m){ m.setMap(null); });
   _extraMarkers = [];
 
@@ -393,7 +359,6 @@ function drawRoute(order) {
   var destination = { lat: order.cust.lat, lng: order.cust.lng };
   var waypoints   = [];
 
-  // If pickup stage: route is driver → restaurant → customer
   if (order.status === "pickup") {
     waypoints = [{ location:{ lat:order.rest.lat, lng:order.rest.lng }, stopover:true }];
   }
@@ -404,20 +369,18 @@ function drawRoute(order) {
     waypoints: waypoints,
     travelMode: google.maps.TravelMode.DRIVING,
   }, function(result, status) {
-    if (status !== "OK") { console.warn("Directions API:", status); return; }
+    if (status !== "OK") { console.warn("Directions API error:", status); return; }
     APP.dirR.setDirections(result);
 
-    // ETA from first leg
     var leg   = result.routes[0].legs[0];
     var etaEl = document.getElementById("map-eta");
     if (etaEl) etaEl.textContent = "ETA " + leg.duration.text;
 
-    // Total distance
     var totalM = result.routes[0].legs.reduce(function(s,l){ return s+l.distance.value; }, 0);
     APP.earn.km = (totalM/1000).toFixed(1);
-    document.getElementById("st-km").textContent = APP.earn.km + " km";
+    var kmEl = document.getElementById("st-km");
+    if (kmEl) kmEl.textContent = APP.earn.km + " km";
 
-    // Restaurant marker
     _extraMarkers.push(new google.maps.Marker({
       position: { lat:order.rest.lat, lng:order.rest.lng },
       map: APP.map, title: order.rest.name, zIndex:5,
@@ -429,7 +392,6 @@ function drawRoute(order) {
       label:{ text:"R", color:"#fff", fontSize:"11px", fontWeight:"bold" }
     }));
 
-    // Customer marker
     _extraMarkers.push(new google.maps.Marker({
       position: destination,
       map: APP.map, title: order.cust.name, zIndex:5,
@@ -467,10 +429,10 @@ function showRouteOnMap(id) {
 function setTab(tab) {
   APP.tab = tab;
   ["orders","earnings","history"].forEach(function(t){
-    document.getElementById("tab-"+t).classList.toggle("active", t===tab);
+    var el = document.getElementById("tab-"+t);
+    if (el) el.classList.toggle("active", t===tab);
   });
   render();
-  // Re-init map after DOM rebuild
   if (tab === "orders" && APP.mapReady && APP.orders.length) {
     setTimeout(function(){ drawRoute(APP.orders[0]); }, 100);
   }
@@ -479,14 +441,17 @@ function setTab(tab) {
 function toggleOnline() {
   APP.online = !APP.online;
   var btn = document.getElementById("online-btn");
-  btn.className   = "online-btn " + (APP.online ? "on" : "off");
-  btn.textContent = APP.online ? "● Online" : "○ Offline";
+  if (btn) {
+    btn.className   = "online-btn " + (APP.online ? "on" : "off");
+    btn.textContent = APP.online ? "● Online" : "○ Offline";
+  }
   render();
 }
 
 // ── RENDER ────────────────────────────────────────────────────
 function render() {
   var el = document.getElementById("content");
+  if (!el) return;
   if (APP.tab === "orders")   { el.innerHTML = renderOrders();   return; }
   if (APP.tab === "earnings") { el.innerHTML = renderEarnings(); return; }
   if (APP.tab === "history")  { el.innerHTML = renderHistory();  return; }
@@ -510,7 +475,7 @@ function renderOrders() {
     ? '<div class="nb-wrap"><div class="new-order-banner">' +
       '<div class="nb-tag">🔔 New Order Request</div>' +
       '<div class="nb-title">ORD-091 · 2.1 km away</div>' +
-      '<div class="nb-detail">3 items · Est. Rs.4.80 · ~18 min</div>' +
+      '<div class="nb-detail">3 items · Est. Rs.240.00 · ~18 min</div>' +
       '<div class="nb-btns">' +
       '<button class="nb-accept" onclick="acceptOrder()">✅ Accept</button>' +
       '<button class="nb-decline" onclick="dismissBanner()">Decline</button>' +
@@ -550,7 +515,7 @@ function orderCardHtml(o) {
     '<div class="oc-footer">' +
       '<div class="oc-items">' + o.items.length + ' items · ' + o.items[0] +
         (o.items.length > 1 ? ' +' + (o.items.length-1) + ' more' : '') + '</div>' +
-      '<div class="oc-val">LKR ' + o.val.toFixed(2) + '</div>' +
+      '<div class="oc-val">Rs.' + o.val.toFixed(2) + '</div>' +
     '</div>' +
     '<div class="oc-actions">' +
       (isPickup
@@ -565,19 +530,50 @@ function orderCardHtml(o) {
   '</div>';
 }
 
+async function loadLiveDeliveries() {
+  var api = window.POS_GAPI || window.POS_API;
+  if (!api || !api.getSheetId || !api.getSheetId()) return;
+
+  try {
+    const res = await api.Drivers.getOrders(APP.session.email);
+    if (res && res.data && res.data.length > 0) {
+      APP.orders = res.data.map(function(d) {
+        return {
+          id: d.OrderID || d.DeliveryID,
+          deliveryId: d.DeliveryID,
+          time: d.PickupTime ? new Date(d.PickupTime).toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"}) : "Just now",
+          status: d.Status === "pending" || d.Status === "pickup" ? "pickup" : "transit",
+          rest: { name: POS_CONFIG.RESTAURANT_NAME, addr: "15 Galle Road, Colombo", lat: 6.9271, lng: 79.8612 },
+          cust: { name: d.CustomerName || "Customer", addr: d.CustomerAddress, phone: "+94 77 123 4567", lat: 6.9012, lng: 79.8562 },
+          items: ["Food Package"],
+          val: parseFloat(d.Earnings) || 240.00
+        };
+      });
+      render();
+    }
+  } catch(e) {
+    console.error("Live deliveries sync fail:", e);
+  }
+}
+
 function updateStatus(id, status) {
+  var api = window.POS_GAPI || window.POS_API;
   if (status === "delivered") {
     APP.orders = APP.orders.filter(function(o){ return o.id !== id; });
-    APP.earn.today += 4.80;
+    APP.earn.today += 240.00;
     APP.earn.dels++;
     APP.history.unshift({ id:id, addr:"Delivered successfully",
-      time: new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}), earn:4.80 });
-    document.getElementById("st-earn").textContent = "Rs." + APP.earn.today.toFixed(2);
-    document.getElementById("st-del").textContent  = APP.earn.dels;
-    var api = window.POS_GAPI || window.POS_API; if(api && api.Deliveries) api.Deliveries.update({ deliveryId: id, status: 'delivered' }).catch(function(){});
+      time: new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}), earn:240.00 });
+    
+    var earnEl = document.getElementById("st-earn");
+    var delEl = document.getElementById("st-del");
+    if (earnEl) earnEl.textContent = "Rs." + APP.earn.today.toFixed(2);
+    if (delEl) delEl.textContent = APP.earn.dels;
+
+    if (api && api.Deliveries) api.Deliveries.update({ deliveryId: id, status: 'delivered' }).catch(function(){});
   } else {
     APP.orders = APP.orders.map(function(o){ return o.id===id ? Object.assign({},o,{status:status}) : o; });
-    POS_API.Deliveries.update({ deliveryId:id, status:status }).catch(function(){});
+    if (api && api.Deliveries) api.Deliveries.update({ deliveryId: id, status: status }).catch(function(){});
   }
   render();
   if (APP.mapReady && APP.orders.length) setTimeout(function(){ drawRoute(APP.orders[0]); }, 100);
@@ -587,16 +583,16 @@ function updateStatus(id, status) {
 function renderEarnings() {
   var e = APP.earn;
   var days = [
-    { d:"Mon", v:52.40 }, { d:"Tue", v:68.80 }, { d:"Wed", v:e.today },
-    { d:"Thu", v:null },  { d:"Fri", v:null },   { d:"Sat", v:null }, { d:"Sat", v:null }
+    { d:"Mon", v:520.00 }, { d:"Tue", v:680.00 }, { d:"Wed", v:e.today },
+    { d:"Thu", v:null },  { d:"Fri", v:null },   { d:"Sat", v:null }
   ];
   return '<div class="earn-wrap">' +
     '<div class="earn-hero">' +
-      '<div class="earn-big">LKR ' + e.today.toFixed(2) + '</div>' +
+      '<div class="earn-big">Rs.' + e.today.toFixed(2) + '</div>' +
       '<div class="earn-sub">Today · ' + e.dels + ' deliveries</div>' +
       '<div class="earn-grid">' +
-        '<div class="earn-box"><div class="earn-box-val">LKR ' + (e.today*.84).toFixed(2) + '</div><div class="earn-box-lbl">Base Pay</div></div>' +
-        '<div class="earn-box"><div class="earn-box-val">LKR ' + (e.today*.16).toFixed(2) + '</div><div class="earn-box-lbl">Tips</div></div>' +
+        '<div class="earn-box"><div class="earn-box-val">Rs.' + (e.today*.84).toFixed(2) + '</div><div class="earn-box-lbl">Base Pay</div></div>' +
+        '<div class="earn-box"><div class="earn-box-val">Rs.' + (e.today*.16).toFixed(2) + '</div><div class="earn-box-lbl">Tips</div></div>' +
         '<div class="earn-box"><div class="earn-box-val">' + e.dels + '</div><div class="earn-box-lbl">Deliveries</div></div>' +
         '<div class="earn-box"><div class="earn-box-val">' + e.km + ' km</div><div class="earn-box-lbl">Distance</div></div>' +
       '</div>' +
@@ -608,7 +604,7 @@ function renderEarnings() {
     }).join("") +
     '<div class="earn-row" style="border-top:2px solid #eee;margin-top:4px;">' +
       '<div class="er-day" style="font-weight:800;font-size:15px">Week Total</div>' +
-      '<div class="er-val" style="font-size:18px">LKR ' + e.week.toFixed(2) + '</div>' +
+      '<div class="er-val" style="font-size:18px">Rs.' + e.week.toFixed(2) + '</div>' +
     '</div></div></div>';
 }
 
@@ -642,16 +638,15 @@ function acceptOrder() {
     id:"ORD-091",
     time: new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}),
     status:"pickup",
-    rest:{ name:"The Grand Table", addr:"15 Baker St, London W1U 3AA", lat:51.5237, lng:-0.1585 },
-    cust:{ name:"Mrs. Patel", addr:"99 Edgware Rd, London W2 1JB", phone:"+44 7900 111222", lat:51.5200, lng:-0.1660 },
-    items:["Pasta Carbonara ×2","Garlic Bread ×1"], val:28.97
+    rest:{ name:"The Grand Table", addr:"15 Galle Road, Colombo", lat:6.9271, lng:79.8612 },
+    cust:{ name:"Mrs. Patel", addr:"99 Galle Road, Colombo", phone:"+94 77 987 6543", lat:6.9100, lng:79.8550 },
+    items:["Pasta Carbonara ×2","Garlic Bread ×1"], val:280.00
   };
   APP.orders.unshift(newOrder);
   render();
   if (APP.mapReady) setTimeout(function(){ drawRoute(newOrder); }, 150);
 }
 
-// CSS keyframe for spin (used in map loading)
 var styleEl = document.createElement("style");
 styleEl.textContent = "@keyframes spin{to{transform:rotate(360deg)}}";
 document.head.appendChild(styleEl);
@@ -660,14 +655,37 @@ document.head.appendChild(styleEl);
 (function() {
   function startAuth() {
     if (typeof POS_AUTH === "undefined") {
-      console.error("POS_AUTH not defined - pos-config.js failed to load");
-      document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:sans-serif;background:#f0f0f0"><div style="font-size:40px">⚠️</div><div style="font-size:16px;color:#e74c3c;font-weight:700">pos-config.js not loaded</div><div style="font-size:13px;color:#888">Upload the latest pos-config.js to GitHub</div><button onclick="location.reload()" style="margin-top:8px;padding:8px 20px;background:#667eea;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px">Retry</button></div>';
+      console.error("POS_AUTH failed to load");
       return;
     }
     POS_AUTH.init("driver-app", {
       onReady: function(session) {
-        var root = document.getElementById("app-root");
-        if (root) root.style.display = "block";
+        APP.session = session;
+        APP.orders  = DEMO_ORDERS;
+        APP.history = DEMO_HIST;
+
+        var root = document.getElementById("app");
+        if (root) root.style.display = "flex";
+        var loader = document.getElementById("loading-placeholder");
+        if (loader) loader.style.display = "none";
+
+        var name = (session && session.name) ? session.name : "Driver";
+        var veh  = (session && session.driverData && session.driverData.Vehicle) ? session.driverData.Vehicle : "Vehicle";
+        var plt  = (session && session.driverData && session.driverData.PlateNumber) ? session.driverData.PlateNumber : "";
+        
+        var avatarEl = document.getElementById("hdr-av");
+        var nameEl = document.getElementById("hdr-name");
+        var vehEl = document.getElementById("hdr-veh");
+        if (avatarEl) avatarEl.textContent = name.charAt(0).toUpperCase();
+        if (nameEl) nameEl.textContent = name;
+        if (vehEl) vehEl.textContent = "🚗 " + veh + (plt ? " · " + plt : "");
+
+        startGPS();
+        loadMapsAPI();
+        loadLiveDeliveries();
+        setInterval(loadLiveDeliveries, 10000);
+        render();
+
         setTimeout(function() {
           if (typeof POS_AUTH.renderUtilBar === "function") {
             POS_AUTH.renderUtilBar("user-badge", "driver-app");
