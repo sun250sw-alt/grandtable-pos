@@ -94,7 +94,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   box-shadow:0 20px 48px rgba(0,0,0,.35); }
 .card:hover::before { opacity:1; }
 
-/* colour variants */
+/* color variants */
 .c-violet::before { background:radial-gradient(ellipse at top left,rgba(102,126,234,.13),transparent 70%); }
 .c-violet:hover   { border-color:rgba(102,126,234,.4); }
 .c-violet .icon-wrap  { background:rgba(102,126,234,.15); }
@@ -217,16 +217,16 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <div class="user-badge">
       <div id="user-badge-name"></div>
       <div style="display:flex;align-items:center;gap:8px;">
-      <button onclick="if(window.POS_GAPI&&POS_GAPI.getSheetId()){window.open('https://docs.google.com/spreadsheets/d/'+POS_GAPI.getSheetId()+'/edit','_blank')}"
-        style="background:rgba(39,174,96,.15);border:1px solid rgba(39,174,96,.3);color:#27ae60;padding:5px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
-        📊 Open Sheet
-      </button>
-      <button onclick="location.reload()"
-        style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.7);padding:5px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
-        🔄 Refresh
-      </button>
-      <button class="signout-btn" onclick="POS_AUTH.signOut()">Sign out</button>
-    </div>
+        <button onclick="if(window.POS_GAPI&&POS_GAPI.getSheetId()){window.open('https://docs.google.com/spreadsheets/d/'+POS_GAPI.getSheetId()+'/edit','_blank')}"
+          style="background:rgba(39,174,96,.15);border:1px solid rgba(39,174,96,.3);color:#27ae60;padding:5px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+          📊 Open Sheet
+        </button>
+        <button onclick="location.reload()"
+          style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.7);padding:5px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+          🔄 Refresh
+        </button>
+        <button class="signout-btn" onclick="POS_AUTH.signOut()">Sign out</button>
+      </div>
     </div>
   </div>
 
@@ -410,7 +410,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     </div>
   </div>
 
-    <!-- Setup Wizard link -->
+  <!-- Setup Wizard link -->
   <div style="text-align:center;margin-top:32px;margin-bottom:-20px;">
     <a href="setup-wizard.html" style="display:inline-flex;align-items:center;gap:8px;
       background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
@@ -429,22 +429,18 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 </div><!-- /wrap -->
 
 <script>
-  // Clock
   function tick() {
     const el = document.getElementById("clock");
     if (el) el.textContent = new Date().toLocaleTimeString("en-GB");
   }
   tick(); setInterval(tick, 1000);
 
-  // Init auth — "hub" mode requires admin Google account
   POS_AUTH.init("index", {
     onReady: (session) => {
       document.getElementById("app-content").style.display = "block";
-      // Show name in topbar
       const badge = document.getElementById("user-badge-name");
       if (badge && session) badge.textContent = session.name;
 
-      // After sign-in redirect if came from another app
       const params = new URLSearchParams(window.location.search);
       const redirect = params.get("redirect");
       if (redirect) window.location.href = decodeURIComponent(redirect);
