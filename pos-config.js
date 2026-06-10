@@ -5,8 +5,7 @@
 // ============================================================
 
 const POS_CONFIG = {
-  // ← Replace with your Google OAuth Client ID
-  // Get it from: console.cloud.google.com → APIs & Services → Credentials
+  // Replace with your Google OAuth Client ID
   GOOGLE_CLIENT_ID : "335894427389-lj497464m2a7anusn9d5e75ekojkguva.apps.googleusercontent.com",
 
   RESTAURANT_NAME  : "Grand Table POS",  // default, overridden by each user's setup
@@ -59,7 +58,7 @@ window.POS_GAPI = (() => {
       if (window.gapi && window.gapi.client && window.google && window.google.accounts) {
         resolve(); return;
       }
-      // Check for existing elements
+      // Check for existing elements to avoid duplicates
       let s1 = document.querySelector('script[src="https://apis.google.com/js/api.js"]');
       if (!s1) {
         s1 = document.createElement("script");
@@ -168,7 +167,6 @@ window.POS_GAPI = (() => {
 
   // ── Find or create the user's spreadsheet ─────────────────
   async function initUserSheet(restaurantName) {
-    // Restore session if missing
     if (!_session) {
       const saved = _loadSession();
       if (saved) _session = saved.session;
@@ -192,7 +190,7 @@ window.POS_GAPI = (() => {
         await _loadSettings();
         return { sheetId: cachedId, isNew: false };
       } catch(e) {
-        // Cached sheet removed, fallback to search below
+        // Cached sheet removed or invalid
       }
     }
 
@@ -681,7 +679,6 @@ window.POS_GAPI = (() => {
   };
 })();
 
-// Alias so existing app code using POS_API still works
 window.POS_API = window.POS_GAPI;
 
 // ============================================================
