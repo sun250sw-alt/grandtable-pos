@@ -33,6 +33,7 @@
             display: flex;
             gap: 24px;
             font-size: 14px;
+            align-items: center;
         }
 
         .stat-box {
@@ -375,12 +376,10 @@
 
                 <div className="card-actions">
                     {order.status === 'new' && (
-                        <>
-                            <button className="action-btn btn-start" style={{ gridColumn: '1/-1' }}
-                                onClick={() => onUpdateStatus(order.id, 'preparing')}>
-                                🔥 Start Preparing
-                            </button>
-                        </>
+                        <button className="action-btn btn-start" style={{ gridColumn: '1/-1' }}
+                            onClick={() => onUpdateStatus(order.id, 'preparing')}>
+                            🔥 Start Preparing
+                        </button>
                     )}
                     {order.status === 'preparing' && (
                         <>
@@ -395,12 +394,10 @@
                         </>
                     )}
                     {order.status === 'ready' && (
-                        <>
-                            <button className="action-btn btn-serve" style={{ gridColumn: '1/-1' }}
-                                onClick={() => onUpdateStatus(order.id, 'served')}>
-                                🚀 Served — Complete
-                            </button>
-                        </>
+                        <button className="action-btn btn-serve" style={{ gridColumn: '1/-1' }}
+                            onClick={() => onUpdateStatus(order.id, 'served')}>
+                            🚀 Served — Complete
+                        </button>
                     )}
                 </div>
 
@@ -414,7 +411,35 @@
         const [filter, setFilter] = useState('active');
         const [soundOn, setSoundOn] = useState(true);
 
-        // Poll Google Sheet for live orders every 5 seconds
+        // Keep a reference to sound settings to avoid hook closure issues in setInterval
+        const soundOnRef = useRef(soundOn);
+        useEffect(() => {
+            soundOnRef.current = soundOn;
+        }, [soundOn]);
+
+        // Triggers a native Web Audio synth ping without requiring sound file loading
+        const playNotificationSound = () => {
+            if (!soundOnRef.current) return;
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 note
+                gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
+
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.15);
+            } catch (e) {
+                console.warn("Audio Context playback prevented or unsupported:", e);
+            }
+        };
+
+        // Poll Google Sheet for live orders
         useEffect(() => {
             async function fetchOrders() {
                 if (!window.POS_GAPI) return;
@@ -428,7 +453,14 @@
                         const active = res.data
                             .filter(o => o.Status !== "served" && o.Status !== "closed")
                             .map(sheetToKitchenOrder);
+                        
                         setOrders(prev => {
+                            // Sound notification check: Check if new order IDs arrived
+                            const incomingNewOrder = active.some(newO => !prev.some(p => p.id === newO.id));
+                            if (incomingNewOrder && prev.length > 0) {
+                                playNotificationSound();
+                            }
+
                             // Preserve checked state for existing items
                             return active.map(newO => {
                                 const existing = prev.find(p => p.id === newO.id);
@@ -442,8 +474,10 @@
                     }
                 } catch(e) { console.error("Kitchen poll error:", e); }
             }
+            
             fetchOrders();
-            const interval = setInterval(fetchOrders, POS_CONFIG.POLL_MS);
+            const pollMs = (window.POS_CONFIG && window.POS_CONFIG.POLL_MS) || 5000;
+            const interval = setInterval(fetchOrders, pollMs);
             return () => clearInterval(interval);
         }, []);
 
@@ -455,14 +489,14 @@
                 } catch(e) { console.error("Status update failed:", e); }
             }
             if (newStatus === "served") {
-                setOrders(orders.filter(o => o.id !== orderId));
+                setOrders(prev => prev.filter(o => o.id !== orderId));
             } else {
-                setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+                setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
             }
         };
 
         const toggleItem = (orderId, itemIdx) => {
-            setOrders(orders.map(o => {
+            setOrders(prev => prev.map(o => {
                 if (o.id !== orderId) return o;
                 const items = o.items.map((item, idx) =>
                     idx === itemIdx ? { ...item, checked: !item.checked } : item
@@ -502,7 +536,7 @@
                             <div className="stat-number" style={{ color: '#27ae60' }}>{counts.ready}</div>
                             <div className="stat-label">Ready</div>
                         </div>
-                        <div id="user-badge" style="display:flex;align-items:center;gap:6px;"></div>
+                        <div id="user-badge" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}></div>
                         <button className="sound-toggle" onClick={() => setSoundOn(!soundOn)}>
                             {soundOn ? '🔔 Sound On' : '🔕 Sound Off'}
                         </button>
@@ -524,7 +558,7 @@
                         </button>
                     ))}
                     <span style={{ marginLeft: 'auto', opacity: 0.5, fontSize: '12px' }}>
-                        🔄 Auto-refreshing every 5s
+                        🔄 Auto-refreshing every {((window.POS_CONFIG && window.POS_CONFIG.POLL_MS) || 5000) / 1000}s
                     </span>
                 </div>
 
@@ -552,11 +586,11 @@
         );
     }
 
-    ReactDOM.render(<KitchenDisplay />, document.getElementById('root'));
+    // Modern React 18 Mounting
+    const rootElement = document.getElementById('root');
+    const root = ReactDOM.createRoot(rootElement);
+    root.render(<KitchenDisplay />);
 </script>
-
-
-
 
 <script>
 // Kitchen display: render immediately, load live data when ready
