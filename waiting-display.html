@@ -17,7 +17,6 @@ html, body {
 }
 
 /* ── FIXED LAYOUT ────────────────────────────────────── */
-/* Ticker always pinned at bottom */
 .ticker-wrap {
   position:fixed;
   bottom:0; left:0; right:0;
@@ -30,11 +29,10 @@ html, body {
   z-index:100;
 }
 
-/* Everything else sits above the ticker */
 .page {
   position:fixed;
   top:0; left:0; right:0;
-  bottom:40px; /* ticker height */
+  bottom:40px; 
   display:flex;
   flex-direction:column;
   background:
@@ -291,8 +289,7 @@ html, body {
 </head>
 <body>
 
-<!-- FIXED LAYOUT -->
-<div class="page">
+<div class="page" id="app" style="display:none">
   <!-- TOP BAR -->
   <div class="top-bar">
     <div class="rest-name" id="rest-name">🍽️ The Grand Table</div>
@@ -301,16 +298,17 @@ html, body {
       <div id="clock-date"></div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;">
-    <button onclick="if(window.POS_GAPI&&POS_GAPI.getSheetId()){window.open('https://docs.google.com/spreadsheets/d/'+POS_GAPI.getSheetId()+'/edit','_blank')}" 
-      style="background:rgba(39,174,96,.15);border:1px solid rgba(39,174,96,.3);color:#27ae60;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
-      📊 Sheet
-    </button>
-    <button onclick="location.reload()" 
-      style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.7);padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
-      🔄
-    </button>
-  </div>
-  <div class="open-pill">
+      <div id="user-badge" style="display:none;"></div>
+      <button onclick="if(window.POS_GAPI&&POS_GAPI.getSheetId()){window.open('https://docs.google.com/spreadsheets/d/'+POS_GAPI.getSheetId()+'/edit','_blank')}" 
+        style="background:rgba(39,174,96,.15);border:1px solid rgba(39,174,96,.3);color:#27ae60;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+        📊 Sheet
+      </button>
+      <button onclick="location.reload()" 
+        style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.7);padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+        🔄
+      </button>
+    </div>
+    <div class="open-pill">
       <div class="live-dot"></div>
       Now Open
     </div>
@@ -318,10 +316,8 @@ html, body {
 
   <!-- MAIN GRID -->
   <div class="main-grid">
-
     <!-- LEFT: Queue -->
     <div class="left-col">
-      <!-- Now Serving -->
       <div class="now-serving">
         <div>
           <div class="ns-tag">🔔 Now Serving</div>
@@ -335,7 +331,6 @@ html, body {
         </div>
       </div>
 
-      <!-- Queue -->
       <div class="queue-section">
         <div class="queue-label">Waiting Queue</div>
         <div class="queue-rows" id="queue-rows">
@@ -353,24 +348,24 @@ html, body {
       <div class="cat-tabs" id="cat-tabs"></div>
       <div class="menu-list" id="menu-list"></div>
     </div>
-
   </div>
 </div>
 
-<!-- TICKER (always visible, fixed at bottom) -->
+<div id="loading-placeholder" style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:sans-serif;background:#0a0a0a;color:white;">
+  <div style="font-size:40px">📺</div>
+  <div style="font-size:16px;font-weight:700">Lobby Waiting Screen</div>
+  <div style="font-size:13px;color:#888">Connecting to TV queue channel...</div>
+</div>
+
+<!-- TICKER -->
 <div class="ticker-wrap">
   <div class="ticker-track" id="ticker-track"></div>
 </div>
 
 <script>
-// ── Config ────────────────────────────────────────────────
-var CURRENCY = (typeof POS_CONFIG !== "undefined" && POS_CONFIG.CURRENCY) || "LKR";
-var REST_NAME = (typeof POS_CONFIG !== "undefined" && POS_CONFIG.RESTAURANT_NAME) || "The Grand Table";
+var CURRENCY = "Rs.";
+var REST_NAME = "The Grand Table";
 
-document.getElementById("rest-name").textContent = "🍽️ " + REST_NAME;
-document.getElementById("menu-hdr").textContent  = "📋 Today's Menu — " + CURRENCY;
-
-// ── Default menu (shown before sheet loads) ───────────────
 var DEFAULT_MENU = {
   "Main Course": [
     { name:"Burger Deluxe",   desc:"Beef, cheddar, sauce, fries",    price:1299 },
@@ -400,7 +395,6 @@ var menuData   = DEFAULT_MENU;
 var activeCat  = 0;
 var catRotateT = null;
 
-// ── Ticker ────────────────────────────────────────────────
 var TICKERS = [
   "🎉 Ask your waiter about today's specials",
   "📱 Scan the QR code to order from your table",
@@ -413,37 +407,39 @@ var TICKERS = [
 ];
 
 (function buildTicker() {
-  var msgs = TICKERS.concat(TICKERS); // double for seamless loop
+  var msgs = TICKERS.concat(TICKERS); 
   var track = document.getElementById("ticker-track");
-  track.innerHTML = msgs.map(function(m) {
-    return '<span class="ticker-item">' + m + '&nbsp;&nbsp;&nbsp;<strong>·</strong>&nbsp;&nbsp;&nbsp;</span>';
-  }).join("");
+  if (track) {
+    track.innerHTML = msgs.map(function(m) {
+      return '<span class="ticker-item">' + m + '&nbsp;&nbsp;&nbsp;<strong>·</strong>&nbsp;&nbsp;&nbsp;</span>';
+    }).join("");
+  }
 })();
 
-// ── Clock ─────────────────────────────────────────────────
 function updateClock() {
   var now = new Date();
-  document.getElementById("clock-time").textContent =
-    now.toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit",second:"2-digit"});
-  document.getElementById("clock-date").textContent =
-    now.toLocaleDateString("en-GB", {weekday:"long",day:"numeric",month:"long",year:"numeric"});
+  var clockTimeEl = document.getElementById("clock-time");
+  var clockDateEl = document.getElementById("clock-date");
+  if (clockTimeEl) {
+    clockTimeEl.textContent = now.toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  }
+  if (clockDateEl) {
+    clockDateEl.textContent = now.toLocaleDateString("en-GB", {weekday:"long",day:"numeric",month:"long",year:"numeric"});
+  }
 }
-updateClock();
-setInterval(updateClock, 1000);
 
-// ── Menu rendering ────────────────────────────────────────
 function renderMenu() {
   var cats = Object.keys(menuData);
-
-  // Tabs
   var tabsEl = document.getElementById("cat-tabs");
-  tabsEl.innerHTML = cats.map(function(cat, i) {
-    return '<div class="cat-tab ' + (i === activeCat ? "active" : "") + '" onclick="switchCat(' + i + ')">' + cat + '</div>';
-  }).join("");
+  if (tabsEl) {
+    tabsEl.innerHTML = cats.map(function(cat, i) {
+      return '<div class="cat-tab ' + (i === activeCat ? "active" : "") + '" onclick="switchCat(' + i + ')">' + cat + '</div>';
+    }).join("");
+  }
 
-  // Items
   var items = menuData[cats[activeCat]] || [];
   var listEl = document.getElementById("menu-list");
+  if (!listEl) return;
   if (items.length === 0) {
     listEl.innerHTML = '<div style="padding:20px;text-align:center;color:rgba(255,255,255,.3)">No items in this category</div>';
     return;
@@ -462,7 +458,6 @@ function renderMenu() {
 
 function switchCat(i) {
   activeCat = i;
-  // Reset auto-rotate timer
   clearInterval(catRotateT);
   startCatRotate();
   renderMenu();
@@ -475,15 +470,12 @@ function startCatRotate() {
   }, 8000);
 }
 
-renderMenu();
-startCatRotate();
-
-// ── Queue rendering ───────────────────────────────────────
 function renderQueue(queueItems, nowServingItems) {
-  // Now serving
   var nsNumbers = document.getElementById("ns-numbers");
   var nsTables  = document.getElementById("ns-tables");
   var nsReady   = document.getElementById("ns-ready");
+
+  if (!nsNumbers || !nsTables || !nsReady) return;
 
   if (nowServingItems && nowServingItems.length > 0) {
     nsNumbers.innerHTML = nowServingItems.map(function(s) {
@@ -499,8 +491,8 @@ function renderQueue(queueItems, nowServingItems) {
     nsReady.textContent  = "Your order will appear here when ready";
   }
 
-  // Queue rows
   var el = document.getElementById("queue-rows");
+  if (!el) return;
   if (!queueItems || queueItems.length === 0) {
     el.innerHTML = '<div class="queue-empty">' +
       '<div style="font-size:36px">✅</div>' +
@@ -525,13 +517,11 @@ function renderQueue(queueItems, nowServingItems) {
   }).join("");
 }
 
-// ── Load live data from Sheet ─────────────────────────────
 var ticketBase = 40;
 
 async function loadLiveData() {
   if (!window.POS_GAPI || !window.POS_GAPI.getSheetId || !window.POS_GAPI.getSheetId()) return;
 
-  // Load menu
   try {
     var menuRes = await window.POS_GAPI.Menu.getAll();
     if (menuRes && menuRes.data && menuRes.data.length > 0) {
@@ -551,9 +541,8 @@ async function loadLiveData() {
         renderMenu();
       }
     }
-  } catch(e) { console.error("Menu load:", e); }
+  } catch(e) { console.error("Menu sync fail:", e); }
 
-  // Load orders → queue
   try {
     var ordersRes = await window.POS_GAPI.Orders.getAll();
     if (ordersRes && ordersRes.data) {
@@ -580,26 +569,59 @@ async function loadLiveData() {
 
       renderQueue(queue, nowServing);
     }
-  } catch(e) { console.error("Orders load:", e); }
+  } catch(e) { console.error("Orders sync fail:", e); }
 }
 
-// Start loading once POS_GAPI is ready
-function waitForGAPI() {
-  if (window.POS_GAPI) {
-    // Try to init sheet if not yet done
-    if (!window.POS_GAPI.getSheetId()) {
-      window.POS_GAPI.initUserSheet && window.POS_GAPI.initUserSheet()
-        .catch(function(){})
-        .then(function() { loadLiveData(); });
-    } else {
-      loadLiveData();
+(function initApp() {
+  updateClock();
+  setInterval(updateClock, 1000);
+  
+  function startAuth() {
+    if (typeof POS_AUTH === "undefined") {
+      console.error("POS_AUTH failed to load");
+      return;
     }
-    setInterval(loadLiveData, 8000);
-  } else {
-    setTimeout(waitForGAPI, 1000);
+    POS_AUTH.init("waiting-display", {
+      onReady: function(session) {
+        var root = document.getElementById("app");
+        if (root) root.style.display = "block";
+        var loader = document.getElementById("loading-placeholder");
+        if (loader) loader.style.display = "none";
+
+        var settings = window.POS_GAPI.getSettings();
+        if (settings) {
+          if (settings.restaurant_name) {
+            REST_NAME = settings.restaurant_name;
+            var nameEl = document.getElementById("rest-name");
+            if (nameEl) nameEl.textContent = "🍽️ " + REST_NAME;
+          }
+          if (settings.currency) {
+            CURRENCY = settings.currency;
+            var menuHdrEl = document.getElementById("menu-hdr");
+            if (menuHdrEl) menuHdrEl.textContent = "📋 Today's Menu — " + CURRENCY;
+          }
+        }
+
+        renderMenu();
+        startCatRotate();
+        loadLiveData();
+        setInterval(loadLiveData, 8000);
+      },
+      onError: function(msg) { console.error("Auth error:", msg); }
+    });
   }
-}
-waitForGAPI();
+
+  if (typeof POS_AUTH !== "undefined") {
+    startAuth();
+  } else {
+    var tries = 0;
+    var iv = setInterval(function() {
+      tries++;
+      if (typeof POS_AUTH !== "undefined") { clearInterval(iv); startAuth(); }
+      else if (tries > 50) { clearInterval(iv); startAuth(); }
+    }, 100);
+  }
+})();
 </script>
 </body>
 </html>
