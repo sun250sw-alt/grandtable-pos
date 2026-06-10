@@ -235,9 +235,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 
 </div><!-- /app -->
 
+<div id="loading-placeholder" style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:sans-serif;background:#f0f2f5;">
+  <div style="font-size:40px">👥</div>
+  <div style="font-size:16px;font-weight:700">Team Portal</div>
+  <div style="font-size:13px;color:#888">Verifying roster profile...</div>
+</div>
+
 <script>
-// ── State ────────────────────────────────────────────────
-let SESSION  = null;   // { email, name, staffData, … }
+let SESSION  = null;   
 let STATE    = {
   tab        : "dashboard",
   clockedIn  : false,
@@ -249,40 +254,29 @@ let STATE    = {
   year       : new Date().getFullYear(),
 };
 
-// ── Auth ─────────────────────────────────────────────────
-POS_AUTH.init("team-app", {
-  onReady: (session) => {
-    SESSION = session;
-    document.getElementById("app").style.display = "flex";
-    initHeader();
-    loadAll();
-  },
-  onError: (msg) => console.error("Auth error:", msg),
-});
-
 function doSignOut() {
-  localStorage.removeItem("pos_team_session");
+  localStorage.removeItem("pos_session");
   if (window.google?.accounts?.id) google.accounts.id.disableAutoSelect();
   location.reload();
 }
 
-// ── Header ───────────────────────────────────────────────
 function initHeader() {
   const name = SESSION.name || SESSION.staffData?.Name || "Team Member";
   const role = SESSION.staffData?.Role || "Staff";
-  document.getElementById("hdr-avatar").textContent = name.charAt(0).toUpperCase();
-  document.getElementById("hdr-name").textContent   = name;
-  document.getElementById("hdr-role").textContent   = role;
+  var avatarEl = document.getElementById("hdr-avatar");
+  var nameEl = document.getElementById("hdr-name");
+  var roleEl = document.getElementById("hdr-role");
+  if (avatarEl) avatarEl.textContent = name.charAt(0).toUpperCase();
+  if (nameEl) nameEl.textContent   = name;
+  if (roleEl) roleEl.textContent   = role;
 }
 
-// ── Live clock ───────────────────────────────────────────
 function updateLiveClock() {
   const el = document.getElementById("live-clock");
   if (el) el.textContent = new Date().toLocaleTimeString("en-GB");
 }
 setInterval(updateLiveClock, 1000);
 
-// ── Tabs ─────────────────────────────────────────────────
 function switchTab(tab) {
   STATE.tab = tab;
   document.querySelectorAll(".nav-tab").forEach((t,i) => {
@@ -291,19 +285,17 @@ function switchTab(tab) {
   render();
 }
 
-// ── Load data ────────────────────────────────────────────
 async function loadAll() {
   const email = SESSION.email;
   const m     = STATE.month;
   const y     = STATE.year;
   const api   = window.POS_GAPI || window.POS_API;
-  // Ensure sheet loaded
+  
   if (api && !api.getSheetId()) {
     try { await api.initUserSheet(); } catch(e){}
   }
 
   if (!api || !api.getSheetId || !api.getSheetId()) {
-    // Not connected yet — use demo data
     STATE.rota      = DEMO_ROTA;
     STATE.clockings = DEMO_CLOCKINGS;
     STATE.hours     = DEMO_HOURS;
@@ -318,7 +310,6 @@ async function loadAll() {
     STATE.hours     = (hoursRes     && hoursRes.data)     || DEMO_HOURS;
   }
 
-  // Check today's clocking status
   const todayStr = new Date().toISOString().split("T")[0];
   const todayClocking = STATE.clockings.find(c => c.Date === todayStr && c.Status === "in");
   if (todayClocking) {
@@ -338,9 +329,9 @@ function updateClockChip(clockedIn, time) {
   label.textContent = clockedIn ? `Clocked in at ${time}` : "Not clocked in";
 }
 
-// ── RENDER ───────────────────────────────────────────────
 function render() {
   const content = document.getElementById("content");
+  if (!content) return;
   switch(STATE.tab) {
     case "dashboard" : content.innerHTML = renderDashboard(); break;
     case "rota"      : content.innerHTML = renderRota();      break;
@@ -350,7 +341,6 @@ function render() {
   updateLiveClock();
 }
 
-// ── DASHBOARD ────────────────────────────────────────────
 function renderDashboard() {
   const today    = new Date();
   const todayStr = today.toISOString().split("T")[0];
@@ -425,7 +415,6 @@ function renderDashboard() {
   </div>`;
 }
 
-// ── ROTA ─────────────────────────────────────────────────
 function renderRota() {
   const months = ["January","February","March","April","May","June",
                   "July","August","September","October","November","December"];
@@ -481,7 +470,6 @@ function renderRota() {
   }`;
 }
 
-// ── HOURS ─────────────────────────────────────────────────
 function renderHours() {
   const months = ["January","February","March","April","May","June",
                   "July","August","September","October","November","December"];
@@ -503,7 +491,7 @@ function renderHours() {
     <div class="hours-meta">
       <span><strong>${h.totalDays}</strong> days</span>
       <span><strong>${(h.totalHours/Math.max(h.totalDays,1)).toFixed(1)}</strong> avg/day</span>
-      <span><strong>${(h.totalHours*600).toFixed(0)}</strong> est. pay</span>
+      <span><strong>LKR ${(h.totalHours*600).toFixed(0)}</strong> est. pay</span>
     </div>
   </div>
 
@@ -541,7 +529,6 @@ function renderHours() {
   </div>`;
 }
 
-// ── CLOCKINGS ────────────────────────────────────────────
 function renderClockings() {
   const months = ["January","February","March","April","May","June",
                   "July","August","September","October","November","December"];
@@ -584,7 +571,6 @@ function renderClockings() {
   }`;
 }
 
-// ── CLOCK IN / OUT ───────────────────────────────────────
 async function handleClockIn() {
   const btn = document.querySelector(".clock-in-btn");
   if (btn) { btn.disabled = true; btn.textContent = "Clocking in…"; }
@@ -594,7 +580,7 @@ async function handleClockIn() {
   if (res.data && res.data.clockedIn) {
     STATE.clockedIn   = true;
     STATE.clockInTime = res.data.clockedIn;
-    STATE.clockings   = (await POS_API.Team.getClockings(SESSION.email, STATE.month)).data || STATE.clockings;
+    STATE.clockings   = (await api.Team.getClockings(SESSION.email, STATE.month)).data || STATE.clockings;
     updateClockChip(true, res.data.clockedIn);
     showToast("✅ Clocked in at " + res.data.clockedIn, "success");
     render();
@@ -614,8 +600,8 @@ async function handleClockOut() {
     STATE.clockedIn   = false;
     STATE.clockInTime = null;
     const [clockingsRes, hoursRes] = await Promise.all([
-      POS_API.Team.getClockings(SESSION.email, STATE.month),
-      POS_API.Team.getHours(SESSION.email, STATE.month, STATE.year),
+      api.Team.getClockings(SESSION.email, STATE.month),
+      api.Team.getHours(SESSION.email, STATE.month, STATE.year),
     ]);
     STATE.clockings = clockingsRes.data || STATE.clockings;
     STATE.hours     = hoursRes.data    || STATE.hours;
@@ -628,7 +614,6 @@ async function handleClockOut() {
   }
 }
 
-// ── MONTH NAVIGATION ─────────────────────────────────────
 async function changeMonth(delta) {
   STATE.month += delta;
   if (STATE.month > 12) { STATE.month = 1;  STATE.year++; }
@@ -637,7 +622,6 @@ async function changeMonth(delta) {
   await loadAll();
 }
 
-// ── HELPERS ──────────────────────────────────────────────
 function calcHours(start, end) {
   if (!start || !end) return 0;
   const [sh,sm] = start.split(":").map(Number);
@@ -647,7 +631,7 @@ function calcHours(start, end) {
 
 function getThisWeekShifts() {
   const today   = new Date();
-  const dow     = (today.getDay() + 6) % 7; // Mon=0
+  const dow     = (today.getDay() + 6) % 7; 
   const days    = [];
   const labels  = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   for (let i = 0; i < 7; i++) {
@@ -667,21 +651,18 @@ function buildCalendar(month, year, rota) {
   const first = new Date(year, month-1, 1);
   const last  = new Date(year, month, 0);
   const cells = [];
-  let dow = (first.getDay() + 6) % 7; // Mon=0
+  let dow = (first.getDay() + 6) % 7; 
 
-  // Pad before
   for (let i = 0; i < dow; i++) {
     const d = new Date(year, month-1, -dow+1+i);
     cells.push({ day:d.getDate(), inMonth:false, dateStr:"", shift:null });
   }
-  // Month days
   for (let d = 1; d <= last.getDate(); d++) {
     const date = new Date(year, month-1, d);
     const str  = date.toISOString().split("T")[0];
     cells.push({ day:d, inMonth:true, dateStr:str,
                  shift: rota.find(r => r.Date === str) || null });
   }
-  // Pad after to complete last row
   const rem = (7 - cells.length % 7) % 7;
   for (let i = 1; i <= rem; i++) {
     cells.push({ day:i, inMonth:false, dateStr:"", shift:null });
@@ -697,7 +678,6 @@ function showToast(msg, type="success") {
   setTimeout(() => t.remove(), 3000);
 }
 
-// ── DEMO DATA (used when Apps Script not yet connected) ──
 const today = new Date();
 const todayStr = today.toISOString().split("T")[0];
 function demoDate(delta) {
@@ -731,14 +711,20 @@ const DEMO_HOURS = {
 (function() {
   function startAuth() {
     if (typeof POS_AUTH === "undefined") {
-      console.error("POS_AUTH not defined - pos-config.js failed to load");
-      document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:sans-serif;background:#f0f0f0"><div style="font-size:40px">⚠️</div><div style="font-size:16px;color:#e74c3c;font-weight:700">pos-config.js not loaded</div><div style="font-size:13px;color:#888">Upload the latest pos-config.js to GitHub</div><button onclick="location.reload()" style="margin-top:8px;padding:8px 20px;background:#667eea;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px">Retry</button></div>';
+      console.error("POS_AUTH failed to load");
       return;
     }
     POS_AUTH.init("team-app", {
       onReady: function(session) {
-        var root = document.getElementById("app-root");
-        if (root) root.style.display = "block";
+        SESSION = session;
+        var root = document.getElementById("app");
+        if (root) root.style.display = "flex";
+        var loader = document.getElementById("loading-placeholder");
+        if (loader) loader.style.display = "none";
+        
+        initHeader();
+        loadAll();
+
         setTimeout(function() {
           if (typeof POS_AUTH.renderUtilBar === "function") {
             POS_AUTH.renderUtilBar("user-badge", "team-app");
