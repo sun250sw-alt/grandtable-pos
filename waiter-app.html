@@ -16,7 +16,7 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #f5f5f5;
             color: #333;
         }
@@ -460,15 +460,15 @@
     </style>
 </head>
 <body>
-    <div id="root"></div>
+    <div id="root" style="display: none;"></div>
+    <div id="loading-placeholder" style="display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; flex-direction: column; gap: 12px;">
+        <div style="font-size:40px">🧑‍💼</div>
+        <div style="font-size:16px;font-weight:700">Waiter Terminal</div>
+        <div style="font-size:13px;color:#888">Verifying terminal credentials...</div>
+    </div>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
-
-        // Sample data - Replace with Google Sheets API calls
-        // Data loaded live from Google Sheet via POS_GAPI
-        const SAMPLE_MENU   = [];
-        const SAMPLE_TABLES = [];
 
         function WaiterApp() {
             const [tables, setTables]               = useState([]);
@@ -477,18 +477,20 @@
             const [selectedCategory, setSelectedCategory] = useState("All");
             const [orderItems, setOrderItems]           = useState([]);
             const [searchQuery, setSearchQuery]         = useState("");
-            const [showTableModal, setShowTableModal]   = useState(false);
             const [notification, setNotification]       = useState(null);
             const [loading, setLoading]                 = useState(true);
-            const [waiterName, setWaiterName]           = useState(
-                window.POS_GAPI && window.POS_GAPI.getSession()
-                    ? window.POS_GAPI.getSession().name : "Staff");
+            const [waiterName, setWaiterName]           = useState("Staff");
+            const [currency, setCurrency]               = useState("LKR");
 
-            // Load live data from Google Sheet on mount
-            const { useEffect } = React;
             useEffect(() => {
                 async function loadData() {
                     try {
+                        const s = window.POS_GAPI.getSession();
+                        if (s) setWaiterName(s.name);
+                        
+                        const settings = window.POS_GAPI.getSettings();
+                        if (settings && settings.currency) setCurrency(settings.currency);
+
                         const [menuRes, tableRes] = await Promise.all([
                             window.POS_GAPI.Menu.getAll(),
                             window.POS_GAPI.Tables.getAll(),
@@ -513,14 +515,12 @@
                             })));
                         }
                     } catch(e) {
-                        console.error("Failed to load data:", e);
-                        showNotification("Could not load from Sheet — check connection", "error");
+                        console.error("Waiter load data error:", e);
                     }
                     setLoading(false);
                 }
                 if (window.POS_GAPI) {
                     loadData();
-                    // Poll for updates every 5 seconds
                     const interval = setInterval(loadData, POS_CONFIG.POLL_MS);
                     return () => clearInterval(interval);
                 } else {
@@ -582,7 +582,6 @@
                     return;
                 }
 
-                // Save order to Google Sheet
                 try {
                     const subtotal = calculateTotal();
                     await window.POS_GAPI.Orders.create({
@@ -611,9 +610,8 @@
                     return;
                 }
 
-                // Here you would generate and print bill
                 showNotification(`Bill generated for Table ${selectedTable.number}!`);
-                console.log("Bill:", {
+                console.log("Bill Summary:", {
                     table: selectedTable,
                     items: orderItems,
                     subtotal: calculateTotal(),
@@ -646,10 +644,10 @@
                         <div>
                             <h1>🍽️ Waiter App</h1>
                         </div>
+                        <div id="user-badge" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}></div>
                         <div className="header-info">
                             <div>Waiter: <strong>{waiterName}</strong></div>
                             <div>{new Date().toLocaleDateString()}</div>
-                            <div>{new Date().toLocaleTimeString()}</div>
                         </div>
                     </div>
 
@@ -710,7 +708,7 @@
                                         onClick={() => addToOrder(item)}
                                     >
                                         <div className="menu-item-name">{item.name}</div>
-                                        <div className="menu-item-price">${item.price.toFixed(2)}</div>
+                                        <div className="menu-item-price">{currency} {item.price.toFixed(2)}</div>
                                         <div className="menu-item-desc">{item.description}</div>
                                     </div>
                                 ))}
@@ -749,7 +747,7 @@
                                                 <div className="order-item-info">
                                                     <div className="order-item-name">{item.name}</div>
                                                     <div className="order-item-price">
-                                                        ${item.price.toFixed(2)} × {item.quantity} = ${(item.price * item.quantity).toFixed(2)}
+                                                        {currency} {item.price.toFixed(2)} × {item.quantity} = {currency} {(item.price * item.quantity).toFixed(2)}
                                                     </div>
                                                 </div>
                                                 <div className="order-item-qty">
@@ -764,15 +762,15 @@
                                     <div className="order-summary">
                                         <div className="summary-row">
                                             <span>Subtotal:</span>
-                                            <span>${calculateTotal().toFixed(2)}</span>
+                                            <span>{currency} {calculateTotal().toFixed(2)}</span>
                                         </div>
                                         <div className="summary-row">
                                             <span>Tax (10%):</span>
-                                            <span>${(calculateTotal() * 0.1).toFixed(2)}</span>
+                                            <span>{currency} {(calculateTotal() * 0.1).toFixed(2)}</span>
                                         </div>
                                         <div className="summary-row total">
                                             <span>Total:</span>
-                                            <span>${(calculateTotal() * 1.1).toFixed(2)}</span>
+                                            <span>{currency} {(calculateTotal() * 1.1).toFixed(2)}</span>
                                         </div>
                                     </div>
 
@@ -812,14 +810,15 @@
 (function() {
   function startAuth() {
     if (typeof POS_AUTH === "undefined") {
-      console.error("POS_AUTH not defined - pos-config.js failed to load");
-      document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:sans-serif;background:#f0f0f0"><div style="font-size:40px">⚠️</div><div style="font-size:16px;color:#e74c3c;font-weight:700">pos-config.js not loaded</div><div style="font-size:13px;color:#888">Upload the latest pos-config.js to GitHub</div><button onclick="location.reload()" style="margin-top:8px;padding:8px 20px;background:#667eea;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px">Retry</button></div>';
+      console.error("POS_AUTH failed to load");
       return;
     }
     POS_AUTH.init("waiter-app", {
       onReady: function(session) {
-        var root = document.getElementById("app-root");
+        var root = document.getElementById("root");
         if (root) root.style.display = "block";
+        var loader = document.getElementById("loading-placeholder");
+        if (loader) loader.style.display = "none";
         setTimeout(function() {
           if (typeof POS_AUTH.renderUtilBar === "function") {
             POS_AUTH.renderUtilBar("user-badge", "waiter-app");
