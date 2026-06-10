@@ -14,10 +14,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .header{background:linear-gradient(135deg,#f39c12,#e67e22);
   padding:14px 24px;display:flex;justify-content:space-between;
   align-items:center;box-shadow:0 4px 12px rgba(0,0,0,.4);}
-.header h1{font-size:22px;font-weight:700;}
+.header h1{font-size:22px;font-weight:700;color:black;}
 .header-right{display:flex;gap:14px;align-items:center;font-size:13px;}
 .queue-count{background:rgba(0,0,0,.2);padding:5px 14px;
-  border-radius:10px;font-weight:700;}
+  border-radius:10px;font-weight:700;color:black;}
 
 /* LAYOUT */
 .layout{display:grid;grid-template-columns:300px 1fr;
@@ -141,64 +141,67 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 /* No recipe placeholder */
 .no-recipe-box{background:#21262d;border-radius:10px;padding:20px;
   text-align:center;margin-bottom:14px;}
-.no-recipe-box p{font-size:13px;color:#8b949e;line-height:1.6;}
+.no-recipe-box p{font-size:13px;color:#888;line-height:1.6;}
 </style>
 </head>
 <body>
 
-<div class="header">
-  <h1>👨‍🍳 Kitchen Prep Display</h1>
-  <div class="header-right">
-    <div class="queue-count" id="queue-count">0 dishes</div>
-    <div id="user-badge" style="display:flex;align-items:center;gap:6px;"></div>
-        <span id="hdr-time" style="opacity:.7"></span>
+<div id="app" style="display:none">
+  <div class="header">
+    <h1>👨‍🍳 Kitchen Prep Display</h1>
+    <div class="header-right">
+      <div class="queue-count" id="queue-count">0 dishes</div>
+      <div id="user-badge" style="display:flex;align-items:center;gap:6px;"></div>
+      <span id="hdr-time" style="opacity:.7"></span>
+    </div>
   </div>
-</div>
 
-<div class="layout">
-  <!-- QUEUE -->
-  <div class="queue-panel">
-    <div class="queue-title">Dish Queue</div>
-    <div id="queue-list">
-      <div class="queue-empty">
-        <div class="queue-empty-icon">⏳</div>
-        Loading orders…
+  <div class="layout">
+    <!-- QUEUE -->
+    <div class="queue-panel">
+      <div class="queue-title">Dish Queue</div>
+      <div id="queue-list">
+        <div class="queue-empty">
+          <div class="queue-empty-icon">⏳</div>
+          Loading orders…
+        </div>
+      </div>
+    </div>
+
+    <!-- RECIPE -->
+    <div class="recipe-panel" id="recipe-panel">
+      <div class="no-selection">
+        <div class="ns-icon">👈</div>
+        <div class="ns-title">Select a dish from the queue</div>
+        <p style="font-size:14px;margin-top:6px">Tap any dish to see step-by-step recipe</p>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- RECIPE -->
-  <div class="recipe-panel" id="recipe-panel">
-    <div class="no-selection">
-      <div class="ns-icon">👈</div>
-      <div class="ns-title">Select a dish from the queue</div>
-      <p style="font-size:14px;margin-top:6px">Tap any dish to see step-by-step recipe</p>
-    </div>
-  </div>
+<div id="loading-placeholder" style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:sans-serif;background:#0d1117;color:#e6edf3;">
+  <div style="font-size:40px">👨‍🍳</div>
+  <div style="font-size:16px;font-weight:700">Prep Display</div>
+  <div style="font-size:13px;color:#888">Verifying chef station...</div>
 </div>
 
 <script>
-// ═══════════════════════════════════════════════════════
-//  STATE
-// ═══════════════════════════════════════════════════════
+// ── STATE ──
 var STATE = {
   queue       : [],
-  selected    : null,  // { orderId, dish, qty, note, urgency }
-  recipe      : null,  // loaded recipe object
-  doneSteps   : [],    // array of step indices
-  activeTimer : null,  // { stepIdx, seconds, remaining, running, intervalId }
+  selected    : null,  
+  recipe      : null,  
+  doneSteps   : [],    
+  activeTimer : null,  
 };
 
-// Demo queue — replaced by POS_API polling
 var DEMO_QUEUE = [
   { orderId:"ORD-001", table:3, dish:"Burger Deluxe",    qty:2, note:"No onions on one", urgency:"high" },
   { orderId:"ORD-001", table:3, dish:"Spring Rolls",     qty:1, note:"",                 urgency:"high" },
   { orderId:"ORD-002", table:5, dish:"Steak",            qty:1, note:"Medium rare",      urgency:"med"  },
   { orderId:"ORD-002", table:5, dish:"Pasta Carbonara",  qty:1, note:"",                 urgency:"med"  },
-  { orderId:"ORD-003", table:1, dish:"Spring Rolls",     qty:2, note:"",                 urgency:"low"  },
 ];
 
-// Fallback recipes when API not connected
 var FALLBACK_RECIPES = {
   "Burger Deluxe":{
     prepTime:"5 min",cookTime:"12 min",difficulty:"Easy",
@@ -232,84 +235,35 @@ var FALLBACK_RECIPES = {
       {title:"Rest the Steak",    description:"Remove from heat. Tent with foil. Rest 5 min — mandatory.",   timerSec:300,tip:"Never skip — juices redistribute."},
       {title:"Slice & Plate",     description:"Slice against the grain. Pour resting juices over.",          timerSec:0,  tip:null},
     ]
-  },
-  "Pasta Carbonara":{
-    prepTime:"5 min",cookTime:"20 min",difficulty:"Medium",
-    ingredients:[
-      {name:"Spaghetti",amount:"120g"},{name:"Pancetta / bacon",amount:"80g"},
-      {name:"Egg yolks",amount:"3 pcs"},{name:"Parmesan (grated)",amount:"50g"},
-      {name:"Black pepper",amount:"1 tsp"},{name:"Salt",amount:"To taste"}
-    ],
-    steps:[
-      {title:"Boil Water",       description:"Bring large pot to rolling boil. Add generous salt.",             timerSec:300, tip:null},
-      {title:"Prep Egg Mixture", description:"Whisk egg yolks with half the parmesan and lots of black pepper.",timerSec:0,   tip:"Do NOT add to hot pan — it scrambles."},
-      {title:"Fry Pancetta",     description:"Cook pancetta medium heat until crispy. Keep the rendered fat.",   timerSec:300, tip:"The fat is flavour — don't drain."},
-      {title:"Cook Pasta",       description:"Cook pasta 1 min LESS than package. Reserve 1 cup pasta water.",  timerSec:600, tip:"Pasta water is liquid gold."},
-      {title:"Combine Off Heat", description:"Remove pan from heat. Add pasta, pour egg mix, toss fast. Add pasta water little by little.",timerSec:0,tip:"Work quickly — residual heat cooks eggs."},
-      {title:"Plate Immediately",description:"Twirl into warm bowls. Top with parmesan and black pepper.",      timerSec:0,   tip:"Serve at once — carbonara waits for no one."},
-    ]
-  },
-  "Spring Rolls":{
-    prepTime:"15 min",cookTime:"6 min",difficulty:"Easy",
-    ingredients:[
-      {name:"Spring roll wrappers",amount:"6 pcs"},{name:"Cabbage (shredded)",amount:"100g"},
-      {name:"Carrots (julienne)",amount:"80g"},{name:"Glass noodles",amount:"50g"},
-      {name:"Soy sauce",amount:"2 tbsp"},{name:"Sesame oil",amount:"1 tsp"},
-      {name:"Oil for frying",amount:"500ml"}
-    ],
-    steps:[
-      {title:"Soak Noodles",  description:"Soak glass noodles in hot water 5 min. Drain and cut short.",                    timerSec:300,tip:null},
-      {title:"Cook Filling",  description:"Stir fry cabbage and carrot 2 min. Add noodles, soy, sesame. Cool completely.",  timerSec:240,tip:"Filling MUST be cool or wrappers go soggy."},
-      {title:"Wrap the Rolls",description:"Place wrapper diagonally. Add 2 tbsp filling. Fold tight. Seal with water.",     timerSec:0,  tip:"Roll tightly — air pockets cause bursting."},
-      {title:"Deep Fry",      description:"Heat oil 175°C. Fry in batches 3-4 min turning until golden.",                   timerSec:240,tip:"Don't overcrowd — lowers temperature."},
-      {title:"Drain & Serve", description:"Drain on paper towel. Serve immediately with sweet chili sauce.",                timerSec:0,  tip:null},
-    ]
   }
 };
-
-// ═══════════════════════════════════════════════════════
-//  INIT
-// ═══════════════════════════════════════════════════════
-POS_AUTH.init("kitchen-prep-display", {
-  onReady: function() { bootApp(); },
-  onError: function(e) { console.error("Auth:", e); bootApp(); }
-});
-
-function bootApp() {
-  tickClock();
-  setInterval(tickClock, 1000);
-  loadQueue();
-  // Poll for new orders every 10s
-  setInterval(loadQueue, 10000);
-}
 
 function tickClock() {
   var el = document.getElementById("hdr-time");
   if (el) el.textContent = new Date().toLocaleTimeString("en-GB");
 }
 
-// ═══════════════════════════════════════════════════════
-//  QUEUE
-// ═══════════════════════════════════════════════════════
 function loadQueue() {
   var api = window.POS_GAPI || window.POS_API;
   if (!api) { STATE.queue = DEMO_QUEUE; renderQueue(); return; }
-  // Ensure sheet loaded
+  
   var ensureSheet = (api.getSheetId && !api.getSheetId() && api.initUserSheet)
     ? api.initUserSheet() : Promise.resolve();
+    
   ensureSheet.catch(function(){}).then(function() {
-  if (!api.getSheetId || !api.getSheetId()) { STATE.queue = DEMO_QUEUE; renderQueue(); return; }
-  api.Orders.getAll("new").then(function(res) {
-    var orders = (res && res.data) ? res.data : null;
-    if (orders && orders.length > 0) {
-      STATE.queue = buildQueueFromOrders(orders);
-    } else {
-      STATE.queue = DEMO_QUEUE;  // fallback demo
-    }
-    renderQueue();
-  }).catch(function() {
-    STATE.queue = DEMO_QUEUE;
-    renderQueue();
+    if (!api.getSheetId || !api.getSheetId()) { STATE.queue = DEMO_QUEUE; renderQueue(); return; }
+    api.Orders.getAll("new").then(function(res) {
+      var orders = (res && res.data) ? res.data : null;
+      if (orders && orders.length > 0) {
+        STATE.queue = buildQueueFromOrders(orders);
+      } else {
+        STATE.queue = DEMO_QUEUE;  
+      }
+      renderQueue();
+    }).catch(function() {
+      STATE.queue = DEMO_QUEUE;
+      renderQueue();
+    });
   });
 }
 
@@ -338,6 +292,7 @@ function buildQueueFromOrders(orders) {
 
 function renderQueue() {
   var el = document.getElementById("queue-list");
+  if (!el) return;
   document.getElementById("queue-count").textContent = STATE.queue.length + " dishes";
 
   if (!STATE.queue.length) {
@@ -361,34 +316,26 @@ function renderQueue() {
   }).join("");
 }
 
-// ═══════════════════════════════════════════════════════
-//  SELECT DISH + LOAD RECIPE
-// ═══════════════════════════════════════════════════════
 function selectDish(idx) {
   var item = STATE.queue[idx];
   if (!item) return;
 
-  // Stop any running timer
   stopTimer();
 
   STATE.selected  = item;
   STATE.doneSteps = [];
   STATE.recipe    = null;
 
-  // Re-render queue to show active state
   renderQueue();
 
-  // Show loading in recipe panel
   document.getElementById("recipe-panel").innerHTML =
     '<div class="loading-recipe"><div class="loading-spin">⚙️</div>' +
     '<div>Loading recipe for ' + item.dish + '…</div></div>';
 
-  // Try to load from API, fallback to local
   var api = window.POS_GAPI || window.POS_API;
   api.Recipes.get(item.dish).then(function(res) {
     if (res && res.data && res.data.Steps) {
       var r = res.data;
-      // Parse JSON fields if stored as strings
       var steps = typeof r.Steps === "string" ? JSON.parse(r.Steps) : r.Steps;
       var ings  = typeof r.Ingredients === "string" ? JSON.parse(r.Ingredients) : (r.Ingredients || []);
       STATE.recipe = {
@@ -399,7 +346,6 @@ function selectDish(idx) {
         steps      : steps,
       };
     } else {
-      // Fallback to hardcoded
       STATE.recipe = FALLBACK_RECIPES[item.dish] || null;
     }
     renderRecipe();
@@ -409,13 +355,12 @@ function selectDish(idx) {
   });
 }
 
-// ═══════════════════════════════════════════════════════
-//  RENDER RECIPE
-// ═══════════════════════════════════════════════════════
 function renderRecipe() {
   var panel = document.getElementById("recipe-panel");
   var item  = STATE.selected;
   var r     = STATE.recipe;
+
+  if (!panel) return;
 
   if (!r) {
     panel.innerHTML =
@@ -433,7 +378,6 @@ function renderRecipe() {
   var nextStep = done < total ? done : -1;
 
   panel.innerHTML =
-    // Header
     '<div class="recipe-header">' +
       '<div class="recipe-title">' + item.qty + '× ' + item.dish + '</div>' +
       '<div class="recipe-meta">' +
@@ -448,9 +392,7 @@ function renderRecipe() {
         '<div class="progress-bar" style="width:' + pct + '%"></div>' +
       '</div>' +
     '</div>' +
-    // Content
     '<div class="recipe-content">' +
-      // Steps
       '<div class="steps-section">' +
         '<div class="section-lbl">Preparation Steps</div>' +
         r.steps.map(function(step, i) {
@@ -482,20 +424,17 @@ function renderRecipe() {
           '</div>';
         }).join("") +
       '</div>' +
-      // Side panel
       '<div class="side-panel">' +
-        // Active timer
         (STATE.activeTimer
           ? '<div class="section-lbl">Active Timer</div>' + renderBigTimer()
           : '') +
-        // Ingredients
         '<div class="section-lbl">Ingredients</div>' +
         (r.ingredients && r.ingredients.length
           ? r.ingredients.map(function(ing){
               return '<div class="ing-row"><span class="ing-name">' + ing.name + '</span>' +
                      '<span class="ing-amt">' + ing.amount + '</span></div>';
             }).join("")
-          : '<div class="no-recipe-box"><p>No ingredients listed.<br>Add them in Manager Portal → Recipe Editor.</p></div>') +
+          : '<div class="no-recipe-box"><p>No ingredients listed.</p></div>') +
       '</div>' +
     '</div>';
 }
@@ -521,9 +460,6 @@ function renderBigTimer() {
   '</div>';
 }
 
-// ═══════════════════════════════════════════════════════
-//  STEP ACTIONS
-// ═══════════════════════════════════════════════════════
 function markDone(i) {
   if (STATE.doneSteps.indexOf(i) < 0) STATE.doneSteps.push(i);
   if (STATE.activeTimer && STATE.activeTimer.stepIdx === i) stopTimer();
@@ -535,14 +471,11 @@ function undoStep(i) {
   renderRecipe();
 }
 
-// ═══════════════════════════════════════════════════════
-//  TIMER
-// ═══════════════════════════════════════════════════════
 function toggleTimer(stepIdx, seconds, stepTitle) {
   if (STATE.activeTimer && STATE.activeTimer.stepIdx === stepIdx) {
     stopTimer(); return;
   }
-  stopTimer();  // stop any other timer
+  stopTimer();  
   STATE.activeTimer = {
     stepIdx   : stepIdx,
     seconds   : seconds,
@@ -558,7 +491,6 @@ function toggleTimer(stepIdx, seconds, stepTitle) {
       STATE.activeTimer.remaining = 0;
       STATE.activeTimer.running   = false;
       clearInterval(STATE.activeTimer.intervalId);
-      // Flash notification
       if (document.title.indexOf("✅") < 0) {
         document.title = "✅ TIMER DONE — " + stepTitle;
         setTimeout(function(){ document.title = "Kitchen Prep Display — The Grand Table"; }, 5000);
@@ -600,24 +532,24 @@ function stopTimer() {
 </script>
 
 <script>
-// Auth gate
-POS_AUTH.init("kitchen-prep-display", {
-  onReady: function(session) {},
-  onError: function(msg) { console.error("Auth error:", msg); }
-});
-</script>
-<script>
 (function() {
   function startAuth() {
     if (typeof POS_AUTH === "undefined") {
-      console.error("POS_AUTH not defined - pos-config.js failed to load");
-      document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:sans-serif;background:#f0f0f0"><div style="font-size:40px">⚠️</div><div style="font-size:16px;color:#e74c3c;font-weight:700">pos-config.js not loaded</div><div style="font-size:13px;color:#888">Upload the latest pos-config.js to GitHub</div><button onclick="location.reload()" style="margin-top:8px;padding:8px 20px;background:#667eea;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px">Retry</button></div>';
+      console.error("POS_AUTH failed to load");
       return;
     }
     POS_AUTH.init("kitchen-prep-display", {
       onReady: function(session) {
-        var root = document.getElementById("app-root");
+        var root = document.getElementById("app");
         if (root) root.style.display = "block";
+        var loader = document.getElementById("loading-placeholder");
+        if (loader) loader.style.display = "none";
+
+        tickClock();
+        setInterval(tickClock, 1000);
+        loadQueue();
+        setInterval(loadQueue, 10000);
+
         setTimeout(function() {
           if (typeof POS_AUTH.renderUtilBar === "function") {
             POS_AUTH.renderUtilBar("user-badge", "kitchen-prep-display");
