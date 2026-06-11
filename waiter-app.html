@@ -578,6 +578,7 @@
                             price   : parseFloat(item.Price) || 0,
                             description: item.Description || "",
                             emoji   : item.Emoji || "🍽️",
+                            prepTime: item.PrepTime || ""
                         })));
                     }
                     if (tableRes && tableRes.data) {
@@ -671,7 +672,13 @@
                     await window.POS_GAPI.Orders.create({
                         tableNumber  : selectedTable.number,
                         waiterName   : currentServer,
-                        items        : orderItems.map(i => ({ name:i.name, qty:i.quantity, price:i.price })),
+                        items        : orderItems.map(i => ({ 
+                            name: i.name, 
+                            qty: i.quantity, 
+                            price: i.price,
+                            category: i.category,
+                            prepTime: i.prepTime
+                        })),
                         subtotal     : subtotal,
                         notes        : "",
                     });
