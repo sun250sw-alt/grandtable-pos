@@ -4,9 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kitchen Prep Display — The Grand Table</title>
-<!-- Native Google API Libraries to bypass popup/sandbox blocks -->
-<script src="https://apis.google.com/js/api.js"></script>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="pos-config.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -77,7 +74,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   letter-spacing:1.5px;color:#8b949e;margin-bottom:12px;}
 .queue-item{background:#21262d;border-radius:10px;padding:13px;
   margin-bottom:8px;cursor:pointer;border:2px solid transparent;
-  transition:all .2s;}
+  transition:all .2s;position:relative;}
 .queue-item:hover{border-color:#f39c12;}
 .queue-item.active{border-color:#f39c12;background:#2d2209;}
 .qi-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;}
@@ -94,6 +91,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 @keyframes urgpulse{0%,100%{opacity:1}50%{opacity:.3}}
 .queue-empty{text-align:center;padding:40px 16px;color:#8b949e;}
 .queue-empty-icon{font-size:36px;margin-bottom:8px;}
+
+/* Live Background Timer badge on left Queue panel */
+.qi-timer-badge {
+  position:absolute;
+  bottom:10px;
+  right:10px;
+  background:#f39c12;
+  color:black;
+  font-size:10px;
+  font-weight:900;
+  padding:2px 8px;
+  border-radius:10px;
+  box-shadow:0 2px 8px rgba(243,156,18,0.25);
+  animation:cookingpulse 1.5s infinite;
+}
+@keyframes cookingpulse { 0%,100%{opacity:1} 50%{opacity:0.7} }
 
 /* RECIPE PANEL */
 .recipe-panel{display:flex;flex-direction:column;overflow:hidden;}
@@ -262,7 +275,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 
   <div id="main-panel" style="display:none">
     <div class="header">
-      <h1>👨‍🍳 Kitchen Prep Display</h1>
+      <div style="display:flex; align-items:center; gap:12px;">
+         <img src="input_file_1.jpeg" style="width:48px; height:48px; object-fit:contain; mix-blend-mode:multiply;" alt="🔥">
+         <h1>👨‍🍳 Kitchen Prep Display</h1>
+      </div>
       <div class="header-right">
         <button onclick="doSignOutChef()" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:white; padding:4px 12px; border-radius:8px; font-size:11px; cursor:pointer; margin-right:8px;">↩ Switch Station</button>
         <span id="chef-badge" style="font-weight:700; color:black; background:white; padding:4px 12px; border-radius:8px; margin-right:8px;">Chef: —</span>
@@ -311,8 +327,9 @@ var STATE = {
   selected    : null,  
   recipe      : null,  
   doneSteps   : [],    
-  activeTimer : null,  
-  gateState   : "none", // hygiene | ingredients | focus_cooking | none
+  timers      : {}, // Parallel multi-timer tracker indexed by "orderId|dishName"
+  selectedKey : null, // Current active focused selection key
+  globalIntervalId: null,
 };
 
 var DEMO_QUEUE = [
@@ -368,7 +385,7 @@ function doSignOutChef() {
   STATE.currentChef = null;
   STATE.selected = null;
   STATE.recipe = null;
-  STATE.gateState = "none";
+  STATE.selectedKey = null;
   document.getElementById("main-panel").style.display = "none";
   document.getElementById("chef-overlay").style.display = "flex";
   loadChefSelection();
@@ -409,6 +426,7 @@ function selectChef(name) {
   document.getElementById("chef-badge").textContent = "Chef: " + name;
   document.getElementById("chef-overlay").style.display = "none";
   document.getElementById("main-panel").style.display = "block";
+  startGlobalInterval();
   loadQueue();
 }
 
@@ -467,7 +485,19 @@ function renderQueue() {
   }
 
   el.innerHTML = STATE.queue.map(function(item, idx) {
-    var isActive = STATE.selected && STATE.selected.orderId === item.orderId && STATE.selected.dish === item.dish;
+    var key = item.orderId + "|" + item.dish;
+    var isActive = STATE.selectedKey === key;
+    var backgroundTimer = STATE.timers[key];
+    var timerBadgeHtml = "";
+
+    if (backgroundTimer && backgroundTimer.running && backgroundTimer.remaining > 0) {
+      var m = Math.floor(backgroundTimer.remaining / 60);
+      var s = backgroundTimer.remaining % 60;
+      timerBadgeHtml = '<div class="qi-timer-badge">🔥 Cook ' + String(m).padStart(2, "0") + ':' + String(s).padStart(2, "0") + '</div>';
+    } else if (backgroundTimer && !backgroundTimer.running && backgroundTimer.remaining === 0) {
+      timerBadgeHtml = '<div class="qi-timer-badge" style="background:#27ae60; color:white;">✅ Done</div>';
+    }
+
     return '<div class="queue-item' + (isActive ? " active" : "") + '" onclick="selectDish(' + idx + ')">' +
       '<div class="qi-header">' +
         '<span class="qi-order">' + item.orderId + '</span>' +
@@ -478,6 +508,7 @@ function renderQueue() {
         item.qty + '× ' + item.dish +
       '</div>' +
       (item.note ? '<div class="qi-note">⚠️ ' + item.note + '</div>' : '') +
+      timerBadgeHtml +
     '</div>';
   }).join("");
 }
@@ -486,13 +517,13 @@ function selectDish(idx) {
   var item = STATE.queue[idx];
   if (!item) return;
 
-  stopTimer();
-
-  STATE.selected  = item;
+  var key = item.orderId + "|" + item.dish;
+  STATE.selectedKey = key;
+  STATE.selected = item;
   STATE.doneSteps = [];
-  STATE.recipe    = null;
-  STATE.gateState = "hygiene"; // start with Hand Hygiene gate
+  STATE.recipe = null;
 
+  var backgroundTimer = STATE.timers[key];
   renderQueue();
 
   document.getElementById("recipe-panel").innerHTML =
@@ -506,7 +537,6 @@ function selectDish(idx) {
       var steps = typeof r.Steps === "string" ? JSON.parse(r.Steps) : r.Steps;
       var ings  = typeof r.Ingredients === "string" ? JSON.parse(r.Ingredients) : (r.Ingredients || []);
       
-      // Robust normalized timer integer extraction
       var parsedSteps = steps.map(function(step) {
         return {
           title: step.title || step.Title || "",
@@ -526,7 +556,15 @@ function selectDish(idx) {
     } else {
       STATE.recipe = FALLBACK_RECIPES[item.dish] || null;
     }
-    renderRecipe();
+
+    // Restore step check states or gate progression if timer is already active
+    if (backgroundTimer) {
+      renderRecipe();
+    } else {
+      // Re-initialize state gates for brand new prep requests
+      STATE.gateState = "none";
+      renderRecipe();
+    }
   }).catch(function() {
     STATE.recipe = FALLBACK_RECIPES[item.dish] || null;
     renderRecipe();
@@ -541,7 +579,7 @@ function playTickChime() {
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.type = "sine";
-    osc.frequency.setValueAtTime(1000, ctx.currentTime); // high tone
+    osc.frequency.setValueAtTime(1000, ctx.currentTime);
     gain.gain.setValueAtTime(0.04, ctx.currentTime);
     osc.start();
     osc.stop(ctx.currentTime + 0.12);
@@ -551,15 +589,26 @@ function playTickChime() {
 function updateSheetToPreparing() {
   var api = window.POS_GAPI || window.POS_API;
   if (api && api.getSheetId() && STATE.selected) {
-    var chefNotes = "[Chef: " + STATE.currentChef + "] " + (STATE.selected.note || "");
-    api.Orders.update({
-      orderId: STATE.selected.orderId,
-      status: "preparing",
-      notes: chefNotes
-    }).then(function() {
-      console.log("Sheet updated successfully: PREPARING status & chef name logged.");
-    }).catch(function(e) {
-      console.error("Sheets update failed:", e);
+    api.getRows("Orders").then(function(rows) {
+      var orderRow = rows.find(function(r) { return r.OrderID === STATE.selected.orderId; });
+      if (orderRow) {
+        var itemsArray = [];
+        try { itemsArray = JSON.parse(orderRow.Items); } catch(e){}
+        
+        itemsArray = itemsArray.map(function(item) {
+          if (item.name === STATE.selected.dish || item.Name === STATE.selected.dish) {
+            item.chef = STATE.currentChef;
+            item.status = "preparing";
+          }
+          return item;
+        });
+
+        api.Orders.update({
+          orderId: STATE.selected.orderId,
+          status: "preparing",
+          items: itemsArray
+        });
+      }
     });
   }
 }
@@ -567,96 +616,152 @@ function updateSheetToPreparing() {
 function updateSheetToReady() {
   var api = window.POS_GAPI || window.POS_API;
   if (api && api.getSheetId() && STATE.selected) {
-    api.Orders.update({
-      orderId: STATE.selected.orderId,
-      status: "ready"
-    }).then(function() {
-      console.log("Sheet updated successfully: READY status.");
-    }).catch(function(e) {
-      console.error("Sheets update failed:", e);
+    api.getRows("Orders").then(function(rows) {
+      var orderRow = rows.find(function(r) { return r.OrderID === STATE.selected.orderId; });
+      if (orderRow) {
+        var itemsArray = [];
+        try { itemsArray = JSON.parse(orderRow.Items); } catch(e){}
+        
+        itemsArray = itemsArray.map(function(item) {
+          if (item.name === STATE.selected.dish || item.Name === STATE.selected.dish) {
+            item.status = "ready";
+          }
+          return item;
+        });
+
+        var allReady = itemsArray.every(function(item) {
+          return item.status === "ready";
+        });
+
+        api.Orders.update({
+          orderId: STATE.selected.orderId,
+          status: allReady ? "ready" : "preparing",
+          items: itemsArray
+        });
+      }
     });
   }
 }
 
-function advanceStepTimer() {
-  if (!STATE.activeTimer || !STATE.activeTimer.running) return;
+// ── HIGH PERFORMANCE GLOBAL PARALLEL DECENTRALIZED MULTI-TIMER ──
+function startGlobalInterval() {
+  if (STATE.globalIntervalId) return;
+  STATE.globalIntervalId = setInterval(function() {
+    var stateUpdated = false;
 
-  var currentIdx = STATE.activeTimer.currentStepIdx;
-  var currentStep = STATE.recipe.steps[currentIdx];
+    Object.keys(STATE.timers).forEach(function(key) {
+      var t = STATE.timers[key];
+      if (!t.running) return;
 
-  // If this is a manual task step (timerSec === 0), it won't count down.
-  // It waits for manual "Next" button interaction.
-  if (currentStep.timerSec === 0) {
-    return;
-  }
+      var r = t.recipeData;
+      if (!r) return;
 
-  STATE.activeTimer.remaining--;
-  if (STATE.activeTimer.remaining <= 0) {
-    // Current step countdown complete - transition
-    handleStepAdvance();
-  } else {
-    renderRecipe();
-  }
+      var currentStep = r.steps[t.currentStepIdx];
+      
+      // Manual steps (timerSec === 0) do not automatically countdown
+      if (currentStep.timerSec === 0) {
+        return;
+      }
+
+      t.remaining--;
+      stateUpdated = true;
+
+      if (t.remaining <= 0) {
+        // Step complete - auto advance
+        var nextIdx = t.currentStepIdx + 1;
+        if (nextIdx < r.steps.length) {
+          t.currentStepIdx = nextIdx;
+          t.remaining = r.steps[nextIdx].timerSec || 10;
+          playTickChime();
+        } else {
+          // Finished entire recipe!
+          t.remaining = 0;
+          t.running = false;
+        }
+      }
+    });
+
+    if (stateUpdated) {
+      renderQueue(); // Update background time tags on left Queue panels
+      if (STATE.selectedKey && STATE.timers[STATE.selectedKey]) {
+        renderRecipe(); // Update focused cooking dashboard values
+      }
+    }
+  }, 1000);
 }
 
 function handleStepAdvance() {
-  if (!STATE.activeTimer) return;
-  var nextIdx = STATE.activeTimer.currentStepIdx + 1;
+  var t = STATE.timers[STATE.selectedKey];
+  if (!t) return;
+  
+  var nextIdx = t.currentStepIdx + 1;
   if (nextIdx < STATE.recipe.steps.length) {
-    STATE.activeTimer.currentStepIdx = nextIdx;
-    STATE.activeTimer.remaining = STATE.recipe.steps[nextIdx].timerSec;
+    t.currentStepIdx = nextIdx;
+    t.remaining = STATE.recipe.steps[nextIdx].timerSec;
     playTickChime();
   } else {
-    // Completed all steps
-    STATE.activeTimer.remaining = 0;
-    STATE.activeTimer.running = false;
-    clearInterval(STATE.activeTimer.intervalId);
+    t.remaining = 0;
+    t.running = false;
   }
   renderRecipe();
 }
 
 function toggleAutoCooking() {
-  if (!STATE.activeTimer) {
-    // Start Cooking
+  var key = STATE.selectedKey;
+  var backgroundTimer = STATE.timers[key];
+
+  if (!backgroundTimer) {
+    // Brand new timer session starting
     updateSheetToPreparing();
-    STATE.activeTimer = {
+    STATE.timers[key] = {
+      orderId: STATE.selected.orderId,
+      dish: STATE.selected.dish,
       currentStepIdx: 0,
       remaining: STATE.recipe.steps[0].timerSec,
       running: true,
-      intervalId: setInterval(advanceStepTimer, 1000)
+      recipeData: STATE.recipe,
+      gateState: "focus_cooking"
     };
   } else {
-    // Pause / Resume (Only for timed tasks)
-    var currentIdx = STATE.activeTimer.currentStepIdx;
-    var currentStep = STATE.recipe.steps[currentIdx];
-    
+    // Toggle running state
+    var currentStep = STATE.recipe.steps[backgroundTimer.currentStepIdx];
     if (currentStep.timerSec > 0) {
-      if (STATE.activeTimer.running) {
-        STATE.activeTimer.running = false;
-        clearInterval(STATE.activeTimer.intervalId);
-      } else {
-        STATE.activeTimer.running = true;
-        STATE.activeTimer.intervalId = setInterval(advanceStepTimer, 1000);
-      }
+      backgroundTimer.running = !backgroundTimer.running;
     }
   }
   renderRecipe();
 }
 
 function stopCookingTimer() {
-  stopTimer();
+  if (STATE.selectedKey) {
+    delete STATE.timers[STATE.selectedKey];
+  }
   renderRecipe();
 }
 
 function confirmRecipeFinished() {
   updateSheetToReady();
+  if (STATE.selectedKey) {
+    delete STATE.timers[STATE.selectedKey];
+  }
   doSignOutChef();
+}
+
+function calculateTotalTimeRemaining(r, t) {
+  if (!r || !t) return 0;
+  var total = t.remaining;
+  for (var i = t.currentStepIdx + 1; i < r.steps.length; i++) {
+    // Treat manual steps as taking a nominal default of 10s for preview math
+    total += r.steps[i].timerSec || 10; 
+  }
+  return total;
 }
 
 function renderRecipe() {
   var panel = document.getElementById("recipe-panel");
   var item  = STATE.selected;
   var r     = STATE.recipe;
+  var key   = STATE.selectedKey;
 
   if (!panel) return;
 
@@ -670,8 +775,12 @@ function renderRecipe() {
     return;
   }
 
+  // Restore active cooking gate states dynamically
+  var backgroundTimer = STATE.timers[key];
+  var localGate = backgroundTimer ? backgroundTimer.gateState : STATE.gateState;
+
   // ── GATE 1: Hands Hygiene check ──
-  if (STATE.gateState === "hygiene") {
+  if (localGate === "hygiene") {
     panel.innerHTML = `
       <div class="gate-modal">
         <div class="gate-card">
@@ -685,7 +794,7 @@ function renderRecipe() {
   }
 
   // ── GATE 2: Ingredients checklist check ──
-  if (STATE.gateState === "ingredients") {
+  if (localGate === "ingredients") {
     panel.innerHTML = `
       <div class="gate-modal">
         <div class="gate-card" style="max-width:480px">
@@ -704,32 +813,38 @@ function renderRecipe() {
             }
           </div>
           
-          <button class="gate-btn" onclick="STATE.gateState = 'focus_cooking'; toggleAutoCooking();">✅ Yes, Ready to Cook</button>
+          <button class="gate-btn" onclick="toggleAutoCooking();">✅ Yes, Ready to Cook</button>
         </div>
       </div>`;
     return;
   }
 
   // ── TIMED FOCUS ACTIVE COOK VIEW (Hands-Free Step Tracking) ──
-  if (STATE.gateState === "focus_cooking") {
-    var activeTimer = STATE.activeTimer;
-    var stepIdx = activeTimer ? activeTimer.currentStepIdx : 0;
+  if (localGate === "focus_cooking" && backgroundTimer) {
+    var stepIdx = backgroundTimer.currentStepIdx;
     var currentStep = r.steps[stepIdx];
-    var isTimerComplete = activeTimer && !activeTimer.running && activeTimer.remaining === 0 && (stepIdx === r.steps.length - 1);
+    var isTimerComplete = !backgroundTimer.running && backgroundTimer.remaining === 0 && (stepIdx === r.steps.length - 1);
     var isManualStep = currentStep.timerSec === 0;
 
-    var rem = activeTimer ? activeTimer.remaining : 0;
+    var rem = backgroundTimer.remaining;
     var m   = Math.floor(rem/60);
     var s   = rem % 60;
     var bigTimeDisp = String(m).padStart(2,"0") + ":" + String(s).padStart(2,"0");
+
+    // Cumulative recipe total time remaining calculation
+    var totalTimeSec = calculateTotalTimeRemaining(r, backgroundTimer);
+    var totM = Math.floor(totalTimeSec/60);
+    var totS = totalTimeSec % 60;
+    var totalTimeDisp = String(totM).padStart(2,"0") + ":" + String(totS).padStart(2,"0");
 
     panel.innerHTML = `
       <div class="focused-cooking-box">
         <!-- top control bar -->
         <div class="big-timer-box" style="margin-bottom:16px; background:#111420; display:flex; justify-content:space-between; align-items:center; padding:12px 24px;">
           <div style="text-align:left">
-            <div class="bt-label" style="margin-bottom:2px">Interactive Cooking Timer</div>
+            <div class="bt-label" style="margin-bottom:2px">Interactive Multi-Cooking Dashboard</div>
             <div style="font-size:15px; color:#f39c12; font-weight:700;">${item.dish} · Table ${item.table}</div>
+            <div style="font-size:12px; color:#8b949e; margin-top:2px;">⏱ Total Recipe Remaining: <strong>${totalTimeDisp}</strong></div>
           </div>
           
           <div style="display:flex; align-items:center; gap:20px;">
@@ -743,8 +858,8 @@ function renderRecipe() {
                      ➡️ Next Step
                    </button>`
                 : !isTimerComplete 
-                  ? `<button class="bt-ctrl bt-pause" style="background:${activeTimer.running ? '#e74c3c' : '#27ae60'}; color:white;" onclick="toggleAutoCooking()">
-                       ${activeTimer.running ? "⏸ Pause" : "▶ Resume"}
+                  ? `<button class="bt-ctrl bt-pause" style="background:${backgroundTimer.running ? '#e74c3c' : '#27ae60'}; color:white;" onclick="toggleAutoCooking()">
+                       ${backgroundTimer.running ? "⏸ Pause" : "▶ Resume"}
                      </button>` 
                   : `<button class="bt-ctrl" style="background:#27ae60; color:white; font-size:14px; padding:10px 20px;" onclick="confirmRecipeFinished()">
                        ✅ Confirm Finish
@@ -801,7 +916,7 @@ function renderRecipe() {
         '<div class="progress-bar" style="width:' + pct + '%"></div>' +
       '</div>' +
     '</div>' +
-    '<div class="recipe-content">' +
+    <div class="recipe-content">' +
       '<div class="steps-section">' +
         '<div class="section-lbl">Preparation Steps</div>' +
         r.steps.map(function(step, i) {
