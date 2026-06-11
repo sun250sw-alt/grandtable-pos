@@ -1,1 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Waiting Display</title>
+<script src="pos-config.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
 
+html, body {
+  width:100%; height:100vh;
+  overflow:hidden;
+  background:#0a0a0a;
+  color:white;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+
+/* ── FIXED LAYOUT ────────────────────────────────────── */
+.ticker-wrap {
+  position:fixed;
+  bottom:0; left:0; right:0;
+  height:40px;
+  background:rgba(243,156,18,.09);
+  border-top:1px solid rgba(243,156,18,.2);
+  overflow:hidden;
+  display:flex;
+  align-items:center;
+  z-index:100;
+}
+
+.page {
+  position:fixed;
+  top:0; left:0; right:0;
+  bottom:40px; 
+  display:flex;
+  flex-direction:column;
+  background:
+    radial-gradient(ellipse at 15% 40%, rgba(30,5,80,.5) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 70%, rgba(10,25,60,.5) 0%, transparent 55%),
+    #0a0a0a;
+}
+
+/* ── TOP BAR ─────────────────────────────────────────── */
+.top-bar {
+  flex-shrink:0;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:14px 32px;
+  background:rgba(255,255,255,.04);
+  border-bottom:1px solid rgba(255,255,255,.07);
+}
+
+.rest-name {
+  font-size:24px;
+  font-weight:900;
+  background:linear-gradient(135deg,#f39c12,#e74c3c);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+
+.clock-wrap { text-align:center; }
+#clock-time {
+  font-size:32px;
+  font-weight:700;
+  font-family:'Courier New',monospace;
+}
+
+#clock-date {
+  font-size:12px;
+  color:rgba(255,255,255,.4);
+  margin-top:2px;
+}
+
+.open-pill {
+  display:flex;
+  align-items:center;
+  gap:7px;
+  background:rgba(39,174,96,.15);
+  border:1px solid rgba(39,174,96,.3);
+  padding:7px 16px;
+  border-radius:20px;
+  font-size:13px;
+  font-weight:600;
+  color:#27ae60;
+}
+
+.live-dot {
+  width:7px; height:7px;
+  border-radius:50%;
+  background:#27ae60;
+  animation:blink 2s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+/* ── MAIN GRID ───────────────────────────────────────── */
+.main-grid {
+  flex:1;
+  display:grid;
+  grid-template-columns:1fr 380px;
+  min-height:0;
+  overflow:hidden;
+}
+
+/* ── LEFT: Queue ─────────────────────────────────────── */
+.left-col {
+  display:flex;
+  flex-direction:column;
+  padding:18px 18px 14px 28px;
+  gap:14px;
+  overflow:hidden;
+}
+
+/* Now Serving Banner */
+.now-serving {
+  flex-shrink:0;
+  background:linear-gradient(135deg,#f39c12,#e67e22);
+  border-radius:14px;
+  padding:16px 22px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  box-shadow:0 6px 28px rgba(243,156,18,.3);
+  animation:glow 3s ease-in-out infinite;
+}
+@keyframes glow {
+  0%,100%{box-shadow:0 6px 28px rgba(243,156,18,.25)}
+  50%{box-shadow:0 8px 40px rgba(243,156,18,.55)}
+}
+
+.ns-tag {
+  font-size:11px; font-weight:700;
+  text-transform:uppercase; letter-spacing:2px;
+  color:rgba(0,0,0,.5); margin-bottom:5px;
+}
+
+.ns-numbers {
+  display:flex; gap:14px;
+}
+
+.ns-number {
+  font-size:44px; font-weight:900;
+  color:#000; line-height:1;
+}
+
+.ns-right { text-align:right; }
+.ns-tables { font-size:13px; color:rgba(0,0,0,.5); margin-bottom:4px; }
+.ns-ready  { font-size:15px; font-weight:700; color:#000; }
+.ns-none   { font-size:18px; color:rgba(0,0,0,.55); font-weight:600; }
+
+/* Queue list */
+.queue-section {
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  overflow:hidden;
+}
+
+.queue-label {
+  font-size:11px; font-weight:700;
+  text-transform:uppercase; letter-spacing:1.5px;
+  color:rgba(255,255,255,.3);
+  margin-bottom:10px; flex-shrink:0;
+}
+
+.queue-rows {
+  flex:1;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.queue-rows::-webkit-scrollbar { display:none; }
+
+.q-row {
+  display:grid;
+  grid-template-columns:70px 1fr 95px 85px;
+  align-items:center;
+  gap:4px;
+  background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.07);
+  border-radius:11px;
+  padding:11px 16px;
+}
+.q-row.next { border-color:rgba(243,156,18,.4); background:rgba(243,156,18,.08); }
+.q-row.soon { border-color:rgba(52,152,219,.3);  background:rgba(52,152,219,.05); }
+
+.q-ticket { font-size:22px; font-weight:900; color:white; }
+.q-row.next .q-ticket { color:#f39c12; }
+
+.q-name  { font-size:14px; font-weight:700; color:white; }
+.q-party { font-size:12px; color:rgba(255,255,255,.5); margin-top:2px; }
+
+.q-wait      { text-align:center; }
+.q-wait-num  { font-size:18px; font-weight:800; color:#27ae60; }
+.q-row.next .q-wait-num { color:#f39c12; }
+.q-wait-lbl  { font-size:10px; color:rgba(255,255,255,.3); }
+
+.q-badge { text-align:right; }
+.q-pill {
+  display:inline-block;
+  padding:4px 10px;
+  border-radius:16px;
+  font-size:11px; font-weight:700;
+}
+.pill-next { background:rgba(243,156,18,.2); color:#f39c12; border:1px solid rgba(243,156,18,.4); }
+.pill-soon { background:rgba(52,152,219,.15); color:#3498db; border:1px solid rgba(52,152,219,.3); }
+.pill-wait { background:rgba(255,255,255,.07); color:rgba(255,255,255,.4); border:1px solid rgba(255,255,255,.1); }
+
+.queue-empty {
+  flex:1; display:flex;
+  align-items:center; justify-content:center;
+  flex-direction:column; gap:10px;
+  color:rgba(255,255,255,.2); font-size:15px;
+}
+
+/* ── RIGHT: Menu ─────────────────────────────────────── */
+.right-col {
+  border-left:1px solid rgba(255,255,255,.07);
+  background:rgba(255,255,255,.02);
+  display:flex; flex-direction:column;
+  overflow:hidden;
+}
+
+.menu-hdr {
+  flex-shrink:0;
+  padding:14px 18px 10px;
+  font-size:11px; font-weight:700;
+  text-transform:uppercase; letter-spacing:1.5px;
+  color:rgba(255,255,255,.3);
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+
+.cat-tabs {
+  flex-shrink:0;
+  display:flex; gap:7px;
+  overflow-x:auto; padding:10px 16px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+.cat-tabs::-webkit-scrollbar { display:none; }
+
+.cat-tab {
+  padding:5px 14px; border-radius:16px;
+  font-size:12px; font-weight:600;
+  white-space:nowrap;
+  background:rgba(255,255,255,.06);
+  color:rgba(255,255,255,.4);
+  border:1px solid transparent;
+  cursor:pointer;
+  transition:all .3s;
+}
+.cat-tab.active {
+  background:rgba(243,156,18,.15);
+  color:#f39c12;
+  border-color:rgba(243,156,18,.3);
+}
+
+.menu-list {
+  flex:1; overflow-y:auto; padding:8px 16px;
+}
+.menu-list::-webkit-scrollbar { display:none; }
+
+.menu-row {
+  display:flex; justify-content:space-between;
+  align-items:center; padding:10px 0;
+  border-bottom:1px solid rgba(255,255,255,.04);
+}
+.menu-row:last-child { border-bottom:none; }
+
+.mi-name { font-size:13px; font-weight:600; color:white; margin-bottom:3px; }
+.mi-desc { font-size:11px; color:rgba(255,255,255,.35); }
+.mi-price{ font-size:19px; font-weight:800; color:#f39c12; flex-shrink:0; margin-left:8px; }
+
+/* ── TICKER ──────────────────────────────────────────── */
+.ticker-track {
+  display:flex; gap:80px;
+  white-space:nowrap;
+  animation:ticker 35s linear infinite;
+}
+@keyframes ticker {
+  from{transform:translateX(0)}
+  to{transform:translateX(-50%)}
+}
+.ticker-item { font-size:13px; color:rgba(255,255,255,.6); flex-shrink:0; }
+.ticker-item strong { color:#f39c12; }
+</style>
+</head>
+<body>
+
+<div class="page" id="app" style="display:none">
+  <!-- TOP BAR -->
+  <div class="top-bar">
+    <div class="rest-name" id="rest-name">🍽️ The Grand Table</div>
+    <div class="clock-wrap">
+      <div id="clock-time">00:00:00</div>
+      <div id="clock-date"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div id="user-badge" style="display:none;"></div>
+      <button onclick="if(window.POS_GAPI&&POS_GAPI.getSheetId()){window.open('https://docs.google.com/spreadsheets/d/'+POS_GAPI.getSheetId()+'/edit','_blank')}" 
+        style="background:rgba(39,174,96,.15);border:1px solid rgba(39,174,96,.3);color:#27ae60;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+        📊 Sheet
+      </button>
+      <button onclick="location.reload()" 
+        style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.7);padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+        🔄
+      </button>
+    </div>
+    <div class="open-pill">
+      <div class="live-dot"></div>
+      Now Open
+    </div>
+  </div>
+
+  <!-- MAIN GRID -->
+  <div class="main-grid">
+    <!-- LEFT: Queue -->
+    <div class="left-col">
+      <div class="now-serving">
+        <div>
+          <div class="ns-tag">🔔 Now Serving</div>
+          <div class="ns-numbers" id="ns-numbers">
+            <div class="ns-none">Waiting for orders…</div>
+          </div>
+        </div>
+        <div class="ns-right">
+          <div class="ns-tables" id="ns-tables"></div>
+          <div class="ns-ready" id="ns-ready">Your order will appear here when ready</div>
+        </div>
+      </div>
+
+      <div class="queue-section">
+        <div class="queue-label">Waiting Queue</div>
+        <div class="queue-rows" id="queue-rows">
+          <div class="queue-empty">
+            <div style="font-size:36px">✅</div>
+            <div>No current queue — please ask staff</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Menu -->
+    <div class="right-col">
+      <div class="menu-hdr" id="menu-hdr">📋 Today's Menu</div>
+      <div class="cat-tabs" id="cat-tabs"></div>
+      <div class="menu-list" id="menu-list"></div>
+    </div>
+  </div>
+</div>
+
+<div id="loading-placeholder" style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:sans-serif;background:#0a0a0a;color:white;">
+  <div style="font-size:40px">📺</div>
+  <div style="font-size:16px;font-weight:700">Lobby Waiting Screen</div>
+  <div style="font-size:13px;color:#888">Connecting to TV queue channel...</div>
+</div>
+
+<!-- TICKER -->
+<div class="ticker-wrap">
+  <div class="ticker-track" id="ticker-track"></div>
+</div>
+
+<script>
+var CURRENCY = "Rs.";
+var REST_NAME = "The Grand Table";
+
+var DEFAULT_MENU = {
+  "Main Course": [
+    { name:"Burger Deluxe",   desc:"Beef, cheddar, sauce, fries",    price:1299 },
+    { name:"Steak",           desc:"8oz ribeye, choice of sides",     price:2499 },
+    { name:"Fish & Chips",    desc:"Beer-battered cod",              price:1399 },
+    { name:"Pasta Carbonara", desc:"Creamy bacon pasta",             price:1199 },
+    { name:"Caesar Salad",   desc:"Romaine, parmesan, croutons",     price:999  },
+  ],
+  "Appetizers": [
+    { name:"Spring Rolls",   desc:"Crispy vegetable rolls",          price:699  },
+    { name:"Chicken Wings",  desc:"Buffalo or BBQ — 6 pieces",       price:899  },
+    { name:"Garlic Bread",   desc:"Toasted with cheese",             price:499  },
+  ],
+  "Beverages": [
+    { name:"Coca Cola",      desc:"Regular or Diet",                  price:299  },
+    { name:"Fresh Juice",    desc:"Orange, apple or berry",           price:499  },
+    { name:"Coffee",         desc:"Espresso, latte, cappuccino",      price:249  },
+    { name:"Water",          desc:"Still or sparkling",               price:0    },
+  ],
+  "Desserts": [
+    { name:"Chocolate Cake", desc:"Rich dark chocolate with cream",   price:699  },
+    { name:"Ice Cream",      desc:"Three scoops, choice of flavour",  price:499  },
+  ],
+};
+
+var menuData   = DEFAULT_MENU;
+var activeCat  = 0;
+var catRotateT = null;
+
+var TICKERS = [
+  "🎉 Ask your waiter about today's specials",
+  "📱 Scan the QR code to order from your table",
+  "⭐ Enjoyed your visit? Leave us a Google review!",
+  "🚗 Free parking available at the rear",
+  "🎂 Celebrating something? Ask about our surprise dessert!",
+  "⏰ Happy Hour — ask staff for today's deals",
+  "🍽️ Private dining and catering available — ask the manager",
+  "✅ All our dishes are freshly prepared to order",
+];
+
+(function buildTicker() {
+  var msgs = TICKERS.concat(TICKERS); 
+  var track = document.getElementById("ticker-track");
+  if (track) {
+    track.innerHTML = msgs.map(function(m) {
+      return '<span class="ticker-item">' + m + '&nbsp;&nbsp;&nbsp;<strong>·</strong>&nbsp;&nbsp;&nbsp;</span>';
+    }).join("");
+  }
+})();
+
+function updateClock() {
+  var now = new Date();
+  var clockTimeEl = document.getElementById("clock-time");
+  var clockDateEl = document.getElementById("clock-date");
+  if (clockTimeEl) {
+    clockTimeEl.textContent = now.toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  }
+  if (clockDateEl) {
+    clockDateEl.textContent = now.toLocaleDateString("en-GB", {weekday:"long",day:"numeric",month:"long",year:"numeric"});
+  }
+}
+
+function renderMenu() {
+  var cats = Object.keys(menuData);
+  var tabsEl = document.getElementById("cat-tabs");
+  if (tabsEl) {
+    tabsEl.innerHTML = cats.map(function(cat, i) {
+      return '<div class="cat-tab ' + (i === activeCat ? "active" : "") + '" onclick="switchCat(' + i + ')">' + cat + '</div>';
+    }).join("");
+  }
+
+  var items = menuData[cats[activeCat]] || [];
+  var listEl = document.getElementById("menu-list");
+  if (!listEl) return;
+  if (items.length === 0) {
+    listEl.innerHTML = '<div style="padding:20px;text-align:center;color:rgba(255,255,255,.3)">No items in this category</div>';
+    return;
+  }
+  listEl.innerHTML = items.map(function(item) {
+    var priceStr = item.price === 0
+      ? '<span style="font-size:14px;color:rgba(255,255,255,.4)">Free</span>'
+      : CURRENCY + " " + Number(item.price).toLocaleString();
+    return '<div class="menu-row">' +
+      '<div><div class="mi-name">' + item.name + '</div>' +
+      '<div class="mi-desc">' + item.desc + '</div></div>' +
+      '<div class="mi-price">' + priceStr + '</div>' +
+    '</div>';
+  }).join("");
+}
+
+function switchCat(i) {
+  activeCat = i;
+  clearInterval(catRotateT);
+  startCatRotate();
+  renderMenu();
+}
+
+function startCatRotate() {
+  catRotateT = setInterval(function() {
+    activeCat = (activeCat + 1) % Object.keys(menuData).length;
+    renderMenu();
+  }, 8000);
+}
+
+function renderQueue(queueItems, nowServingItems) {
+  var nsNumbers = document.getElementById("ns-numbers");
+  var nsTables  = document.getElementById("ns-tables");
+  var nsReady   = document.getElementById("ns-ready");
+
+  if (!nsNumbers || !nsTables || !nsReady) return;
+
+  if (nowServingItems && nowServingItems.length > 0) {
+    nsNumbers.innerHTML = nowServingItems.map(function(s) {
+      return '<div class="ns-number">' + s.ticket + '</div>';
+    }).join("");
+    nsTables.textContent = nowServingItems.map(function(s) {
+      return "Table " + s.table;
+    }).join("  ·  ");
+    nsReady.textContent  = "✅ Please proceed to your table";
+  } else {
+    nsNumbers.innerHTML  = '<div class="ns-none">No orders ready yet</div>';
+    nsTables.textContent = "";
+    nsReady.textContent  = "Your order will appear here when ready";
+  }
+
+  var el = document.getElementById("queue-rows");
+  if (!el) return;
+  if (!queueItems || queueItems.length === 0) {
+    el.innerHTML = '<div class="queue-empty">' +
+      '<div style="font-size:36px">✅</div>' +
+      '<div>No current queue — please ask staff</div>' +
+    '</div>';
+    return;
+  }
+
+  el.innerHTML = queueItems.map(function(q, i) {
+    var cls   = i === 0 ? "next" : i === 1 ? "soon" : "";
+    var pill  = i === 0 ? '<span class="q-pill pill-next">🔔 Up Next</span>'
+              : i === 1 ? '<span class="q-pill pill-soon">⏳ Soon</span>'
+              : '<span class="q-pill pill-wait">Waiting</span>';
+    return '<div class="q-row ' + cls + '">' +
+      '<div class="q-ticket">' + q.ticket + '</div>' +
+      '<div><div class="q-name">' + q.name + '</div>' +
+         '<div class="q-party">' + q.party + ' guest' + (q.party !== 1 ? "s" : "") + '</div></div>' +
+      '<div class="q-wait"><div class="q-wait-num">~' + q.wait + ' min</div>' +
+         '<div class="q-wait-lbl">est. wait</div></div>' +
+      '<div class="q-badge">' + pill + '</div>' +
+    '</div>';
+  }).join("");
+}
+
+var ticketBase = 40;
+
+async function loadLiveData() {
+  if (!window.POS_GAPI || !window.POS_GAPI.getSheetId || !window.POS_GAPI.getSheetId()) return;
+
+  try {
+    var menuRes = await window.POS_GAPI.Menu.getAll();
+    if (menuRes && menuRes.data && menuRes.data.length > 0) {
+      var built = {};
+      menuRes.data.forEach(function(item) {
+        var cat = item.Category || "Other";
+        if (!built[cat]) built[cat] = [];
+        built[cat].push({
+          name : item.Name,
+          desc : item.Description || "",
+          price: parseFloat(item.Price) || 0,
+        });
+      });
+      if (Object.keys(built).length > 0) {
+        menuData = built;
+        activeCat = 0;
+        renderMenu();
+      }
+    }
+  } catch(e) { console.error("Menu sync fail:", e); }
+
+  try {
+    var ordersRes = await window.POS_GAPI.Orders.getAll();
+    if (ordersRes && ordersRes.data) {
+      var nowServing = ordersRes.data
+        .filter(function(o) { return o.Status === "ready"; })
+        .map(function(o, i) {
+          return { ticket: "A" + (ticketBase + i), table: o.TableNumber };
+        });
+
+      var queue = ordersRes.data
+        .filter(function(o) { return o.Status === "new" || o.Status === "preparing"; })
+        .map(function(o, i) {
+          var elapsed = o.OrderTime
+            ? Math.round((Date.now() - new Date(o.OrderTime).getTime()) / 60000)
+            : 3;
+          var wait = Math.max(5, 25 - elapsed);
+          return {
+            ticket: "A" + (ticketBase + nowServing.length + i),
+            name  : o.CustomerName || ("Table " + o.TableNumber),
+            party : 2,
+            wait  : wait,
+          };
+        });
+
+      renderQueue(queue, nowServing);
+    }
+  } catch(e) { console.error("Orders sync fail:", e); }
+}
+
+(function initApp() {
+  updateClock();
+  setInterval(updateClock, 1000);
+  
+  function startAuth() {
+    if (typeof POS_AUTH === "undefined") {
+      console.error("POS_AUTH failed to load");
+      return;
+    }
+    POS_AUTH.init("waiting-display", {
+      onReady: function(session) {
+        var root = document.getElementById("app");
+        if (root) root.style.display = "block";
+        var loader = document.getElementById("loading-placeholder");
+        if (loader) loader.style.display = "none";
+
+        var settings = window.POS_GAPI.getSettings();
+        if (settings) {
+          if (settings.restaurant_name) {
+            REST_NAME = settings.restaurant_name;
+            var nameEl = document.getElementById("rest-name");
+            if (nameEl) nameEl.textContent = "🍽️ " + REST_NAME;
+          }
+          if (settings.currency) {
+            CURRENCY = settings.currency;
+            var menuHdrEl = document.getElementById("menu-hdr");
+            if (menuHdrEl) menuHdrEl.textContent = "📋 Today's Menu — " + CURRENCY;
+          }
+        }
+
+        renderMenu();
+        startCatRotate();
+        loadLiveData();
+        setInterval(loadLiveData, 8000);
+      },
+      onError: function(msg) { console.error("Auth error:", msg); }
+    });
+  }
+
+  if (typeof POS_AUTH !== "undefined") {
+    startAuth();
+  } else {
+    var tries = 0;
+    var iv = setInterval(function() {
+      tries++;
+      if (typeof POS_AUTH !== "undefined") { clearInterval(iv); startAuth(); }
+      else if (tries > 50) { clearInterval(iv); startAuth(); }
+    }, 100);
+  }
+})();
+</script>
+</body>
+</html>
