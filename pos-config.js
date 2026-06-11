@@ -402,7 +402,6 @@ window.POS_GAPI = (() => {
     const vals = res.result.values || [];
     for (let i = 1; i < vals.length; i++) {
       if (String(vals[i][colIndex]) === String(matchValue)) {
-        // Find sheet meta ID by sheet name
         const ss = await gapi.client.sheets.spreadsheets.get({
           spreadsheetId: _sheetId
         });
@@ -418,8 +417,8 @@ window.POS_GAPI = (() => {
                     range: {
                       sheetId: sheetId,
                       dimension: "ROWS",
-                      startIndex: i, // 0-based row index inclusive
-                      endIndex: i + 1 // exclusive
+                      startIndex: i, 
+                      endIndex: i + 1 
                     }
                   }
                 }
@@ -431,6 +430,60 @@ window.POS_GAPI = (() => {
       }
     }
     throw new Error("Row not found in " + sheetName + ": " + matchValue);
+  }
+
+  // ── Centralized Automatic Recipe-to-Stock Deduction Engine ──
+  async function _deductInventoryForItems(orderedItems) {
+    try {
+      const recipes = await getRows("Recipes");
+      const inventory = await getRows("Inventory");
+      
+      for (const item of orderedItems) {
+        const dishName = item.name || item.Name;
+        const qty = parseInt(item.qty || item.quantity || 1, 10);
+        if (!dishName) continue;
+
+        // Find matching recipe
+        const recipeRow = recipes.find(r => r.DishName && r.DishName.toLowerCase() === dishName.toLowerCase());
+        if (!recipeRow || !recipeRow.Ingredients) continue;
+
+        let ingredients = [];
+        try {
+          ingredients = JSON.parse(recipeRow.Ingredients);
+        } catch(e) { continue; }
+
+        if (!Array.isArray(ingredients)) continue;
+
+        for (const ing of ingredients) {
+          if (!ing.name) continue;
+
+          // Loose match: matches recipe's "Beef patty (180g)" to stock's "Beef Patties"
+          const invItem = inventory.find(inv => {
+            const invN = String(inv.Name || "").toLowerCase();
+            const ingN = String(ing.name || "").toLowerCase();
+            return ingN.includes(invN) || invN.includes(ingN);
+          });
+
+          if (invItem) {
+            const amtStr = String(ing.amount || "1");
+            const numMatch = amtStr.match(/^([\d.]+)/);
+            const deductPerUnit = numMatch ? parseFloat(numMatch[1]) : 1;
+            const totalDeduct = deductPerUnit * qty;
+
+            const currentStock = parseFloat(invItem.Quantity) || 0;
+            const newStock = Math.max(0, currentStock - totalDeduct);
+
+            // Update Sheets
+            await updateRow("Inventory", 0, invItem.ItemID, {
+              Quantity: parseFloat(newStock.toFixed(2)),
+              LastUpdated: new Date().toISOString()
+            });
+          }
+        }
+      }
+    } catch(e) {
+      console.error("Auto-inventory deduction engine failed:", e);
+    }
   }
 
   function uid(prefix) {
@@ -453,6 +506,12 @@ window.POS_GAPI = (() => {
       const total = parseFloat((sub + tax).toFixed(2));
       await appendRow("Orders", [id, data.tableNumber, data.customerName||"",
         data.waiterName||"", JSON.stringify(data.items||[]), sub, tax, total, "new", now, data.notes||""]);
+      
+      // Auto Deduct Stock Levels based on Recipe Formulation
+      try {
+        await _deductInventoryForItems(data.items || []);
+      } catch(err) { console.error("Stock deduction bypassed:", err); }
+
       return { success:true, data:{ orderId:id, total, timestamp:now } };
     },
     update: async (data) => {
@@ -516,6 +575,7 @@ window.POS_GAPI = (() => {
       await updateRow("Inventory", 0, data.itemId, updates);
       return { success:true, data:{ updated:true } };
     },
+    delete: async (itemId) => deleteRow("Inventory", 0, itemId),
   };
 
   const Staff = {
