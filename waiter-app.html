@@ -48,6 +48,7 @@
             display: flex;
             gap: 20px;
             font-size: 14px;
+            align-items: center;
         }
 
         .main-layout {
@@ -70,6 +71,61 @@
             margin-bottom: 16px;
             color: #333;
             font-weight: 600;
+        }
+
+        /* Server Selection Home Screen */
+        .server-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: calc(100vh - 140px);
+            background: white;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            text-align: center;
+        }
+        .server-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 16px;
+            width: 100%;
+            max-width: 600px;
+            margin-top: 24px;
+        }
+        .server-card {
+            padding: 20px 16px;
+            border-radius: 12px;
+            border: 2px solid #e0e0e0;
+            background: #f9fafb;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+        .server-card:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102,126,234,0.15);
+        }
+        .server-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 700;
+            margin: 0 auto 12px;
+        }
+        .server-name {
+            font-weight: 700;
+            font-size: 14px;
+            color: #333;
         }
 
         /* Tables Panel */
@@ -260,6 +316,40 @@
             text-align: center;
         }
 
+        /* Order Progress Status Card */
+        .progress-box {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 16px;
+        }
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 8px;
+        }
+        .progress-timer {
+            font-size: 15px;
+            font-weight: 700;
+            font-family: monospace;
+            color: #ef4444;
+        }
+        .progress-status {
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 6px;
+        }
+        .status-cooking { background: #fef3c7; color: #d97706; }
+        .status-queue { background: #fee2e2; color: #ef4444; }
+        .status-ready { background: #d1fae5; color: #065f46; animation: blink-status 1.5s infinite; }
+        @keyframes blink-status { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
         .order-summary {
             border-top: 2px solid #e0e0e0;
             padding-top: 16px;
@@ -323,6 +413,12 @@
             color: white;
         }
 
+        .btn-ghost {
+            background: #f3f4f6;
+            color: #4b5563;
+            border: 1px solid #d1d5db;
+        }
+
         .empty-state {
             text-align: center;
             padding: 40px 20px;
@@ -365,66 +461,6 @@
         .badge-warning {
             background: #fef3c7;
             color: #d97706;
-        }
-
-        /* Modal Styles */
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.6);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-        }
-
-        .modal {
-            background: white;
-            padding: 24px;
-            border-radius: 12px;
-            max-width: 500px;
-            width: 90%;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-        }
-
-        .modal h3 {
-            margin-bottom: 16px;
-            font-size: 20px;
-        }
-
-        .form-group {
-            margin-bottom: 16px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 6px;
-            font-weight: 600;
-            font-size: 14px;
-        }
-
-        .form-group input,
-        .form-group select {
-            width: 100%;
-            padding: 10px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 14px;
-        }
-
-        .form-group input:focus,
-        .form-group select:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .modal-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 20px;
         }
 
         .notification {
@@ -471,55 +507,80 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
+        // Simple helper component to render wait time dynamically
+        function OrderTimer({ orderTime }) {
+            const [elapsed, setElapsed] = useState(0);
+
+            useEffect(() => {
+                const calculate = () => {
+                    const diff = Date.now() - new Date(orderTime).getTime();
+                    setElapsed(Math.max(0, Math.floor(diff / 60000)));
+                };
+                calculate();
+                const iv = setInterval(calculate, 10000);
+                return () => clearInterval(iv);
+            }, [orderTime]);
+
+            return <span className="progress-timer">⏱ {elapsed} min</span>;
+        }
+
         function WaiterApp() {
-            const [tables, setTables]               = useState([]);
-            const [selectedTable, setSelectedTable]   = useState(null);
+            const [staff, setStaff]                     = useState([]);
+            const [currentServer, setCurrentServer]     = useState(null);
+            const [tables, setTables]                   = useState([]);
+            const [selectedTable, setSelectedTable]     = useState(null);
             const [menuItems, setMenuItems]             = useState([]);
             const [selectedCategory, setSelectedCategory] = useState("All");
             const [orderItems, setOrderItems]           = useState([]);
+            const [liveOrders, setLiveOrders]           = useState([]);
             const [searchQuery, setSearchQuery]         = useState("");
             const [notification, setNotification]       = useState(null);
             const [loading, setLoading]                 = useState(true);
-            const [waiterName, setWaiterName]           = useState("Staff");
-            const [currency, setCurrency]               = useState("LKR");
+            const [currency, setCurrency]               = useState("Rs.");
+
+            async function loadData() {
+                try {
+                    const settings = window.POS_GAPI.getSettings();
+                    if (settings && settings.currency) setCurrency(settings.currency);
+
+                    const [menuRes, tableRes, staffRes, ordersRes] = await Promise.all([
+                        window.POS_GAPI.Menu.getAll(),
+                        window.POS_GAPI.Tables.getAll(),
+                        window.POS_GAPI.Staff.getAll(),
+                        window.POS_GAPI.Orders.getAll(),
+                    ]);
+                    if (menuRes && menuRes.data) {
+                        setMenuItems(menuRes.data.map((item, i) => ({
+                            id      : item.ItemID || i,
+                            name    : item.Name,
+                            category: item.Category,
+                            price   : parseFloat(item.Price) || 0,
+                            description: item.Description || "",
+                            emoji   : item.Emoji || "🍽️",
+                        })));
+                    }
+                    if (tableRes && tableRes.data) {
+                        setTables(tableRes.data.map(t => ({
+                            id      : t.TableID,
+                            number  : parseInt(t.TableNumber),
+                            capacity: parseInt(t.Capacity) || 4,
+                            status  : t.Status || "available",
+                            guests  : parseInt(t.Guests) || 0,
+                        })));
+                    }
+                    if (staffRes && staffRes.data) {
+                        setStaff(staffRes.data.filter(s => s.Status === "active" && s.Role !== "Driver"));
+                    }
+                    if (ordersRes && ordersRes.data) {
+                        setLiveOrders(ordersRes.data);
+                    }
+                } catch(e) {
+                    console.error("Waiter App polling error:", e);
+                }
+                setLoading(false);
+            }
 
             useEffect(() => {
-                async function loadData() {
-                    try {
-                        const s = window.POS_GAPI.getSession();
-                        if (s) setWaiterName(s.name);
-                        
-                        const settings = window.POS_GAPI.getSettings();
-                        if (settings && settings.currency) setCurrency(settings.currency);
-
-                        const [menuRes, tableRes] = await Promise.all([
-                            window.POS_GAPI.Menu.getAll(),
-                            window.POS_GAPI.Tables.getAll(),
-                        ]);
-                        if (menuRes && menuRes.data) {
-                            setMenuItems(menuRes.data.map((item, i) => ({
-                                id      : item.ItemID || i,
-                                name    : item.Name,
-                                category: item.Category,
-                                price   : parseFloat(item.Price) || 0,
-                                description: item.Description || "",
-                                emoji   : item.Emoji || "🍽️",
-                            })));
-                        }
-                        if (tableRes && tableRes.data) {
-                            setTables(tableRes.data.map(t => ({
-                                id      : t.TableID,
-                                number  : parseInt(t.TableNumber),
-                                capacity: parseInt(t.Capacity) || 4,
-                                status  : t.Status || "available",
-                                guests  : parseInt(t.Guests) || 0,
-                            })));
-                        }
-                    } catch(e) {
-                        console.error("Waiter load data error:", e);
-                    }
-                    setLoading(false);
-                }
                 if (window.POS_GAPI) {
                     loadData();
                     const interval = setInterval(loadData, POS_CONFIG.POLL_MS);
@@ -587,7 +648,7 @@
                     const subtotal = calculateTotal();
                     await window.POS_GAPI.Orders.create({
                         tableNumber  : selectedTable.number,
-                        waiterName   : waiterName,
+                        waiterName   : currentServer,
                         items        : orderItems.map(i => ({ name:i.name, qty:i.quantity, price:i.price })),
                         subtotal     : subtotal,
                         notes        : "",
@@ -595,50 +656,103 @@
                     await window.POS_GAPI.Tables.update({
                         tableNumber  : selectedTable.number,
                         status       : "occupied",
-                        currentWaiter: waiterName,
+                        currentWaiter: currentServer,
                         guests       : selectedTable.guests || 2,
                     });
                     showNotification(`Order sent to kitchen for Table ${selectedTable.number}!`);
+                    
+                    // Automatically redirect back to Home Selection Screen on order completion
+                    setCurrentServer(null);
+                    setSelectedTable(null);
                     setOrderItems([]);
+                    loadData();
                 } catch(e) {
                     showNotification("Failed to save order: " + e.message, "error");
                 }
-            };
-
-            const handlePrintBill = () => {
-                if (orderItems.length === 0) {
-                    showNotification("No items in order!", "error");
-                    return;
-                }
-
-                showNotification(`Bill generated for Table ${selectedTable.number}!`);
-                console.log("Bill Summary:", {
-                    table: selectedTable,
-                    items: orderItems,
-                    subtotal: calculateTotal(),
-                    tax: calculateTotal() * 0.1,
-                    total: calculateTotal() * 1.1
-                });
             };
 
             const handleCloseTable = async () => {
                 if (!selectedTable) return;
 
                 try {
+                    // Locate the active order to complete it
+                    const activeOrder = liveOrders.find(o => 
+                        parseInt(o.TableNumber) === parseInt(selectedTable.number) && 
+                        o.Status !== "served" && o.Status !== "closed"
+                    );
+
+                    if (activeOrder) {
+                        await window.POS_GAPI.Orders.update({
+                            orderId: activeOrder.OrderID,
+                            status: "served"
+                        });
+                    }
+
                     await window.POS_GAPI.Tables.update({
                         tableNumber  : selectedTable.number,
                         status       : "available",
                         currentWaiter: "",
                         guests       : 0,
                     });
-                    showNotification(`Table ${selectedTable.number} closed!`);
+                    showNotification(`Table ${selectedTable.number} closed and checked out!`);
+                    
+                    // Return back to Server Home Selection
+                    setCurrentServer(null);
                     setSelectedTable(null);
                     setOrderItems([]);
+                    loadData();
                 } catch(e) {
                     showNotification("Failed to close table: " + e.message, "error");
                 }
             };
 
+            const handleDeliverOrder = async (orderId) => {
+                try {
+                    await window.POS_GAPI.Orders.update({ orderId, status: "served" });
+                    showNotification("Order marked as delivered to table!");
+                    loadData();
+                } catch(e) {
+                    showNotification("Failed to deliver order: " + e.message, "error");
+                }
+            };
+
+            // Locate active order for currently highlighted table (if any)
+            const activeOrderForTable = selectedTable 
+                ? liveOrders.find(o => 
+                    parseInt(o.TableNumber) === parseInt(selectedTable.number) && 
+                    o.Status !== "served" && o.Status !== "closed"
+                  )
+                : null;
+
+            // ── SCREEN A: Server Selection Home Screen ──
+            if (!currentServer) {
+                const defaultStaffList = ["John Doe", "Sarah Lee", "Mike Chen", "Emma Brown"];
+                const renderList = staff.length > 0 ? staff.map(s => s.Name) : defaultStaffList;
+
+                return (
+                    <div className="app-container">
+                        <div className="header">
+                            <h1>🍽️ The Grand Table POS</h1>
+                            <div id="user-badge"></div>
+                        </div>
+                        <div className="server-screen">
+                            <div style={{ fontSize: "52px" }}>🧑‍💼</div>
+                            <h2 style={{ fontSize: "24px", fontWeight: "800", marginTop: "12px" }}>Who is serving today?</h2>
+                            <p style={{ color: "#666", marginTop: "4px" }}>Select your name to access the terminal floorplan</p>
+                            <div className="server-grid">
+                                {renderList.map((name, i) => (
+                                    <div key={i} className="server-card" onClick={() => setCurrentServer(name)}>
+                                        <div className="server-avatar">{name.charAt(0)}</div>
+                                        <div className="server-name">{name}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // ── SCREEN B: Active Tables and Floorplan ──
             return (
                 <div className="app-container">
                     <div className="header">
@@ -647,7 +761,10 @@
                         </div>
                         <div id="user-badge" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}></div>
                         <div className="header-info">
-                            <div>Waiter: <strong>{waiterName}</strong></div>
+                            <button className="btn btn-ghost" style={{ padding: '8px 14px', marginRight: '10px' }} onClick={() => { setCurrentServer(null); setSelectedTable(null); setOrderItems([]); }}>
+                                ↩ Switch Server
+                            </button>
+                            <div>Server: <strong>{currentServer}</strong></div>
                             <div>{new Date().toLocaleDateString()}</div>
                         </div>
                     </div>
@@ -657,23 +774,27 @@
                         <div className="panel">
                             <h2>Tables</h2>
                             <div className="tables-grid">
-                                {tables.map(table => (
-                                    <div
-                                        key={table.id}
-                                        className={`table-card ${table.status} ${selectedTable?.id === table.id ? 'selected' : ''}`}
-                                        onClick={() => handleTableSelect(table)}
-                                    >
-                                        <div className="table-number">Table {table.number}</div>
-                                        <div className="table-status">
-                                            <span className={`badge ${table.status === 'available' ? 'badge-success' : 'badge-warning'}`}>
-                                                {table.status}
-                                            </span>
+                                {tables.map(table => {
+                                    const hasActive = liveOrders.some(o => parseInt(o.TableNumber) === parseInt(table.number) && o.Status !== "served" && o.Status !== "closed");
+                                    const statusClass = hasActive ? "occupied" : "available";
+                                    return (
+                                        <div
+                                            key={table.id}
+                                            className={`table-card ${statusClass} ${selectedTable?.id === table.id ? 'selected' : ''}`}
+                                            onClick={() => handleTableSelect(table)}
+                                        >
+                                            <div className="table-number">Table {table.number}</div>
+                                            <div className="table-status">
+                                                <span className={`badge ${statusClass === 'available' ? 'badge-success' : 'badge-warning'}`}>
+                                                    {hasActive ? "occupied" : "available"}
+                                                </span>
+                                            </div>
+                                            <div className="table-guests">
+                                                {table.guests ? `${table.guests} guests` : `Seats ${table.capacity}`}
+                                            </div>
                                         </div>
-                                        <div className="table-guests">
-                                            {table.guests ? `${table.guests} guests` : `Seats ${table.capacity}`}
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
 
@@ -716,7 +837,7 @@
                             </div>
                         </div>
 
-                        {/* Order Panel */}
+                        {/* Order Detail Panel & Live Kitchen Tracking */}
                         <div className="panel">
                             <div className="order-header">
                                 <h2>Current Order</h2>
@@ -732,15 +853,80 @@
                                     <div className="empty-state-icon">🍽️</div>
                                     <div>Select a table to start</div>
                                 </div>
+                            ) : activeOrderForTable ? (
+                                // ── Table is occupied: Show active dishes & elapsed timers ──
+                                <div>
+                                    <div className="progress-box">
+                                        <div className="progress-header">
+                                            <div>
+                                                <strong style={{ fontSize: "14px" }}>{activeOrderForTable.OrderID}</strong>
+                                                <div style={{ fontSize: "11px", color: "#666", marginTop: "2px" }}>Wait Tracker</div>
+                                            </div>
+                                            <div style={{ textAlign: "right" }}>
+                                                <OrderTimer orderTime={activeOrderForTable.OrderTime} />
+                                                <div style={{ marginTop: "4px" }}>
+                                                    <span className={`progress-status ${
+                                                        activeOrderForTable.Status === 'ready' ? 'status-ready' : 
+                                                        activeOrderForTable.Status === 'preparing' ? 'status-cooking' : 'status-queue'
+                                                    }`}>
+                                                        {activeOrderForTable.Status === 'ready' ? 'Ready to Serve' : 
+                                                         activeOrderForTable.Status === 'preparing' ? 'Cooking' : 'In Queue'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ margin: "12px 0 6px" }}>
+                                            <strong style={{ fontSize: "12px", textTransform: "uppercase", color: "#888" }}>Dishes Ordered:</strong>
+                                        </div>
+                                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                                            {(() => {
+                                                let parsed = [];
+                                                try { parsed = JSON.parse(activeOrderForTable.Items); } catch(e){}
+                                                return parsed.map((item, idx) => (
+                                                    <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "14px" }}>
+                                                        <span>{item.qty || item.quantity}× {item.name || item.Name}</span>
+                                                        <span style={{ fontWeight: "600", color: "#667eea" }}>
+                                                            {activeOrderForTable.Status === 'ready' ? "✅ Done" : 
+                                                             activeOrderForTable.Status === 'preparing' ? "👨‍🍳 Cooking" : "⏳ Queued"}
+                                                        </span>
+                                                    </div>
+                                                ));
+                                            })()}
+                                        </div>
+                                    </div>
+
+                                    <div className="order-summary" style={{ borderTop: "none", marginTop: 0 }}>
+                                        <div className="summary-row" style={{ fontWeight: "700", fontSize: "16px", color: "#1a1a2e" }}>
+                                            <span>Active Total:</span>
+                                            <span>{currency} {parseFloat(activeOrderForTable.Total).toFixed(2)}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="action-buttons">
+                                        {activeOrderForTable.Status === "ready" && (
+                                            <button className="btn btn-success" onClick={() => handleDeliverOrder(activeOrderForTable.OrderID)}>
+                                                🚀 Deliver Order to Table
+                                            </button>
+                                        )}
+                                        <button className="btn btn-secondary" onClick={handleCloseTable}>
+                                            🧾 Checkout & Bill Table
+                                        </button>
+                                        <button className="btn btn-ghost" onClick={() => setSelectedTable(null)}>
+                                            ← Back to Tables
+                                        </button>
+                                    </div>
+                                </div>
                             ) : orderItems.length === 0 ? (
                                 <div className="empty-state">
                                     <div className="empty-state-icon">📝</div>
-                                    <div>No items yet</div>
+                                    <div>No active order</div>
                                     <div style={{ fontSize: '12px', marginTop: '8px' }}>
-                                        Click menu items to add
+                                        Click menu items on the left to build order
                                     </div>
                                 </div>
                             ) : (
+                                // ── Table is available/building: Show cart ──
                                 <>
                                     <div className="order-items">
                                         {orderItems.map(item => (
@@ -779,14 +965,8 @@
                                         <button className="btn btn-primary" onClick={handleSendToKitchen}>
                                             📤 Send to Kitchen
                                         </button>
-                                        <button className="btn btn-secondary" onClick={handlePrintBill}>
-                                            🧾 Print Bill
-                                        </button>
-                                        <button className="btn btn-success" onClick={handleCloseTable}>
-                                            ✅ Close Table
-                                        </button>
                                         <button className="btn btn-danger" onClick={() => setOrderItems([])}>
-                                            🗑️ Clear Order
+                                            🗑️ Clear Cart
                                         </button>
                                     </div>
                                 </>
