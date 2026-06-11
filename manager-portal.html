@@ -302,8 +302,11 @@
             ordersList.forEach(o => {
                 if (!o.OrderTime) return;
                 const date = new Date(o.OrderTime);
+                if (isNaN(date.getTime())) return;
                 const dayName = days[(date.getDay() + 6) % 7];
-                revenueByDay[dayName] += (parseFloat(o.Total) || 0);
+                if (dayName) {
+                    revenueByDay[dayName] += (parseFloat(o.Total) || 0);
+                }
             });
             
             return days.map(d => ({ day: d, revenue: parseFloat(revenueByDay[d].toFixed(0)) }));
@@ -317,12 +320,14 @@
             ordersList.forEach(o => {
                 let itemsArray = [];
                 try { itemsArray = JSON.parse(o.Items); } catch(e){}
-                itemsArray.forEach(it => {
-                    const name = it.name || it.Name;
-                    if (name) {
-                        itemCounts[name] = (itemCounts[name] || 0) + (parseInt(it.qty || it.quantity) || 1);
-                    }
-                });
+                if (Array.isArray(itemsArray)) {
+                    itemsArray.forEach(it => {
+                        const name = it.name || it.Name;
+                        if (name) {
+                            itemCounts[name] = (itemCounts[name] || 0) + (parseInt(it.qty || it.quantity) || 1);
+                        }
+                    });
+                }
             });
             return Object.entries(itemCounts)
                 .map(([name, count]) => ({ name, count }))
@@ -448,13 +453,13 @@
         try {
           const res = await window.POS_GAPI.Menu.getAll();
           if (res && res.data) setItems(res.data.map(i => ({
-            id: i.ItemID, name: i.Name, category: i.Category,
+            id: i.ItemID, name: i.Name || "", category: i.Category || "Main Course",
             price: parseFloat(i.Price)||0, status: String(i.Available).toLowerCase()==="false"?"inactive":"active",
             description: i.Description||"", emoji: i.Emoji||"🍽️", prepTime: i.PrepTime || ""
           })));
 
           const recs = await window.POS_GAPI.getRows("Recipes");
-          if (recs) setRecipesList(recs.map(r => r.DishName));
+          if (recs) setRecipesList(recs.map(r => r.DishName || ""));
         } catch(e) { console.error("Menu list load error:", e); }
       };
 
@@ -471,7 +476,7 @@
         steps:[ {title:"", description:"", timerSec:0, tip:""} ]
       });
 
-      const filtered = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()));
+      const filtered = items.filter(i => (i.name || "").toLowerCase().includes(search.toLowerCase()));
 
       const handleSave = async () => {
         if (!form.name || !form.price) return;
@@ -1363,6 +1368,9 @@
         </div>
       );
     }
+
+    const ROTA_STAFF = ["John Doe","Sarah Lee","Mike Chen","Emma Brown","Tom Wilson"];
+    const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
     const NAV = [
         { icon: "📊", label: "Dashboard", section: "overview" },
