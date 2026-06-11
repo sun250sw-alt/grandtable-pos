@@ -89,8 +89,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .urg-med{background:#f39c12;}
 .urg-low{background:#27ae60;}
 @keyframes urgpulse{0%,100%{opacity:1}50%{opacity:.3}}
-.queue-empty{text-align:center;padding:40px 16px;color:#8b949e;}
-.queue-empty-icon{font-size:36px;margin-bottom:8px;}
 
 /* Live Background Timer badge on left Queue panel */
 .qi-timer-badge {
@@ -611,24 +609,32 @@ function playTickChime() {
 function updateSheetToPreparing() {
   var api = window.POS_GAPI || window.POS_API;
   if (api && api.getSheetId() && STATE.selected) {
+    var targetOrderId = STATE.selected.orderId;
+    var targetDish = STATE.selected.dish;
+    var chefName = STATE.currentChef;
+    var originalNote = STATE.selected.note || "";
+
     api.getRows("Orders").then(function(rows) {
-      var orderRow = rows.find(function(r) { return r.OrderID === STATE.selected.orderId; });
+      var orderRow = rows.find(function(r) { return r.OrderID === targetOrderId; });
       if (orderRow) {
         var itemsArray = [];
         try { itemsArray = JSON.parse(orderRow.Items); } catch(e){}
         
         itemsArray = itemsArray.map(function(item) {
-          if (item.name === STATE.selected.dish || item.Name === STATE.selected.dish) {
-            item.chef = STATE.currentChef;
+          if (item.name === targetDish || item.Name === targetDish) {
+            item.chef = chefName;
             item.status = "preparing";
           }
           return item;
         });
 
+        var chefNotes = "[Chef: " + chefName + "] " + originalNote;
+
         api.Orders.update({
-          orderId: STATE.selected.orderId,
+          orderId: targetOrderId,
           status: "preparing",
-          items: itemsArray
+          items: itemsArray,
+          notes: chefNotes
         });
       }
     });
@@ -637,32 +643,37 @@ function updateSheetToPreparing() {
 
 function updateSheetToReady() {
   var api = window.POS_GAPI || window.POS_API;
-  if (api && api.getSheetId() && STATE.selected) {
-    api.getRows("Orders").then(function(rows) {
-      var orderRow = rows.find(function(r) { return r.OrderID === STATE.selected.orderId; });
-      if (orderRow) {
-        var itemsArray = [];
-        try { itemsArray = JSON.parse(orderRow.Items); } catch(e){}
-        
-        itemsArray = itemsArray.map(function(item) {
-          if (item.name === STATE.selected.dish || item.Name === STATE.selected.dish) {
-            item.status = "ready";
-          }
-          return item;
-        });
-
-        var allReady = itemsArray.every(function(item) {
-          return item.status === "ready";
-        });
-
-        api.Orders.update({
-          orderId: STATE.selected.orderId,
-          status: allReady ? "ready" : "preparing",
-          items: itemsArray
-        });
-      }
-    });
+  if (!api || !api.getSheetId() || !STATE.selected) {
+    return Promise.resolve();
   }
+  
+  var targetOrderId = STATE.selected.orderId;
+  var targetDish = STATE.selected.dish;
+
+  return api.getRows("Orders").then(function(rows) {
+    var orderRow = rows.find(function(r) { return r.OrderID === targetOrderId; });
+    if (orderRow) {
+      var itemsArray = [];
+      try { itemsArray = JSON.parse(orderRow.Items); } catch(e){}
+      
+      itemsArray = itemsArray.map(function(item) {
+        if (item.name === targetDish || item.Name === targetDish) {
+          item.status = "ready";
+        }
+        return item;
+      });
+
+      var allReady = itemsArray.every(function(item) {
+        return item.status === "ready" || item.prepTime === "Bypass Prep";
+      });
+
+      return api.Orders.update({
+        orderId: targetOrderId,
+        status: allReady ? "ready" : "preparing",
+        items: itemsArray
+      });
+    }
+  });
 }
 
 // ── HIGH PERFORMANCE GLOBAL PARALLEL DECENTCULATED MULTI-TIMER ──
@@ -757,11 +768,40 @@ function stopCookingTimer() {
 }
 
 function confirmRecipeFinished() {
-  updateSheetToReady();
-  if (STATE.selectedKey) {
-    delete STATE.timers[STATE.selectedKey];
-  }
-  doSignOutChef();
+  var btn = document.querySelector(".bt-controls button");
+  if (btn) { btn.disabled = true; btn.textContent = "Saving..."; }
+
+  updateSheetToReady().then(function() {
+    if (STATE.selectedKey) {
+      delete STATE.timers[STATE.selectedKey];
+    }
+    
+    // Reset selected dish view state - STAY logged in as current Chef
+    STATE.selected = null;
+    STATE.selectedKey = null;
+    STATE.recipe = null;
+    STATE.gateState = "none";
+    
+    renderQueue(); // Refresh left active cooking queues
+    
+    // Restore home instruction panel
+    document.getElementById("recipe-panel").innerHTML =
+      '<div class="no-selection">' +
+        '<div class="ns-icon">👈</div>' +
+        '<div class="ns-title">Select a dish from the queue</div>' +
+        '<p style="font-size:14px;margin-top:6px">Tap any dish to see step-by-step recipe</p>' +
+      '</div>';
+      
+    loadQueue(); // Fast-poll queue update
+  }).catch(function(err) {
+    console.error("Save complete error:", err);
+    // Safe reset
+    STATE.selected = null;
+    STATE.selectedKey = null;
+    STATE.recipe = null;
+    STATE.gateState = "none";
+    renderQueue();
+  });
 }
 
 function calculateTotalTimeRemaining(r, t) {
