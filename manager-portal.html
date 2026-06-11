@@ -364,22 +364,29 @@
       const [search, setSearch]       = useState("");
       const [saving, setSaving]       = useState(false);
       const [currency, setCurrency]   = useState("Rs.");
+      const [recipesList, setRecipesList] = useState([]);
       const [form, setForm]           = useState({ name:"", category:"Main Course", price:"", status:"active" });
 
-      useEffect(() => {
-        async function load() {
-          if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
-          
-          const settings = window.POS_GAPI.getSettings();
-          if (settings && settings.currency) setCurrency(settings.currency);
+      const load = async () => {
+        if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
+        
+        const settings = window.POS_GAPI.getSettings();
+        if (settings && settings.currency) setCurrency(settings.currency);
 
+        try {
           const res = await window.POS_GAPI.Menu.getAll();
           if (res && res.data) setItems(res.data.map(i => ({
             id: i.ItemID, name: i.Name, category: i.Category,
             price: parseFloat(i.Price)||0, status: String(i.Available).toLowerCase()==="false"?"inactive":"active",
             description: i.Description||"", emoji: i.Emoji||"🍽️"
           })));
-        }
+
+          const recs = await window.POS_GAPI.getRows("Recipes");
+          if (recs) setRecipesList(recs.map(r => r.DishName));
+        } catch(e) { console.error("Menu management list load error:", e); }
+      };
+
+      useEffect(() => {
         load();
         const pollMs = (window.POS_CONFIG && window.POS_CONFIG.POLL_MS) || 5000;
         const iv = setInterval(load, pollMs);
@@ -404,13 +411,7 @@
               price: parseFloat(form.price), description: form.description||"",
               emoji: form.emoji||"🍽️"
             });
-            const res = await window.POS_GAPI.Menu.getAll();
-            if (res && res.data) setItems(res.data.map(i => ({
-              id: i.ItemID, name: i.Name, category: i.Category,
-              price: parseFloat(i.Price)||0,
-              status: String(i.Available).toLowerCase()==="false"?"inactive":"active",
-              description: i.Description||"", emoji: i.Emoji||"🍽️"
-            })));
+            await load();
           } else {
             setItems([...items, { ...form, id: Date.now(), price: parseFloat(form.price) }]);
           }
@@ -432,22 +433,41 @@
         }
       };
 
-      const openRecipeEditor = (item) => {
+      const openRecipeEditor = async (item) => {
         setEditItem(item);
-        const existing = RECIPE_DATA[item.name];
-        if (existing) {
+        setSaving(true);
+        let currentRecipe = null;
+        try {
+          if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+            const res = await window.POS_GAPI.Recipes.get(item.name);
+            if (res && res.success && res.data) {
+              currentRecipe = res.data;
+            }
+          }
+        } catch(e) { console.warn("No custom recipe in database yet for:", item.name); }
+
+        if (!currentRecipe) {
+          currentRecipe = RECIPE_DATA[item.name];
+        }
+
+        if (currentRecipe) {
           setRecipe({
-            prepTime   : existing.prepTime   || "5 min",
-            cookTime   : existing.cookTime   || "15 min",
-            difficulty : existing.difficulty || "Medium",
-            ingredients: existing.ingredients.length ? existing.ingredients : [{name:"",amount:""}],
-            steps      : existing.steps.length ? existing.steps : [{title:"",description:"",timerSec:0,tip:""}],
+            prepTime   : currentRecipe.prepTime || currentRecipe.PrepTime || "5 min",
+            cookTime   : currentRecipe.cookTime || currentRecipe.CookTime || "15 min",
+            difficulty : currentRecipe.difficulty || currentRecipe.Difficulty || "Medium",
+            ingredients: (currentRecipe.ingredients || currentRecipe.Ingredients || []).length 
+              ? (currentRecipe.ingredients || currentRecipe.Ingredients) 
+              : [{name:"",amount:""}],
+            steps      : (currentRecipe.steps || currentRecipe.Steps || []).length 
+              ? (currentRecipe.steps || currentRecipe.Steps) 
+              : [{title:"",description:"",timerSec:0,tip:""}],
           });
         } else {
           setRecipe({ prepTime:"5 min", cookTime:"15 min", difficulty:"Medium",
             ingredients:[{name:"",amount:""}],
             steps:[{title:"",description:"",timerSec:0,tip:""}] });
         }
+        setSaving(false);
         setShowRecipe(true);
       };
 
@@ -477,6 +497,7 @@
             difficulty: recipe.difficulty,
             ingredients: recipe.ingredients, steps: recipe.steps,
           };
+          await load();
           setShowRecipe(false);
         } catch(e) { alert("Recipe save failed: " + e.message); }
         setSaving(false);
@@ -505,7 +526,7 @@
                     <td><strong>{currency} {parseFloat(item.price).toLocaleString()}</strong></td>
                     <td><span className={`badge ${item.status==="active"?"badge-green":"badge-gray"}`}>{item.status}</span></td>
                     <td>
-                      {RECIPE_DATA[item.name]
+                      {(recipesList.includes(item.name) || RECIPE_DATA[item.name])
                         ? <span className="badge badge-green">✓ Has Recipe</span>
                         : <span className="badge badge-yellow">No Recipe</span>}
                     </td>
