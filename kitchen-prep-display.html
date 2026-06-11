@@ -331,6 +331,7 @@ var STATE = {
   selectedKey : null, // Current active focused selection key
   globalIntervalId: null,
   queueIntervalId: null, // Poll ID to auto-load new dishes
+  gateState: "none",
 };
 
 var DEMO_QUEUE = [
@@ -434,12 +435,10 @@ function selectChef(name) {
   
   startGlobalInterval();
   
-  // Clear any existing queue poll interval first
   if (STATE.queueIntervalId) {
     clearInterval(STATE.queueIntervalId);
   }
   
-  // Automatically pull new dishes every 5 seconds to keep up-to-date
   loadQueue();
   var pollMs = (window.POS_CONFIG && window.POS_CONFIG.POLL_MS) || 5000;
   STATE.queueIntervalId = setInterval(loadQueue, pollMs);
@@ -912,18 +911,20 @@ function renderRecipe() {
   var nextStep = done < total ? done : -1;
 
   panel.innerHTML =
-    '<div class="recipe-header">' +
-      '<div class="recipe-title">' + item.qty + '× ' + item.dish + '</div>' +
-      '<div class="recipe-meta">' +
-        '<span>⏱ Prep: ' + r.prepTime + '</span>' +
-        '<span>🔥 Cook: ' + r.cookTime + '</span>' +
-        '<span>⭐ ' + r.difficulty + '</span>' +
-        (item.note ? '<span style="color:#f39c12">⚠️ ' + item.note + '</span>' : '') +
-        '<span class="' + (done===total&&total>0?"meta-ok":"meta-warn") + '">' +
-          '✅ ' + done + '/' + total + ' steps done</span>' +
+    '<div class="recipe-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #30363d; padding:18px 22px;">' +
+      '<div>' +
+        '<div class="recipe-title">' + item.qty + '× ' + item.dish + '</div>' +
+        '<div class="recipe-meta">' +
+          '<span>⏱ Prep: ' + r.prepTime + '</span>' +
+          '<span>🔥 Cook: ' + r.cookTime + '</span>' +
+          '<span>⭐ ' + r.difficulty + '</span>' +
+          (item.note ? '<span style="color:#f39c12">⚠️ ' + item.note + '</span>' : '') +
+          '<span class="' + (done===total&&total>0?"meta-ok":"meta-warn") + '">' +
+            '✅ ' + done + '/' + total + ' steps done</span>' +
+        '</div>' +
       '</div>' +
-      '<div class="progress-bar-wrap">' +
-        '<div class="progress-bar" style="width:' + pct + '%"></div>' +
+      '<div>' +
+        '<button class="gate-btn" style="padding:12px 28px; font-size:14px; width:auto;" onclick="STATE.gateState = \'hygiene\'; renderRecipe();">🔥 START COOKING</button>' +
       '</div>' +
     '</div>' +
     '<div class="recipe-content">' +
