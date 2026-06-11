@@ -458,6 +458,11 @@ function buildQueueFromOrders(orders) {
       var orderItems = typeof order.Items === "string"
         ? JSON.parse(order.Items) : (order.Items || []);
       orderItems.forEach(function(item) {
+        // Prevent duplicate prep: Hide item if another chef has claimed it
+        if (item.status === "preparing" && item.chef && item.chef !== STATE.currentChef) {
+          return;
+        }
+
         var elapsed = order.OrderTime
           ? (Date.now() - new Date(order.OrderTime).getTime()) / 60000 : 0;
         items.push({
@@ -557,11 +562,9 @@ function selectDish(idx) {
       STATE.recipe = FALLBACK_RECIPES[item.dish] || null;
     }
 
-    // Restore step check states or gate progression if timer is already active
     if (backgroundTimer) {
       renderRecipe();
     } else {
-      // Re-initialize state gates for brand new prep requests
       STATE.gateState = "none";
       renderRecipe();
     }
@@ -658,7 +661,6 @@ function startGlobalInterval() {
 
       var currentStep = r.steps[t.currentStepIdx];
       
-      // Manual steps (timerSec === 0) do not automatically countdown
       if (currentStep.timerSec === 0) {
         return;
       }
@@ -682,9 +684,9 @@ function startGlobalInterval() {
     });
 
     if (stateUpdated) {
-      renderQueue(); // Update background time tags on left Queue panels
+      renderQueue(); 
       if (STATE.selectedKey && STATE.timers[STATE.selectedKey]) {
-        renderRecipe(); // Update focused cooking dashboard values
+        renderRecipe(); 
       }
     }
   }, 1000);
@@ -711,7 +713,6 @@ function toggleAutoCooking() {
   var backgroundTimer = STATE.timers[key];
 
   if (!backgroundTimer) {
-    // Brand new timer session starting
     updateSheetToPreparing();
     STATE.timers[key] = {
       orderId: STATE.selected.orderId,
@@ -723,7 +724,6 @@ function toggleAutoCooking() {
       gateState: "focus_cooking"
     };
   } else {
-    // Toggle running state
     var currentStep = STATE.recipe.steps[backgroundTimer.currentStepIdx];
     if (currentStep.timerSec > 0) {
       backgroundTimer.running = !backgroundTimer.running;
@@ -751,7 +751,6 @@ function calculateTotalTimeRemaining(r, t) {
   if (!r || !t) return 0;
   var total = t.remaining;
   for (var i = t.currentStepIdx + 1; i < r.steps.length; i++) {
-    // Treat manual steps as taking a nominal default of 10s for preview math
     total += r.steps[i].timerSec || 10; 
   }
   return total;
@@ -775,7 +774,6 @@ function renderRecipe() {
     return;
   }
 
-  // Restore active cooking gate states dynamically
   var backgroundTimer = STATE.timers[key];
   var localGate = backgroundTimer ? backgroundTimer.gateState : STATE.gateState;
 
@@ -831,7 +829,6 @@ function renderRecipe() {
     var s   = rem % 60;
     var bigTimeDisp = String(m).padStart(2,"0") + ":" + String(s).padStart(2,"0");
 
-    // Cumulative recipe total time remaining calculation
     var totalTimeSec = calculateTotalTimeRemaining(r, backgroundTimer);
     var totM = Math.floor(totalTimeSec/60);
     var totS = totalTimeSec % 60;
@@ -916,7 +913,7 @@ function renderRecipe() {
         '<div class="progress-bar" style="width:' + pct + '%"></div>' +
       '</div>' +
     '</div>' +
-    <div class="recipe-content">' +
+    '<div class="recipe-content">' +
       '<div class="steps-section">' +
         '<div class="section-lbl">Preparation Steps</div>' +
         r.steps.map(function(step, i) {
