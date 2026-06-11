@@ -252,10 +252,13 @@ function loadQueue() {
     
   ensureSheet.catch(function(){}).then(function() {
     if (!api.getSheetId || !api.getSheetId()) { STATE.queue = DEMO_QUEUE; renderQueue(); return; }
-    api.Orders.getAll("new").then(function(res) {
+    api.Orders.getAll().then(function(res) {
       var orders = (res && res.data) ? res.data : null;
       if (orders && orders.length > 0) {
-        STATE.queue = buildQueueFromOrders(orders);
+        var activeOrders = orders.filter(function(o) {
+          return o.Status === "new" || o.Status === "preparing";
+        });
+        STATE.queue = buildQueueFromOrders(activeOrders);
       } else {
         STATE.queue = DEMO_QUEUE;  
       }
