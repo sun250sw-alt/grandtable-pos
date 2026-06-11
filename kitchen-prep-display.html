@@ -477,6 +477,11 @@ function buildQueueFromOrders(orders) {
           return;
         }
 
+        // Filter out "Bypass Prep" (Drinks/Ready-made items set in Menu Management) from cooking station
+        if (item.prepTime === "Bypass Prep") {
+          return;
+        }
+
         var elapsed = order.OrderTime
           ? (Date.now() - new Date(order.OrderTime).getTime()) / 60000 : 0;
         items.push({
