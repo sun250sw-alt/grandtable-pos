@@ -23,6 +23,50 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .layout{display:grid;grid-template-columns:300px 1fr;
   height:calc(100vh - 58px);}
 
+/* CHEF SELECTION HOME SCREEN */
+.chef-screen {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  height:calc(100vh - 58px);
+  background:#111827;
+  padding:40px;
+  text-align:center;
+}
+.chef-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(140px, 1fr));
+  gap:16px;
+  width:100%;
+  max-width:600px;
+  margin-top:24px;
+}
+.chef-card {
+  padding:24px 16px;
+  border-radius:14px;
+  border:2px solid #30363d;
+  background:#1f2937;
+  cursor:pointer;
+  transition:all 0.2s;
+}
+.chef-card:hover {
+  border-color:#f39c12;
+  background:#2d2209;
+  transform:translateY(-2px);
+  box-shadow:0 6px 20px rgba(243,156,18,0.15);
+}
+.chef-avatar {
+  width:50px; height:50px;
+  border-radius:50%;
+  background:linear-gradient(135deg,#f39c12,#e67e22);
+  color:black;
+  display:flex; align-items:center; justify-content:center;
+  font-size:20px; font-weight:800;
+  margin:0 auto 12px;
+}
+.chef-name { font-weight:700; font-size:14px; color:#e6edf3; }
+
 /* QUEUE PANEL */
 .queue-panel{background:#161b22;border-right:1px solid #30363d;
   overflow-y:auto;padding:14px;}
@@ -51,7 +95,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 /* RECIPE PANEL */
 .recipe-panel{display:flex;flex-direction:column;overflow:hidden;}
 
-/* No selection */
+/* No selection / Welcome state */
 .no-selection{display:flex;flex-direction:column;align-items:center;
   justify-content:center;height:100%;color:#8b949e;text-align:center;padding:40px;}
 .ns-icon{font-size:64px;margin-bottom:16px;}
@@ -62,6 +106,62 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   justify-content:center;height:100%;color:#8b949e;}
 .loading-spin{font-size:40px;animation:spin 1.5s linear infinite;margin-bottom:14px;}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* Interactive Check Popup Views */
+.gate-modal {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  height:100%; background:#161b22; padding:40px; text-align:center;
+}
+.gate-card {
+  background:#21262d; border:1px solid #30363d; border-radius:18px;
+  padding:32px; max-width:440px; width:100%; box-shadow:0 12px 40px rgba(0,0,0,0.5);
+}
+.gate-icon { font-size:64px; margin-bottom:16px; }
+.gate-title { font-size:22px; font-weight:800; color:white; margin-bottom:8px; }
+.gate-sub { font-size:14px; color:#8b949e; line-height:1.6; margin-bottom:24px; }
+.gate-btn {
+  width:100%; padding:14px; border:none; border-radius:10px;
+  background:linear-gradient(135deg,#f39c12,#e67e22); color:black;
+  font-weight:800; font-size:16px; cursor:pointer; transition:transform 0.15s;
+}
+.gate-btn:active { transform:scale(0.98); }
+
+/* Checklist */
+.ing-check-list { text-align:left; max-height:180px; overflow-y:auto; margin-bottom:20px; background:#0d1117; padding:12px; border-radius:8px; }
+.ing-check-item { display:flex; gap:10px; align-items:center; padding:6px 0; font-size:13px; color:#c9d1d9; }
+
+/* Dynamic focused active cook step style */
+.focused-cooking-box {
+  display:flex; flex-direction:column; flex:1; padding:20px; background:#080a10;
+}
+.focus-step-card {
+  flex:1; background:#111420; border:2px solid #f39c12; border-radius:16px;
+  padding:40px; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; text-align:center; box-shadow:0 10px 30px rgba(243,156,18,0.1);
+  margin-bottom:20px;
+}
+.focus-step-num {
+  background:#f39c12; color:black; font-weight:900; font-size:16px;
+  padding:4px 16px; border-radius:20px; text-transform:uppercase; margin-bottom:18px;
+}
+.focus-step-title { font-size:32px; font-weight:800; color:white; margin-bottom:14px; }
+.focus-step-desc { font-size:19px; line-height:1.7; color:#c9d1d9; max-width:680px; }
+.focus-step-tip {
+  margin-top:20px; font-size:14px; color:#f39c12; background:rgba(243,156,18,0.08);
+  padding:10px 18px; border-radius:8px; border-left:4px solid #f39c12; max-width:600px;
+}
+
+/* Timeline Preview at bottom of focused screen */
+.timeline-track {
+  display:grid; grid-template-columns:repeat(auto-fit, minmax(100px, 1fr)); gap:10px;
+}
+.timeline-step {
+  background:#161b22; border-radius:8px; padding:10px; border-left:3px solid #30363d;
+  opacity:0.5; font-size:11px;
+}
+.timeline-step.active { border-left-color:#f39c12; background:#1c1e10; opacity:1; }
+.timeline-step.done { border-left-color:#27ae60; background:#0d1a10; opacity:0.8; }
+.timeline-name { font-weight:700; color:white; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
 /* Recipe header */
 .recipe-header{background:#161b22;border-bottom:1px solid #30363d;padding:18px 22px;}
@@ -147,33 +247,47 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 <body>
 
 <div id="app" style="display:none">
-  <div class="header">
-    <h1>👨‍🍳 Kitchen Prep Display</h1>
-    <div class="header-right">
-      <div class="queue-count" id="queue-count">0 dishes</div>
-      <div id="user-badge" style="display:flex;align-items:center;gap:6px;"></div>
-      <span id="hdr-time" style="opacity:.7"></span>
+  <!-- Dynamic Chef selection screen overlay -->
+  <div id="chef-overlay" class="chef-screen">
+    <div style="font-size:56px">👨‍🍳</div>
+    <h2 style="font-size:26px;font-weight:800;color:white;margin-top:12px">Select Your Cooking Station</h2>
+    <p style="color:#8b949e;margin-top:4px">Choose your name to load active tickets</p>
+    <div class="chef-grid" id="chef-grid">
+       <!-- Pulled dynamically from Staff Database -->
     </div>
   </div>
 
-  <div class="layout">
-    <!-- QUEUE -->
-    <div class="queue-panel">
-      <div class="queue-title">Dish Queue</div>
-      <div id="queue-list">
-        <div class="queue-empty">
-          <div class="queue-empty-icon">⏳</div>
-          Loading orders…
-        </div>
+  <div id="main-panel" style="display:none">
+    <div class="header">
+      <h1>👨‍🍳 Kitchen Prep Display</h1>
+      <div class="header-right">
+        <button onclick="doSignOutChef()" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:white; padding:4px 12px; border-radius:8px; font-size:11px; cursor:pointer; margin-right:8px;">↩ Switch Station</button>
+        <span id="chef-badge" style="font-weight:700; color:black; background:white; padding:4px 12px; border-radius:8px; margin-right:8px;">Chef: —</span>
+        <div class="queue-count" id="queue-count">0 dishes</div>
+        <div id="user-badge" style="display:flex;align-items:center;gap:6px;"></div>
+        <span id="hdr-time" style="opacity:.7"></span>
       </div>
     </div>
 
-    <!-- RECIPE -->
-    <div class="recipe-panel" id="recipe-panel">
-      <div class="no-selection">
-        <div class="ns-icon">👈</div>
-        <div class="ns-title">Select a dish from the queue</div>
-        <p style="font-size:14px;margin-top:6px">Tap any dish to see step-by-step recipe</p>
+    <div class="layout">
+      <!-- QUEUE -->
+      <div class="queue-panel">
+        <div class="queue-title">Dish Queue</div>
+        <div id="queue-list">
+          <div class="queue-empty">
+            <div class="queue-empty-icon">⏳</div>
+            Loading orders…
+          </div>
+        </div>
+      </div>
+
+      <!-- RECIPE INTERACTIVE BOARD -->
+      <div class="recipe-panel" id="recipe-panel">
+        <div class="no-selection">
+          <div class="ns-icon">👈</div>
+          <div class="ns-title">Select a dish from the queue</div>
+          <p style="font-size:14px;margin-top:6px">Tap any dish to see step-by-step recipe</p>
+        </div>
       </div>
     </div>
   </div>
@@ -188,11 +302,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 <script>
 // ── STATE ──
 var STATE = {
+  currentChef : null,
+  staff       : [],
   queue       : [],
   selected    : null,  
   recipe      : null,  
   doneSteps   : [],    
   activeTimer : null,  
+  gateState   : "none", // hygiene | ingredients | focus_cooking | none
 };
 
 var DEMO_QUEUE = [
@@ -212,11 +329,11 @@ var FALLBACK_RECIPES = {
       {name:"Fries (frozen)",amount:"150g"}
     ],
     steps:[
-      {title:"Prep Ingredients",   description:"Slice tomatoes and lettuce. Pat patty dry. Season both sides with salt and pepper.",timerSec:0,   tip:"Patty at room temp for even cooking."},
-      {title:"Cook Fries",         description:"Place fries in fryer at 180°C. Shake halfway through.",                               timerSec:600, tip:"Don't overcrowd the basket!"},
-      {title:"Grill the Patty",    description:"Place on hot grill. DO NOT move. Cook 4 min first side without moving.",              timerSec:240, tip:"Resist pressing — keeps juices in."},
-      {title:"Add Cheese & Toast", description:"Add cheese on patty. Place bun face-down on grill. Wait until melted.",               timerSec:60,  tip:null},
-      {title:"Assemble & Serve",   description:"Bottom bun → sauce → lettuce → tomato → patty → pickles → top bun.",                 timerSec:0,   tip:"Serve immediately!"},
+      {title:"Prep Ingredients",   description:"Slice tomatoes and lettuce. Pat patty dry. Season both sides with salt and pepper.",timerSec:120,  tip:"Patty at room temp for even cooking."},
+      {title:"Cook Fries",         description:"Place fries in fryer at 180°C. Shake halfway through.",                               timerSec:300,  tip:"Don't overcrowd the basket!"},
+      {title:"Grill the Patty",    description:"Place on hot grill. DO NOT move. Cook 4 min first side without moving.",              timerSec:240,  tip:"Resist pressing — keeps juices in."},
+      {title:"Add Cheese & Toast", description:"Add cheese on patty. Place bun face-down on grill. Wait until melted.",               timerSec:60,   tip:null},
+      {title:"Assemble & Serve",   description:"Bottom bun → sauce → lettuce → tomato → patty → pickles → top bun.",                 timerSec:45,   tip:"Serve immediately!"},
     ]
   },
   "Steak":{
@@ -228,12 +345,12 @@ var FALLBACK_RECIPES = {
     ],
     steps:[
       {title:"Bring to Room Temp",description:"Remove from fridge 15 min before. Pat dry with paper towel.",timerSec:900,tip:"Dry surface = better sear."},
-      {title:"Season Generously", description:"Season all sides firmly with sea salt and black pepper.",      timerSec:0,  tip:null},
+      {title:"Season Generously", description:"Season all sides firmly with sea salt and black pepper.",      timerSec:30, tip:null},
       {title:"Heat Pan",          description:"Cast iron on highest heat 3 minutes until smoking.",           timerSec:180,tip:"Pan must be screaming hot."},
       {title:"Sear First Side",   description:"Place steak away from you. DO NOT MOVE. 2.5 min.",            timerSec:150,tip:"Look for deep brown crust."},
       {title:"Flip & Baste",      description:"Flip. Add butter, garlic, rosemary. Baste continuously.",     timerSec:120,tip:"Basting constantly = more flavour."},
       {title:"Rest the Steak",    description:"Remove from heat. Tent with foil. Rest 5 min — mandatory.",   timerSec:300,tip:"Never skip — juices redistribute."},
-      {title:"Slice & Plate",     description:"Slice against the grain. Pour resting juices over.",          timerSec:0,  tip:null},
+      {title:"Slice & Plate",     description:"Slice against the grain. Pour resting juices over.",          timerSec:45, tip:null},
     ]
   }
 };
@@ -243,30 +360,73 @@ function tickClock() {
   if (el) el.textContent = new Date().toLocaleTimeString("en-GB");
 }
 
+function doSignOutChef() {
+  stopTimer();
+  STATE.currentChef = null;
+  STATE.selected = null;
+  STATE.recipe = null;
+  STATE.gateState = "none";
+  document.getElementById("main-panel").style.display = "none";
+  document.getElementById("chef-overlay").style.display = "flex";
+  loadChefSelection();
+}
+
+function loadChefSelection() {
+  var api = window.POS_GAPI || window.POS_API;
+  var container = document.getElementById("chef-grid");
+  if (!container) return;
+
+  function renderGrid(names) {
+    container.innerHTML = names.map(function(name) {
+      return '<div class="chef-card" onclick="selectChef(\'' + name + '\')">' +
+        '<div class="chef-avatar">' + name.charAt(0).toUpperCase() + '</div>' +
+        '<div class="chef-name">' + name + '</div>' +
+        '</div>';
+    }).join("");
+  }
+
+  if (api && api.getSheetId()) {
+    api.Staff.getAll().then(function(res) {
+      if (res && res.data) {
+        var chefs = res.data.filter(s => s.Status === "active" && s.Role !== "Driver").map(s => s.Name);
+        renderGrid(chefs.length > 0 ? chefs : ["Emma Brown", "Tom Wilson", "John Chef"]);
+      } else {
+        renderGrid(["Emma Brown", "Tom Wilson", "John Chef"]);
+      }
+    }).catch(function() {
+      renderGrid(["Emma Brown", "Tom Wilson", "John Chef"]);
+    });
+  } else {
+    renderGrid(["Emma Brown", "Tom Wilson", "John Chef"]);
+  }
+}
+
+function selectChef(name) {
+  STATE.currentChef = name;
+  document.getElementById("chef-badge").textContent = "Chef: " + name;
+  document.getElementById("chef-overlay").style.display = "none";
+  document.getElementById("main-panel").style.display = "block";
+  loadQueue();
+}
+
 function loadQueue() {
   var api = window.POS_GAPI || window.POS_API;
-  if (!api) { STATE.queue = DEMO_QUEUE; renderQueue(); return; }
+  if (!api || !api.getSheetId()) { STATE.queue = DEMO_QUEUE; renderQueue(); return; }
   
-  var ensureSheet = (api.getSheetId && !api.getSheetId() && api.initUserSheet)
-    ? api.initUserSheet() : Promise.resolve();
-    
-  ensureSheet.catch(function(){}).then(function() {
-    if (!api.getSheetId || !api.getSheetId()) { STATE.queue = DEMO_QUEUE; renderQueue(); return; }
-    api.Orders.getAll().then(function(res) {
-      var orders = (res && res.data) ? res.data : null;
-      if (orders && orders.length > 0) {
-        var activeOrders = orders.filter(function(o) {
-          return o.Status === "new" || o.Status === "preparing";
-        });
-        STATE.queue = buildQueueFromOrders(activeOrders);
-      } else {
-        STATE.queue = DEMO_QUEUE;  
-      }
-      renderQueue();
-    }).catch(function() {
-      STATE.queue = DEMO_QUEUE;
-      renderQueue();
-    });
+  api.Orders.getAll().then(function(res) {
+    var orders = (res && res.data) ? res.data : null;
+    if (orders && orders.length > 0) {
+      var activeOrders = orders.filter(function(o) {
+        return o.Status === "new" || o.Status === "preparing";
+      });
+      STATE.queue = buildQueueFromOrders(activeOrders);
+    } else {
+      STATE.queue = DEMO_QUEUE;  
+    }
+    renderQueue();
+  }).catch(function() {
+    STATE.queue = DEMO_QUEUE;
+    renderQueue();
   });
 }
 
@@ -284,7 +444,7 @@ function buildQueueFromOrders(orders) {
           table   : order.TableNumber,
           dish    : item.name || item.Name,
           qty     : item.quantity || item.qty || 1,
-          note    : item.note || "",
+          note    : order.Notes || item.note || "",
           urgency : elapsed > 15 ? "high" : elapsed > 8 ? "med" : "low",
         });
       });
@@ -328,6 +488,7 @@ function selectDish(idx) {
   STATE.selected  = item;
   STATE.doneSteps = [];
   STATE.recipe    = null;
+  STATE.gateState = "hygiene"; // start with Hand Hygiene gate
 
   renderQueue();
 
@@ -341,12 +502,23 @@ function selectDish(idx) {
       var r = res.data;
       var steps = typeof r.Steps === "string" ? JSON.parse(r.Steps) : r.Steps;
       var ings  = typeof r.Ingredients === "string" ? JSON.parse(r.Ingredients) : (r.Ingredients || []);
+      
+      // Robust normalized timer integer extraction
+      var parsedSteps = steps.map(function(step) {
+        return {
+          title: step.title || step.Title || "",
+          description: step.description || step.Description || "",
+          timerSec: parseInt(step.timerSec || step.TimerSec || 0, 10),
+          tip: step.tip || step.Tip || ""
+        };
+      });
+
       STATE.recipe = {
         prepTime   : r.PrepTime   || "—",
         cookTime   : r.CookTime   || "—",
         difficulty : r.Difficulty || "—",
         ingredients: ings,
-        steps      : steps,
+        steps      : parsedSteps,
       };
     } else {
       STATE.recipe = FALLBACK_RECIPES[item.dish] || null;
@@ -358,222 +530,126 @@ function selectDish(idx) {
   });
 }
 
-function renderRecipe() {
-  var panel = document.getElementById("recipe-panel");
-  var item  = STATE.selected;
-  var r     = STATE.recipe;
+function playTickChime() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(1000, ctx.currentTime); // high tone
+    gain.gain.setValueAtTime(0.04, ctx.currentTime);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.12);
+  } catch(e){}
+}
 
-  if (!panel) return;
+function updateSheetToPreparing() {
+  var api = window.POS_GAPI || window.POS_API;
+  if (api && api.getSheetId() && STATE.selected) {
+    var chefNotes = "[Chef: " + STATE.currentChef + "] " + (STATE.selected.note || "");
+    api.Orders.update({
+      orderId: STATE.selected.orderId,
+      status: "preparing",
+      notes: chefNotes
+    }).then(function() {
+      console.log("Sheet updated successfully: PREPARING status & chef name logged.");
+    }).catch(function(e) {
+      console.error("Sheets update failed:", e);
+    });
+  }
+}
 
-  if (!r) {
-    panel.innerHTML =
-      '<div class="no-selection">' +
-        '<div class="ns-icon">📋</div>' +
-        '<div class="ns-title">No recipe for ' + item.dish + '</div>' +
-        '<p style="font-size:13px;margin-top:8px">Add a recipe in Manager Portal → Menu → 📋 Recipe</p>' +
-      '</div>';
+function updateSheetToReady() {
+  var api = window.POS_GAPI || window.POS_API;
+  if (api && api.getSheetId() && STATE.selected) {
+    api.Orders.update({
+      orderId: STATE.selected.orderId,
+      status: "ready"
+    }).then(function() {
+      console.log("Sheet updated successfully: READY status.");
+    }).catch(function(e) {
+      console.error("Sheets update failed:", e);
+    });
+  }
+}
+
+function advanceStepTimer() {
+  if (!STATE.activeTimer || !STATE.activeTimer.running) return;
+
+  var currentIdx = STATE.activeTimer.currentStepIdx;
+  var currentStep = STATE.recipe.steps[currentIdx];
+
+  // If this is a manual task step (timerSec === 0), it won't count down.
+  // It waits for manual "Next" button interaction.
+  if (currentStep.timerSec === 0) {
     return;
   }
 
-  var done     = STATE.doneSteps.length;
-  var total    = r.steps.length;
-  var pct      = total > 0 ? Math.round((done/total)*100) : 0;
-  var nextStep = done < total ? done : -1;
-
-  panel.innerHTML =
-    '<div class="recipe-header">' +
-      '<div class="recipe-title">' + item.qty + '× ' + item.dish + '</div>' +
-      '<div class="recipe-meta">' +
-        '<span>⏱ Prep: ' + r.prepTime + '</span>' +
-        '<span>🔥 Cook: ' + r.cookTime + '</span>' +
-        '<span>⭐ ' + r.difficulty + '</span>' +
-        (item.note ? '<span style="color:#f39c12">⚠️ ' + item.note + '</span>' : '') +
-        '<span class="' + (done===total&&total>0?"meta-ok":"meta-warn") + '">' +
-          '✅ ' + done + '/' + total + ' steps done</span>' +
-      '</div>' +
-      '<div class="progress-bar-wrap">' +
-        '<div class="progress-bar" style="width:' + pct + '%"></div>' +
-      '</div>' +
-    '</div>' +
-    '<div class="recipe-content">' +
-      '<div class="steps-section">' +
-        '<div class="section-lbl">Preparation Steps</div>' +
-        r.steps.map(function(step, i) {
-          var isDone   = STATE.doneSteps.indexOf(i) >= 0;
-          var isActive = !isDone && i === nextStep;
-          var cls      = isDone ? "s-done" : isActive ? "s-active" : "";
-          var durText  = step.timerSec > 0
-            ? Math.floor(step.timerSec/60) + "m" + (step.timerSec%60 ? " "+step.timerSec%60+"s" : "")
-            : "Manual";
-          var timerRunning = STATE.activeTimer && STATE.activeTimer.stepIdx === i &&
-                             STATE.activeTimer.running;
-          return '<div class="step-card ' + cls + '">' +
-            '<div class="step-header">' +
-              '<div class="step-num">' + (isDone ? "✓" : (i+1)) + '</div>' +
-              '<div class="step-title-text">' + step.title + '</div>' +
-              '<div class="step-dur">⏱ ' + durText + '</div>' +
-            '</div>' +
-            '<div class="step-desc">' + step.description + '</div>' +
-            (step.tip ? '<div class="step-tip">💡 ' + step.tip + '</div>' : '') +
-            '<div class="step-actions">' +
-              (step.timerSec > 0 && !isDone
-                ? '<button class="timer-btn' + (timerRunning ? " running" : "") + '" onclick="toggleTimer(' + i + ',' + step.timerSec + ',\'' + step.title + '\')">' +
-                  (timerRunning ? "⏹ Stop Timer" : "⏱ Start " + durText + " Timer") + '</button>'
-                : '') +
-              (isDone
-                ? '<button class="undo-btn" onclick="undoStep(' + i + ')">↩ Undo</button>'
-                : '<button class="done-btn" onclick="markDone(' + i + ')">✓ Done</button>') +
-            '</div>' +
-          '</div>';
-        }).join("") +
-      '</div>' +
-      '<div class="side-panel">' +
-        (STATE.activeTimer
-          ? '<div class="section-lbl">Active Timer</div>' + renderBigTimer()
-          : '') +
-        '<div class="section-lbl">Ingredients</div>' +
-        (r.ingredients && r.ingredients.length
-          ? r.ingredients.map(function(ing){
-              return '<div class="ing-row"><span class="ing-name">' + ing.name + '</span>' +
-                     '<span class="ing-amt">' + ing.amount + '</span></div>';
-            }).join("")
-          : '<div class="no-recipe-box"><p>No ingredients listed.</p></div>') +
-      '</div>' +
-    '</div>';
-}
-
-function renderBigTimer() {
-  var t   = STATE.activeTimer;
-  if (!t) return "";
-  var rem = t.remaining;
-  var m   = Math.floor(rem/60);
-  var s   = rem % 60;
-  var disp = String(m).padStart(2,"0") + ":" + String(s).padStart(2,"0");
-  var cls  = rem === 0 ? "done-color" : rem <= 30 ? "urgent" : "";
-  return '<div class="big-timer-box">' +
-    '<div class="bt-label">⏱ Timer Running</div>' +
-    '<div class="bt-display ' + cls + '">' + (rem===0?"✅ DONE!":disp) + '</div>' +
-    '<div class="bt-step">' + t.stepTitle + '</div>' +
-    '<div class="bt-controls">' +
-      (rem > 0
-        ? '<button class="bt-ctrl bt-pause" onclick="pauseTimer()">' + (t.running?"⏸ Pause":"▶ Resume") + '</button>'
-        : '') +
-      '<button class="bt-ctrl bt-stop" onclick="stopTimer()">✕ Clear</button>' +
-    '</div>' +
-  '</div>';
-}
-
-function markDone(i) {
-  if (STATE.doneSteps.indexOf(i) < 0) STATE.doneSteps.push(i);
-  if (STATE.activeTimer && STATE.activeTimer.stepIdx === i) stopTimer();
-  renderRecipe();
-}
-
-function undoStep(i) {
-  STATE.doneSteps = STATE.doneSteps.filter(function(d){ return d !== i; });
-  renderRecipe();
-}
-
-function toggleTimer(stepIdx, seconds, stepTitle) {
-  if (STATE.activeTimer && STATE.activeTimer.stepIdx === stepIdx) {
-    stopTimer(); return;
-  }
-  stopTimer();  
-  STATE.activeTimer = {
-    stepIdx   : stepIdx,
-    seconds   : seconds,
-    remaining : seconds,
-    stepTitle : stepTitle,
-    running   : true,
-    intervalId: null,
-  };
-  STATE.activeTimer.intervalId = setInterval(function() {
-    if (!STATE.activeTimer || !STATE.activeTimer.running) return;
-    STATE.activeTimer.remaining--;
-    if (STATE.activeTimer.remaining <= 0) {
-      STATE.activeTimer.remaining = 0;
-      STATE.activeTimer.running   = false;
-      clearInterval(STATE.activeTimer.intervalId);
-      if (document.title.indexOf("✅") < 0) {
-        document.title = "✅ TIMER DONE — " + stepTitle;
-        setTimeout(function(){ document.title = "Kitchen Prep Display — The Grand Table"; }, 5000);
-      }
-    }
+  STATE.activeTimer.remaining--;
+  if (STATE.activeTimer.remaining <= 0) {
+    // Current step countdown complete - transition
+    handleStepAdvance();
+  } else {
     renderRecipe();
-  }, 1000);
-  renderRecipe();
+  }
 }
 
-function pauseTimer() {
+function handleStepAdvance() {
   if (!STATE.activeTimer) return;
-  if (STATE.activeTimer.running) {
+  var nextIdx = STATE.activeTimer.currentStepIdx + 1;
+  if (nextIdx < STATE.recipe.steps.length) {
+    STATE.activeTimer.currentStepIdx = nextIdx;
+    STATE.activeTimer.remaining = STATE.recipe.steps[nextIdx].timerSec;
+    playTickChime();
+  } else {
+    // Completed all steps
+    STATE.activeTimer.remaining = 0;
     STATE.activeTimer.running = false;
     clearInterval(STATE.activeTimer.intervalId);
-  } else {
-    STATE.activeTimer.running = true;
-    STATE.activeTimer.intervalId = setInterval(function() {
-      if (!STATE.activeTimer || !STATE.activeTimer.running) return;
-      STATE.activeTimer.remaining--;
-      if (STATE.activeTimer.remaining <= 0) {
-        STATE.activeTimer.remaining = 0;
-        STATE.activeTimer.running   = false;
-        clearInterval(STATE.activeTimer.intervalId);
-      }
-      renderRecipe();
-    }, 1000);
   }
   renderRecipe();
 }
 
-function stopTimer() {
-  if (STATE.activeTimer) {
-    clearInterval(STATE.activeTimer.intervalId);
-    STATE.activeTimer = null;
-    renderRecipe();
-  }
-}
-</script>
-
-<script>
-(function() {
-  function startAuth() {
-    if (typeof POS_AUTH === "undefined") {
-      console.error("POS_AUTH failed to load");
-      return;
-    }
-    POS_AUTH.init("kitchen-prep-display", {
-      onReady: function(session) {
-        var root = document.getElementById("app");
-        if (root) root.style.display = "block";
-        var loader = document.getElementById("loading-placeholder");
-        if (loader) loader.style.display = "none";
-
-        tickClock();
-        setInterval(tickClock, 1000);
-        loadQueue();
-        setInterval(loadQueue, 10000);
-
-        setTimeout(function() {
-          if (typeof POS_AUTH.renderUtilBar === "function") {
-            POS_AUTH.renderUtilBar("user-badge", "kitchen-prep-display");
-          }
-        }, 500);
-      },
-      onError: function(msg) { console.error("Auth error:", msg); }
-    });
-  }
-
-  if (typeof POS_AUTH !== "undefined") {
-    startAuth();
+function toggleAutoCooking() {
+  if (!STATE.activeTimer) {
+    // Start Cooking
+    updateSheetToPreparing();
+    STATE.activeTimer = {
+      currentStepIdx: 0,
+      remaining: STATE.recipe.steps[0].timerSec,
+      running: true,
+      intervalId: setInterval(advanceStepTimer, 1000)
+    };
   } else {
-    var tries = 0;
-    var iv = setInterval(function() {
-      tries++;
-      if (typeof POS_AUTH !== "undefined") { clearInterval(iv); startAuth(); }
-      else if (tries > 50) { clearInterval(iv); startAuth(); }
-    }, 100);
+    // Pause / Resume (Only for timed tasks)
+    var currentIdx = STATE.activeTimer.currentStepIdx;
+    var currentStep = STATE.recipe.steps[currentIdx];
+    
+    if (currentStep.timerSec > 0) {
+      if (STATE.activeTimer.running) {
+        STATE.activeTimer.running = false;
+        clearInterval(STATE.activeTimer.intervalId);
+      } else {
+        STATE.activeTimer.running = true;
+        STATE.activeTimer.intervalId = setInterval(advanceStepTimer, 1000);
+      }
+    }
   }
-})();
-</script>
-</body>
-</html>
+  renderRecipe();
+}
+
+function stopCookingTimer() {
+  stopTimer();
+  renderRecipe();
+}
+
+function confirmRecipeFinished() {
+  updateSheetToReady();
+  doSignOutChef();
+}
+
+function renderRecipe() {
+  var panel = document.getElementById("recipe-panel");
+  var item  = STAT
