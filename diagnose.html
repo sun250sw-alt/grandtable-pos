@@ -526,7 +526,6 @@ async function runSheetTests() {
     // Init if needed
     if (!POS_GAPI.getSheetId()) {
       await POS_GAPI.loadLibraries();
-      // Try to set token silently from saved session - just load what we can
     }
 
     // Try to read the sheet via Sheets API
@@ -763,7 +762,7 @@ function copyLog() {
   });
 }
 
-function clearLog() {
+function deleteLog() {
   LOG = [];
   document.getElementById("log-body").innerHTML = "";
 }
