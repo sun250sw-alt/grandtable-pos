@@ -561,7 +561,7 @@ async function runSetup() {
     stepRun("settings", "Saving your restaurant settings and PIN…");
 
     await gapi.client.sheets.spreadsheets.values.update({
-      spreadsheetId   : sheetId,
+      spreadsheetId : sheetId,
       range           : "Settings!A2",
       valueInputOption: "RAW",
       resource: { values:[
