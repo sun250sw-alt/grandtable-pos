@@ -330,6 +330,7 @@ var STATE = {
   timers      : {}, // Parallel multi-timer tracker indexed by "orderId|dishName"
   selectedKey : null, // Current active focused selection key
   globalIntervalId: null,
+  queueIntervalId: null, // Poll ID to auto-load new dishes
 };
 
 var DEMO_QUEUE = [
@@ -382,6 +383,10 @@ function tickClock() {
 
 function doSignOutChef() {
   stopTimer();
+  if (STATE.queueIntervalId) {
+    clearInterval(STATE.queueIntervalId);
+    STATE.queueIntervalId = null;
+  }
   STATE.currentChef = null;
   STATE.selected = null;
   STATE.recipe = null;
@@ -426,8 +431,18 @@ function selectChef(name) {
   document.getElementById("chef-badge").textContent = "Chef: " + name;
   document.getElementById("chef-overlay").style.display = "none";
   document.getElementById("main-panel").style.display = "block";
+  
   startGlobalInterval();
+  
+  // Clear any existing queue poll interval first
+  if (STATE.queueIntervalId) {
+    clearInterval(STATE.queueIntervalId);
+  }
+  
+  // Automatically pull new dishes every 5 seconds to keep up-to-date
   loadQueue();
+  var pollMs = (window.POS_CONFIG && window.POS_CONFIG.POLL_MS) || 5000;
+  STATE.queueIntervalId = setInterval(loadQueue, pollMs);
 }
 
 function loadQueue() {
@@ -646,7 +661,7 @@ function updateSheetToReady() {
   }
 }
 
-// ── HIGH PERFORMANCE GLOBAL PARALLEL DECENTRALIZED MULTI-TIMER ──
+// ── HIGH PERFORMANCE GLOBAL PARALLEL DECENTCULATED MULTI-TIMER ──
 function startGlobalInterval() {
   if (STATE.globalIntervalId) return;
   STATE.globalIntervalId = setInterval(function() {
@@ -669,14 +684,12 @@ function startGlobalInterval() {
       stateUpdated = true;
 
       if (t.remaining <= 0) {
-        // Step complete - auto advance
         var nextIdx = t.currentStepIdx + 1;
         if (nextIdx < r.steps.length) {
           t.currentStepIdx = nextIdx;
           t.remaining = r.steps[nextIdx].timerSec || 10;
           playTickChime();
         } else {
-          // Finished entire recipe!
           t.remaining = 0;
           t.running = false;
         }
