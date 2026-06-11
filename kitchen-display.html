@@ -214,36 +214,12 @@
 
         .item-check.checked::after { content: '✓'; font-size: 13px; }
 
-        .card-actions {
-            padding: 14px 16px;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            background: rgba(0,0,0,0.2);
-        }
-
-        .action-btn {
-            padding: 10px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 700;
-            font-size: 13px;
-            transition: all 0.2s;
-        }
-
-        .action-btn:hover { transform: scale(1.02); }
-
-        .btn-start { background: #f39c12; color: white; }
-        .btn-ready { background: #27ae60; color: white; }
-        .btn-serve { background: #3498db; color: white; }
-        .btn-cancel { background: rgba(255,255,255,0.1); color: white; }
-
         .card-waiter {
             padding: 8px 16px;
             font-size: 12px;
             color: rgba(255,255,255,0.5);
             background: rgba(0,0,0,0.15);
+            border-top: 1px solid rgba(255,255,255,0.05);
         }
 
         .empty-state {
@@ -255,16 +231,6 @@
 
         .empty-state-icon { font-size: 72px; margin-bottom: 16px; }
         .empty-state h3 { font-size: 22px; margin-bottom: 8px; }
-
-        .sound-toggle {
-            background: rgba(255,255,255,0.15);
-            border: none;
-            color: white;
-            padding: 8px 16px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 13px;
-        }
 
         .priority-high {
             position: relative;
@@ -295,7 +261,7 @@
 </div>
 
 <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect } = React;
 
     const INITIAL_ORDERS = [];
 
@@ -303,11 +269,25 @@
     function sheetToKitchenOrder(row) {
         let items = [];
         try { items = JSON.parse(row.Items || "[]"); } catch(e) {}
+        
+        // Extract Chef name from Notes prefix if present
+        let chefName = "";
+        let cleanNotes = row.Notes || "";
+        if (row.Notes && row.Notes.startsWith("[Chef:")) {
+            const match = row.Notes.match(/^\[Chef:\s*([^\]]+)\]/);
+            if (match) {
+                chefName = match[1];
+                cleanNotes = row.Notes.replace(/^\[Chef:\s*[^\]]+\]\s*/, "");
+            }
+        }
+
         return {
             id       : row.OrderID,
             table    : row.TableNumber,
             waiter   : row.WaiterName || "Staff",
             status   : row.Status || "new",
+            chef     : chefName,
+            notes    : cleanNotes,
             createdAt: row.OrderTime ? new Date(row.OrderTime).getTime() : Date.now(),
             items    : items.map((it, i) => ({
                 id     : i,
@@ -347,8 +327,18 @@
         );
     }
 
-    function OrderCard({ order, onUpdateStatus, onToggleItem }) {
+    function OrderCard({ order, onToggleItem }) {
         const isUrgent = (Date.now() - order.createdAt) > 15 * 60 * 1000;
+
+        let statusLabel = "Queue";
+        let badgeClass = "new";
+        if (order.status === "preparing") {
+            statusLabel = order.chef ? `Cooking (Chef: ${order.chef})` : "Cooking";
+            badgeClass = "preparing";
+        } else if (order.status === "ready") {
+            statusLabel = "Ready";
+            badgeClass = "ready";
+        }
 
         return (
             <div className={`order-card status-${order.status} ${isUrgent && order.status !== 'ready' ? 'priority-high' : ''}`}>
@@ -357,7 +347,7 @@
                         <div className="order-id">{order.id}</div>
                         <div className="table-info">🍽️ Table {order.table} &nbsp;·&nbsp; {order.items.reduce((s, i) => s + i.qty, 0)} items</div>
                     </div>
-                    <span className={`status-badge ${order.status}`}>{order.status}</span>
+                    <span className={`status-badge ${badgeClass}`}>{statusLabel}</span>
                 </div>
 
                 <Timer createdAt={order.createdAt} />
@@ -380,32 +370,11 @@
                     ))}
                 </div>
 
-                <div className="card-actions">
-                    {order.status === 'new' && (
-                        <button className="action-btn btn-start" style={{ gridColumn: '1/-1' }}
-                            onClick={() => onUpdateStatus(order.id, 'preparing')}>
-                            🔥 Start Preparing
-                        </button>
-                    )}
-                    {order.status === 'preparing' && (
-                        <>
-                            <button className="action-btn btn-ready"
-                                onClick={() => onUpdateStatus(order.id, 'ready')}>
-                                ✅ Mark Ready
-                            </button>
-                            <button className="action-btn btn-cancel"
-                                onClick={() => onUpdateStatus(order.id, 'new')}>
-                                ↩ Back
-                            </button>
-                        </>
-                    )}
-                    {order.status === 'ready' && (
-                        <button className="action-btn btn-serve" style={{ gridColumn: '1/-1' }}
-                            onClick={() => onUpdateStatus(order.id, 'served')}>
-                            🚀 Served — Complete
-                        </button>
-                    )}
-                </div>
+                {order.notes && (
+                    <div style={{ padding: '10px 16px', background: 'rgba(243,156,18,0.05)', fontSize: '12px', color: '#f39c12', borderTop: '1px solid rgba(255,255,255,0.05)', lineHeight: '1.4' }}>
+                        💬 {order.notes}
+                    </div>
+                )}
 
                 <div className="card-waiter">👤 Waiter: {order.waiter}</div>
             </div>
@@ -415,33 +384,6 @@
     function KitchenDisplay() {
         const [orders, setOrders] = useState(INITIAL_ORDERS);
         const [filter, setFilter] = useState('active');
-        const [soundOn, setSoundOn] = useState(true);
-
-        const soundOnRef = useRef(soundOn);
-        useEffect(() => {
-            soundOnRef.current = soundOn;
-        }, [soundOn]);
-
-        const playNotificationSound = () => {
-            if (!soundOnRef.current) return;
-            try {
-                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioCtx.createOscillator();
-                const gainNode = audioCtx.createGain();
-
-                oscillator.connect(gainNode);
-                gainNode.connect(audioCtx.destination);
-
-                oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
-                gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
-
-                oscillator.start();
-                oscillator.stop(audioCtx.currentTime + 0.15);
-            } catch (e) {
-                console.warn("Audio Context playback prevented or unsupported:", e);
-            }
-        };
 
         useEffect(() => {
             async function fetchOrders() {
@@ -458,11 +400,6 @@
                             .map(sheetToKitchenOrder);
                         
                         setOrders(prev => {
-                            const incomingNewOrder = active.some(newO => !prev.some(p => p.id === newO.id));
-                            if (incomingNewOrder && prev.length > 0) {
-                                playNotificationSound();
-                            }
-
                             return active.map(newO => {
                                 const existing = prev.find(p => p.id === newO.id);
                                 if (!existing) return newO;
@@ -481,19 +418,6 @@
             const interval = setInterval(fetchOrders, pollMs);
             return () => clearInterval(interval);
         }, []);
-
-        const updateStatus = async (orderId, newStatus) => {
-            if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
-                try {
-                    await window.POS_GAPI.Orders.update({ orderId, status: newStatus });
-                } catch(e) { console.error("Status update failed:", e); }
-            }
-            if (newStatus === "served") {
-                setOrders(prev => prev.filter(o => o.id !== orderId));
-            } else {
-                setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
-            }
-        };
 
         const toggleItem = (orderId, itemIdx) => {
             setOrders(prev => prev.map(o => {
@@ -526,7 +450,7 @@
                     <div className="header-stats">
                         <div className="stat-box">
                             <div className="stat-number" style={{ color: '#e74c3c' }}>{counts.new}</div>
-                            <div className="stat-label">New</div>
+                            <div className="stat-label">In Queue</div>
                         </div>
                         <div className="stat-box">
                             <div className="stat-number" style={{ color: '#f39c12' }}>{counts.preparing}</div>
@@ -537,9 +461,6 @@
                             <div className="stat-label">Ready</div>
                         </div>
                         <div id="user-badge" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}></div>
-                        <button className="sound-toggle" onClick={() => setSoundOn(!soundOn)}>
-                            {soundOn ? '🔔 Sound On' : '🔕 Sound Off'}
-                        </button>
                     </div>
                 </div>
 
@@ -551,7 +472,7 @@
                             className={`filter-btn ${filter === f ? 'active' : ''}`}
                             onClick={() => setFilter(f)}
                         >
-                            {f.charAt(0).toUpperCase() + f.slice(1)}
+                            {f === 'active' ? 'Active cooking' : f.charAt(0).toUpperCase() + f.slice(1)}
                             {f === 'new' && counts.new > 0 && ` (${counts.new})`}
                             {f === 'preparing' && counts.preparing > 0 && ` (${counts.preparing})`}
                             {f === 'ready' && counts.ready > 0 && ` (${counts.ready})`}
@@ -570,14 +491,13 @@
                             </div>
                             <h3>{filter === 'ready' ? 'No orders ready' : 'All caught up!'}</h3>
                             <p style={{ marginTop: '8px', fontSize: '14px' }}>
-                                {filter === 'ready' ? 'Mark orders ready when done' : 'Waiting for new orders...'}
+                                {filter === 'ready' ? 'Completed orders will appear here' : 'Waiting for new orders...'}
                             </p>
                         </div>
                     ) : filtered.map(order => (
                         <OrderCard
                             key={order.id}
                             order={order}
-                            onUpdateStatus={updateStatus}
                             onToggleItem={toggleItem}
                         />
                     ))}
