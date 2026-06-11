@@ -393,6 +393,46 @@ window.POS_GAPI = (() => {
     throw new Error(sheetName + " row not found: " + matchValue);
   }
 
+  // ── Google Sheets Row Deletion batch API ──
+  async function deleteRow(sheetName, colIndex, matchValue) {
+    const res = await gapi.client.sheets.spreadsheets.values.get({
+      spreadsheetId: _sheetId,
+      range: sheetName,
+    });
+    const vals = res.result.values || [];
+    for (let i = 1; i < vals.length; i++) {
+      if (String(vals[i][colIndex]) === String(matchValue)) {
+        // Find sheet meta ID by sheet name
+        const ss = await gapi.client.sheets.spreadsheets.get({
+          spreadsheetId: _sheetId
+        });
+        const sheet = ss.result.sheets.find(s => s.properties.title === sheetName);
+        if (sheet) {
+          const sheetId = sheet.properties.sheetId;
+          await gapi.client.sheets.spreadsheets.batchUpdate({
+            spreadsheetId: _sheetId,
+            resource: {
+              requests: [
+                {
+                  deleteDimension: {
+                    range: {
+                      sheetId: sheetId,
+                      dimension: "ROWS",
+                      startIndex: i, // 0-based row index inclusive
+                      endIndex: i + 1 // exclusive
+                    }
+                  }
+                }
+              ]
+            }
+          });
+        }
+        return { success: true };
+      }
+    }
+    throw new Error("Row not found in " + sheetName + ": " + matchValue);
+  }
+
   function uid(prefix) {
     return (prefix || "ID") + "-" + Date.now() + "-" + Math.floor(Math.random()*9000+1000);
   }
@@ -445,6 +485,7 @@ window.POS_GAPI = (() => {
       await updateRow("MenuItems", 0, data.itemId, updates);
       return { success:true, data:{ updated:true } };
     },
+    delete: async (itemId) => deleteRow("MenuItems", 0, itemId),
   };
 
   const Tables = {
@@ -491,6 +532,7 @@ window.POS_GAPI = (() => {
                                 && String(s.Approved).toLowerCase() === "true");
       return { success:true, data: found ? { approved:true, staff:found } : { approved:false } };
     },
+    delete: async (staffId) => deleteRow("Staff", 0, staffId),
   };
 
   const Drivers = {
@@ -670,11 +712,10 @@ window.POS_GAPI = (() => {
   }
 
   return {
-    loadLibraries, signIn, silentSignIn, signOut,
-    getSession, getSheetId, getAccessToken, getSettings,
-    initUserSheet, getRows, appendRow, updateRow, uid,
+    loadLibraries, signIn, silentSignIn, signOut, getSettings,
+    initUserSheet, getRows, appendRow, updateRow, deleteRow, uid,
     Orders, Menu, Tables, Inventory, Staff, Drivers,
-    Deliveries, Recipes, Team, Settings, Analytics, poll,
+    Deliveries, Recipes, Team, Settings, Analytics, poll, getSheetId, getAccessToken, getSession
   };
 })();
 
