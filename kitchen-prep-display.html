@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kitchen Prep Display — The Grand Table</title>
+<!-- Native Google API Libraries to bypass popup/sandbox blocks -->
+<script src="https://apis.google.com/js/api.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="pos-config.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -652,4 +655,248 @@ function confirmRecipeFinished() {
 
 function renderRecipe() {
   var panel = document.getElementById("recipe-panel");
-  var item  = STAT
+  var item  = STATE.selected;
+  var r     = STATE.recipe;
+
+  if (!panel) return;
+
+  if (!r) {
+    panel.innerHTML =
+      '<div class="no-selection">' +
+        '<div class="ns-icon">📋</div>' +
+        '<div class="ns-title">No recipe for ' + item.dish + '</div>' +
+        '<p style="font-size:13px;margin-top:8px">Add a recipe in Manager Portal → Menu → 📋 Recipe</p>' +
+      '</div>';
+    return;
+  }
+
+  // ── GATE 1: Hands Hygiene check ──
+  if (STATE.gateState === "hygiene") {
+    panel.innerHTML = `
+      <div class="gate-modal">
+        <div class="gate-card">
+          <div class="gate-icon">🧼</div>
+          <div class="gate-title">Hygiene Check</div>
+          <div class="gate-sub">Chef ${STATE.currentChef}, please ensure your hands are washed and sanitized before preparing ${item.dish}.</div>
+          <button class="gate-btn" onclick="STATE.gateState = 'ingredients'; renderRecipe();">✅ Yes, I Washed My Hands</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // ── GATE 2: Ingredients checklist check ──
+  if (STATE.gateState === "ingredients") {
+    panel.innerHTML = `
+      <div class="gate-modal">
+        <div class="gate-card" style="max-width:480px">
+          <div class="gate-icon">🍳</div>
+          <div class="gate-title">Mise En Place Check</div>
+          <div class="gate-sub" style="margin-bottom:14px">Do you have all ingredients gathered for ${item.dish}?</div>
+          
+          <div class="ing-check-list">
+            ${r.ingredients && r.ingredients.length 
+              ? r.ingredients.map(ing => `
+                <div class="ing-check-item">
+                  <input type="checkbox" checked style="accent-color:#f39c12">
+                  <span>${ing.amount} — <strong>${ing.name}</strong></span>
+                </div>`).join("")
+              : '<div style="color:#888; font-size:12px; padding:10px; text-align:center;">No ingredients listed</div>'
+            }
+          </div>
+          
+          <button class="gate-btn" onclick="STATE.gateState = 'focus_cooking'; toggleAutoCooking();">✅ Yes, Ready to Cook</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // ── TIMED FOCUS ACTIVE COOK VIEW (Hands-Free Step Tracking) ──
+  if (STATE.gateState === "focus_cooking") {
+    var activeTimer = STATE.activeTimer;
+    var stepIdx = activeTimer ? activeTimer.currentStepIdx : 0;
+    var currentStep = r.steps[stepIdx];
+    var isTimerComplete = activeTimer && !activeTimer.running && activeTimer.remaining === 0 && (stepIdx === r.steps.length - 1);
+    var isManualStep = currentStep.timerSec === 0;
+
+    var rem = activeTimer ? activeTimer.remaining : 0;
+    var m   = Math.floor(rem/60);
+    var s   = rem % 60;
+    var bigTimeDisp = String(m).padStart(2,"0") + ":" + String(s).padStart(2,"0");
+
+    panel.innerHTML = `
+      <div class="focused-cooking-box">
+        <!-- top control bar -->
+        <div class="big-timer-box" style="margin-bottom:16px; background:#111420; display:flex; justify-content:space-between; align-items:center; padding:12px 24px;">
+          <div style="text-align:left">
+            <div class="bt-label" style="margin-bottom:2px">Interactive Cooking Timer</div>
+            <div style="font-size:15px; color:#f39c12; font-weight:700;">${item.dish} · Table ${item.table}</div>
+          </div>
+          
+          <div style="display:flex; align-items:center; gap:20px;">
+            <div class="bt-display ${rem <= 10 && !isManualStep && !isTimerComplete ? 'urgent' : isTimerComplete ? 'done-color' : ''}" style="font-size:38px; margin:0; font-family:'Courier New', monospace;">
+              ${isManualStep ? "MANUAL" : isTimerComplete ? "🎉 DONE!" : bigTimeDisp}
+            </div>
+            
+            <div class="bt-controls">
+              ${isManualStep && !isTimerComplete
+                ? `<button class="bt-ctrl" style="background:#f39c12; color:black; font-weight:800;" onclick="handleStepAdvance()">
+                     ➡️ Next Step
+                   </button>`
+                : !isTimerComplete 
+                  ? `<button class="bt-ctrl bt-pause" style="background:${activeTimer.running ? '#e74c3c' : '#27ae60'}; color:white;" onclick="toggleAutoCooking()">
+                       ${activeTimer.running ? "⏸ Pause" : "▶ Resume"}
+                     </button>` 
+                  : `<button class="bt-ctrl" style="background:#27ae60; color:white; font-size:14px; padding:10px 20px;" onclick="confirmRecipeFinished()">
+                       ✅ Confirm Finish
+                     </button>`
+              }
+              <button class="bt-ctrl bt-stop" onclick="stopCookingTimer()">✕ Stop</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Big active instruction focused step -->
+        <div class="focus-step-card">
+          <span class="focus-step-num">Step ${stepIdx + 1} of ${r.steps.length} ${isManualStep ? "— Manual" : ""}</span>
+          <div class="focus-step-title">${currentStep.title}</div>
+          <div class="focus-step-desc">${currentStep.description}</div>
+          ${currentStep.tip ? `<div class="focus-step-tip">💡 Chef Tip: ${currentStep.tip}</div>` : ""}
+        </div>
+
+        <!-- Next up preview timeline -->
+        <div class="section-lbl">Recipe Steps Timeline</div>
+        <div class="timeline-track">
+          ${r.steps.map((st, i) => {
+            var isSActive = i === stepIdx;
+            var isSDone = i < stepIdx;
+            return `
+              <div class="timeline-step ${isSActive ? 'active' : isSDone ? 'done' : ''}">
+                <div class="timeline-name">${i+1}. ${st.title}</div>
+                <div style="font-size:9px; color:#888;">⏱ ${st.timerSec > 0 ? st.timerSec + "s" : "Manual"}</div>
+              </div>`;
+          }).join("")}
+        </div>
+      </div>`;
+    return;
+  }
+
+  // ── Standard Fallback Recipe card View (if not cooking) ──
+  var done     = STATE.doneSteps.length;
+  var total    = r.steps.length;
+  var pct      = total > 0 ? Math.round((done/total)*100) : 0;
+  var nextStep = done < total ? done : -1;
+
+  panel.innerHTML =
+    '<div class="recipe-header">' +
+      '<div class="recipe-title">' + item.qty + '× ' + item.dish + '</div>' +
+      '<div class="recipe-meta">' +
+        '<span>⏱ Prep: ' + r.prepTime + '</span>' +
+        '<span>🔥 Cook: ' + r.cookTime + '</span>' +
+        '<span>⭐ ' + r.difficulty + '</span>' +
+        (item.note ? '<span style="color:#f39c12">⚠️ ' + item.note + '</span>' : '') +
+        '<span class="' + (done===total&&total>0?"meta-ok":"meta-warn") + '">' +
+          '✅ ' + done + '/' + total + ' steps done</span>' +
+      '</div>' +
+      '<div class="progress-bar-wrap">' +
+        '<div class="progress-bar" style="width:' + pct + '%"></div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="recipe-content">' +
+      '<div class="steps-section">' +
+        '<div class="section-lbl">Preparation Steps</div>' +
+        r.steps.map(function(step, i) {
+          var isDone   = STATE.doneSteps.indexOf(i) >= 0;
+          var isActive = !isDone && i === nextStep;
+          var cls      = isDone ? "s-done" : isActive ? "s-active" : "";
+          var durText  = step.timerSec > 0
+            ? Math.floor(step.timerSec/60) + "m" + (step.timerSec%60 ? " "+step.timerSec%60+"s" : "")
+            : "Manual";
+          return '<div class="step-card ' + cls + '">' +
+            '<div class="step-header">' +
+              '<div class="step-num">' + (isDone ? "✓" : (i+1)) + '</div>' +
+              '<div class="step-title-text">' + step.title + '</div>' +
+              '<div class="step-dur">⏱ ' + durText + '</div>' +
+            '</div>' +
+            '<div class="step-desc">' + step.description + '</div>' +
+            (step.tip ? '<div class="step-tip">💡 ' + step.tip + '</div>' : '') +
+            '<div class="step-actions">' +
+              (isDone
+                ? '<button class="undo-btn" onclick="undoStep(' + i + ')">↩ Undo</button>'
+                : '<button class="done-btn" onclick="markDone(' + i + ')">✓ Done</button>') +
+            '</div>' +
+          '</div>';
+        }).join("") +
+      '</div>' +
+      '<div class="side-panel">' +
+        '<div class="section-lbl">Ingredients</div>' +
+        (r.ingredients && r.ingredients.length
+          ? r.ingredients.map(function(ing){
+              return '<div class="ing-row"><span class="ing-name">' + ing.name + '</span>' +
+                     '<span class="ing-amt">' + ing.amount + '</span></div>';
+            }).join("")
+          : '<div class="no-recipe-box"><p>No ingredients listed.</p></div>') +
+      '</div>' +
+    '</div>';
+}
+
+function markDone(i) {
+  if (STATE.doneSteps.indexOf(i) < 0) STATE.doneSteps.push(i);
+  renderRecipe();
+}
+
+function undoStep(i) {
+  STATE.doneSteps = STATE.doneSteps.filter(function(d){ return d !== i; });
+  renderRecipe();
+}
+
+function stopTimer() {
+  if (STATE.activeTimer) {
+    clearInterval(STATE.activeTimer.intervalId);
+    STATE.activeTimer = null;
+    STATE.gateState = "none";
+  }
+}
+</script>
+
+<script>
+(function() {
+  function startAuth() {
+    if (typeof POS_AUTH === "undefined") {
+      console.error("POS_AUTH failed to load");
+      return;
+    }
+    POS_AUTH.init("kitchen-prep-display", {
+      onReady: function(session) {
+        var root = document.getElementById("app");
+        if (root) root.style.display = "block";
+        var loader = document.getElementById("loading-placeholder");
+        if (loader) loader.style.display = "none";
+
+        tickClock();
+        setInterval(tickClock, 1000);
+        loadChefSelection();
+
+        setTimeout(function() {
+          if (typeof POS_AUTH.renderUtilBar === "function") {
+            POS_AUTH.renderUtilBar("user-badge", "kitchen-prep-display");
+          }
+        }, 500);
+      },
+      onError: function(msg) { console.error("Auth error:", msg); }
+    });
+  }
+
+  if (typeof POS_AUTH !== "undefined") {
+    startAuth();
+  } else {
+    var tries = 0;
+    var iv = setInterval(function() {
+      tries++;
+      if (typeof POS_AUTH !== "undefined") { clearInterval(iv); startAuth(); }
+      else if (tries > 50) { clearInterval(iv); startAuth(); }
+    }, 100);
+  }
+})();
+</script>
+</body>
+</html>
