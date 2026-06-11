@@ -625,7 +625,9 @@
             };
 
             const handleTableSelect = (table) => {
-                setSelectedTable(table);
+                // Ensure we lookup the freshest table status from our state array on selection
+                const freshTable = tables.find(t => t.id === table.id) || table;
+                setSelectedTable(freshTable);
                 setOrderItems([]);
             };
 
@@ -700,7 +702,8 @@
                         currentWaiter: currentServer,
                         guests: selectedTable.guests
                     });
-                    showNotification("Order marked as delivered! Table remains occupied waiting for checkout.");
+                    showNotification("Order marked as delivered!");
+                    setSelectedTable(prev => prev ? { ...prev, status: "delivered" } : null);
                     loadData();
                 } catch(e) {
                     showNotification("Failed to deliver order: " + e.message, "error");
@@ -716,7 +719,8 @@
                         currentWaiter: currentServer,
                         guests: selectedTable.guests
                     });
-                    showNotification("Payment processed successfully! Table is now locked waiting for cleaning.");
+                    showNotification("Payment processed successfully!");
+                    setSelectedTable(prev => prev ? { ...prev, status: "paid" } : null);
                     loadData();
                 } catch(e) {
                     showNotification("Failed to process payment: " + e.message, "error");
@@ -733,7 +737,7 @@
                         currentWaiter: "",
                         guests       : 0,
                     });
-                    showNotification(`Table ${selectedTable.number} cleaned and ready for next guests!`);
+                    showNotification(`Table ${selectedTable.number} cleared and ready!`);
                     
                     setCurrentServer(null);
                     setSelectedTable(null);
@@ -893,8 +897,29 @@
                                     <div className="empty-state-icon">🍽️</div>
                                     <div>Select a table to start</div>
                                 </div>
+                            ) : selectedTable.status === "paid" ? (
+                                // ── 1. Table is Paid: Dedicated Clearing State View ──
+                                <div>
+                                    <div className="progress-box" style={{ borderLeft: "4px solid #10b981", background: "#f0fdf4" }}>
+                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                            <div>
+                                                <strong style={{ fontSize: "16px", color: "#065f46" }}>💵 Table Paid</strong>
+                                                <div style={{ fontSize: "12px", color: "#047857", marginTop: "2px" }}>Bill settled. Ready for busser.</div>
+                                            </div>
+                                            <span className="progress-status" style={{ background: "#d1fae5", color: "#065f46" }}>Paid</span>
+                                        </div>
+                                    </div>
+                                    <div className="action-buttons" style={{ marginTop: "20px" }}>
+                                        <button className="btn btn-success" onClick={handleClearTable} style={{ fontSize: "15px", padding: "16px" }}>
+                                            🧹 Clear & Clean Table
+                                        </button>
+                                        <button className="btn btn-ghost" onClick={() => setSelectedTable(null)}>
+                                            ← Back to Tables
+                                        </button>
+                                    </div>
+                                </div>
                             ) : activeOrderForTable ? (
-                                // ── Table is active: Show dishes & elapsed timers ──
+                                // ── 2. Table is Occupied: Show active dishes & elapsed timers ──
                                 <div>
                                     <div className="progress-box">
                                         <div className="progress-header">
@@ -955,16 +980,9 @@
                                         )}
 
                                         {/* Payment Option: Visible after food is delivered, but before cleaning */}
-                                        {activeOrderForTable.Status === "served" && selectedTable.status !== "paid" && (
+                                        {activeOrderForTable.Status === "served" && (
                                             <button className="btn btn-secondary" onClick={() => handleProcessPayment(activeOrderForTable.OrderID)}>
                                                 💷 Checkout & Pay Bill
-                                            </button>
-                                        )}
-
-                                        {/* Cleaning Option: STRICTLY hidden until bill is paid */}
-                                        {selectedTable.status === "paid" && (
-                                            <button className="btn btn-success" onClick={handleClearTable}>
-                                                🧹 Clear & Clean Table
                                             </button>
                                         )}
 
