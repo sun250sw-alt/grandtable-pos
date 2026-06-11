@@ -478,6 +478,7 @@
       const [saving, setSaving]       = useState(false);
       const [currency, setCurrency]   = useState("Rs.");
       const [recipesList, setRecipesList] = useState([]);
+      const [isEditMode, setIsEditMode] = useState(false);
       const [cookingRequired, setCookingRequired] = useState(true);
       const [form, setForm]           = useState({ name:"", category:"Main Course", price:"", description:"", emoji:"🍽️", prepTime:"10 min" });
 
@@ -525,27 +526,60 @@
 
       const filtered = items.filter(i => (i.name || "").toLowerCase().includes(search.toLowerCase()));
 
+      const handleOpenAddModal = () => {
+         setIsEditMode(false);
+         setEditItem(null);
+         setCookingRequired(true);
+         setForm({ name:"", category:"Main Course", price:"", description:"", emoji:"🍽️", prepTime:"10 min" });
+         setShowModal(true);
+      };
+
+      const handleOpenEditModal = (item) => {
+         setIsEditMode(true);
+         setEditItem(item);
+         setCookingRequired(item.prepTime !== "Bypass Prep");
+         setForm({
+            name: item.name,
+            category: item.category,
+            price: item.price,
+            description: item.description || "",
+            emoji: item.emoji || "🍽️",
+            prepTime: item.prepTime === "Bypass Prep" ? "10 min" : item.prepTime
+         });
+         setShowModal(true);
+      };
+
       const handleSave = async () => {
         if (!form.name || !form.price) return;
         setSaving(true);
+        const targetPrep = cookingRequired ? (form.prepTime || "10 min") : "Bypass Prep";
         try {
           if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
-            await window.POS_GAPI.Menu.add({
-              name: form.name, category: form.category,
-              price: parseFloat(form.price), description: form.description||"",
-              emoji: form.emoji||"🍽️",
-              prepTime: cookingRequired ? (form.prepTime || "10 min") : "Bypass Prep"
-            });
-            toast("✅ Menu item added successfully!");
+            if (isEditMode) {
+                await window.POS_GAPI.updateRow("MenuItems", 0, editItem.id, {
+                    Name: form.name,
+                    Category: form.category,
+                    Price: parseFloat(form.price),
+                    Description: form.description || "",
+                    Emoji: form.emoji || "🍽️",
+                    PrepTime: targetPrep
+                });
+                toast("📝 Menu item updated successfully!");
+            } else {
+                await window.POS_GAPI.Menu.add({
+                  name: form.name, category: form.category,
+                  price: parseFloat(form.price), description: form.description||"",
+                  emoji: form.emoji||"🍽️",
+                  prepTime: targetPrep
+                });
+                toast("✅ Menu item added successfully!");
+            }
             await load();
-          } else {
-            setItems([...items, { ...form, id: Date.now(), price: parseFloat(form.price) }]);
           }
         } catch(e) { alert("Save failed: " + e.message); }
         setSaving(false);
         setShowModal(false);
-        setForm({ name:"", category:"Main Course", price:"", description:"", emoji:"🍽️", prepTime:"10 min" });
-        setCookingRequired(true);
+        setEditItem(null);
       };
 
       const toggleStatus = async (id) => {
@@ -559,6 +593,19 @@
             toast("✅ Item status updated!");
           } catch(e) { console.error("Toggle failed:", e); }
         }
+      };
+
+      const togglePrepRequired = async (itemId, currentPrep) => {
+          const nextPrep = currentPrep === "Bypass Prep" ? "10 min" : "Bypass Prep";
+          try {
+              if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+                  await window.POS_GAPI.updateRow("MenuItems", 0, itemId, {
+                      PrepTime: nextPrep
+                  });
+                  toast("⚡ Cooking routing updated!");
+                  await load();
+              }
+          } catch(e) { alert("Toggle failed: " + e.message); }
       };
 
       const handleDeleteItem = async (itemId) => {
@@ -651,12 +698,12 @@
               <div style={{display:"flex",gap:"10px"}}>
                 <input className="search-input" placeholder="🔍 Search items..."
                        value={search} onChange={e=>setSearch(e.target.value)} />
-                <button className="btn btn-primary" onClick={()=>setShowModal(true)}>+ Add Item</button>
+                <button className="btn btn-primary" onClick={handleOpenAddModal}>+ Add Item</button>
               </div>
             </div>
             <table className="data-table">
               <thead>
-                <tr><th>Name</th><th>Category</th><th>Price ({currency})</th><th>Status</th><th>Recipe</th><th>Actions</th></tr>
+                <tr><th>Name</th><th>Category</th><th>Price ({currency})</th><th>Status</th><th>Prep Required?</th><th>Recipe</th><th>Actions</th></tr>
               </thead>
               <tbody>
                 {filtered.map(item => (
@@ -665,6 +712,16 @@
                     <td><span className="badge badge-blue">{item.category}</span></td>
                     <td><strong>{currency} {parseFloat(item.price).toLocaleString()}</strong></td>
                     <td><span className={`badge ${item.status==="active"?"badge-green":"badge-gray"}`}>{item.status}</span></td>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <input type="checkbox" checked={item.prepTime !== "Bypass Prep"} 
+                               onChange={() => togglePrepRequired(item.id, item.prepTime)} 
+                               style={{ width: "18px", height: "18px", cursor: "pointer", accentColor: "#667eea" }} />
+                        <span style={{ fontSize: "11px", fontWeight: "700", color: item.prepTime === "Bypass Prep" ? "#888" : "#27ae60" }}>
+                          {item.prepTime === "Bypass Prep" ? "Bypass" : "Chef Prep"}
+                        </span>
+                      </div>
+                    </td>
                     <td>
                       {item.prepTime === "Bypass Prep" ? (
                         <span className="badge badge-gray">Bypassed (No Cooking)</span>
@@ -679,8 +736,12 @@
                               onClick={()=>toggleStatus(item.id)}>
                         {item.status==="active"?"Disable":"Enable"}
                       </button>
+                      <button className="btn btn-primary" style={{padding:"5px 10px",fontSize:"12px",background:"#667eea"}}
+                              onClick={()=>handleOpenEditModal(item)}>
+                        📝 Edit
+                      </button>
                       {item.prepTime !== "Bypass Prep" && (
-                        <button className="btn btn-primary" style={{padding:"5px 10px",fontSize:"12px",background:"#667eea"}}
+                        <button className="btn btn-primary" style={{padding:"5px 10px",fontSize:"12px",background:"#f59e0b"}}
                                 onClick={()=>openRecipeEditor(item)}>
                           📋 Recipe
                         </button>
@@ -696,11 +757,11 @@
             </table>
           </div>
 
-          {/* Add menu item modal */}
+          {/* Add / Edit menu item modal */}
           {showModal && (
             <div className="modal-overlay">
               <div className="modal">
-                <h3>Add Menu Item</h3>
+                <h3>{isEditMode ? "Edit Menu Item" : "Add Menu Item"}</h3>
                 <div className="form-grid">
                   <div className="form-group" style={{gridColumn:"1/-1"}}>
                     <label>Item Name</label>
@@ -721,8 +782,8 @@
                   </div>
                   
                   <div className="form-group" style={{gridColumn:"1/-1", display:"flex", alignItems:"center", gap:"8px"}}>
-                    <input type="checkbox" checked={cookingRequired} onChange={e=>setCookingRequired(e.target.checked)} style={{width:"18px", height:"18px"}}/>
-                    <label style={{margin:0, cursor:"pointer"}}>🍳 Kitchen Prep Required? (Needs Cooking)</label>
+                    <input type="checkbox" checked={cookingRequired} onChange={e=>setCookingRequired(e.target.checked)} style={{width:"18px", height:"18px", cursor: "pointer"}}/>
+                    <label style={{margin:0, cursor:"pointer", fontWeight: "700"}}>🍳 Kitchen Prep Required? (Needs Cooking)</label>
                   </div>
 
                   {cookingRequired && (
