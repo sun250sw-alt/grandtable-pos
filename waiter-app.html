@@ -132,12 +132,14 @@
         .tables-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
+            gap: 16px;
+            padding-top: 8px;
         }
 
         .table-card {
-            padding: 16px;
-            border-radius: 8px;
+            position: relative;
+            padding: 18px 16px;
+            border-radius: 12px;
             cursor: pointer;
             transition: all 0.2s;
             border: 2px solid #e0e0e0;
@@ -155,14 +157,23 @@
         }
 
         .table-card.occupied {
-            background: #fef3c7;
+            background: #fffbeb;
             border-color: #f59e0b;
         }
 
+        .table-card.delivered {
+            background: #faf5ff;
+            border-color: #a855f7;
+        }
+
+        .table-card.paid {
+            background: #ecfdf5;
+            border-color: #10b981;
+        }
+
         .table-card.selected {
-            background: #ddd6fe;
+            box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.4);
             border-color: #7c3aed;
-            box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
         }
 
         .table-number {
@@ -180,6 +191,26 @@
             font-size: 11px;
             margin-top: 4px;
             color: #888;
+        }
+
+        /* Blinking Floating Ready Badge on Tables Grid */
+        .ready-badge {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background: #ef4444;
+            color: white;
+            font-weight: 800;
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(239, 68, 68, 0.4);
+            animation: pulse-ready 1.5s infinite;
+            z-index: 50;
+        }
+        @keyframes pulse-ready {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.08); }
         }
 
         /* Menu Panel */
@@ -348,6 +379,7 @@
         .status-cooking { background: #fef3c7; color: #d97706; }
         .status-queue { background: #fee2e2; color: #ef4444; }
         .status-ready { background: #d1fae5; color: #065f46; animation: blink-status 1.5s infinite; }
+        .status-delivered { background: #f3e8ff; color: #7e22ce; }
         @keyframes blink-status { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
 
         .order-summary {
@@ -453,15 +485,10 @@
             margin-left: 8px;
         }
 
-        .badge-success {
-            background: #d1fae5;
-            color: #059669;
-        }
-
-        .badge-warning {
-            background: #fef3c7;
-            color: #d97706;
-        }
+        .badge-success { background: #d1fae5; color: #059669; }
+        .badge-warning { background: #fffdbf; color: #b7770d; }
+        .badge-delivered { background: #f3e8ff; color: #7e22ce; }
+        .badge-paid { background: #ecfdf5; color: #047857; }
 
         .notification {
             position: fixed;
@@ -486,13 +513,8 @@
             }
         }
 
-        .notification.success {
-            border-left: 4px solid #10b981;
-        }
-
-        .notification.error {
-            border-left: 4px solid #ef4444;
-        }
+        .notification.success { border-left: 4px solid #10b981; }
+        .notification.error { border-left: 4px solid #ef4444; }
     </style>
 </head>
 <body>
@@ -507,7 +529,6 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // Simple helper component to render wait time dynamically
         function OrderTimer({ orderTime }) {
             const [elapsed, setElapsed] = useState(0);
 
@@ -661,7 +682,6 @@
                     });
                     showNotification(`Order sent to kitchen for Table ${selectedTable.number}!`);
                     
-                    // Automatically redirect back to Home Selection Screen on order completion
                     setCurrentServer(null);
                     setSelectedTable(null);
                     setOrderItems([]);
@@ -671,48 +691,56 @@
                 }
             };
 
-            const handleCloseTable = async () => {
+            const handleDeliverOrder = async (orderId) => {
+                try {
+                    await window.POS_GAPI.Orders.update({ orderId, status: "served" });
+                    await window.POS_GAPI.Tables.update({
+                        tableNumber: selectedTable.number,
+                        status: "delivered",
+                        currentWaiter: currentServer,
+                        guests: selectedTable.guests
+                    });
+                    showNotification("Order marked as delivered! Table remains occupied waiting for checkout.");
+                    loadData();
+                } catch(e) {
+                    showNotification("Failed to deliver order: " + e.message, "error");
+                }
+            };
+
+            const handleProcessPayment = async (orderId) => {
+                try {
+                    await window.POS_GAPI.Orders.update({ orderId, status: "closed" });
+                    await window.POS_GAPI.Tables.update({
+                        tableNumber: selectedTable.number,
+                        status: "paid",
+                        currentWaiter: currentServer,
+                        guests: selectedTable.guests
+                    });
+                    showNotification("Payment processed successfully! Table is now locked waiting for cleaning.");
+                    loadData();
+                } catch(e) {
+                    showNotification("Failed to process payment: " + e.message, "error");
+                }
+            };
+
+            const handleClearTable = async () => {
                 if (!selectedTable) return;
 
                 try {
-                    // Locate the active order to complete it
-                    const activeOrder = liveOrders.find(o => 
-                        parseInt(o.TableNumber) === parseInt(selectedTable.number) && 
-                        o.Status !== "served" && o.Status !== "closed"
-                    );
-
-                    if (activeOrder) {
-                        await window.POS_GAPI.Orders.update({
-                            orderId: activeOrder.OrderID,
-                            status: "served"
-                        });
-                    }
-
                     await window.POS_GAPI.Tables.update({
                         tableNumber  : selectedTable.number,
                         status       : "available",
                         currentWaiter: "",
                         guests       : 0,
                     });
-                    showNotification(`Table ${selectedTable.number} closed and checked out!`);
+                    showNotification(`Table ${selectedTable.number} cleaned and ready for next guests!`);
                     
-                    // Return back to Server Home Selection
                     setCurrentServer(null);
                     setSelectedTable(null);
                     setOrderItems([]);
                     loadData();
                 } catch(e) {
-                    showNotification("Failed to close table: " + e.message, "error");
-                }
-            };
-
-            const handleDeliverOrder = async (orderId) => {
-                try {
-                    await window.POS_GAPI.Orders.update({ orderId, status: "served" });
-                    showNotification("Order marked as delivered to table!");
-                    loadData();
-                } catch(e) {
-                    showNotification("Failed to deliver order: " + e.message, "error");
+                    showNotification("Failed to clean table: " + e.message, "error");
                 }
             };
 
@@ -720,7 +748,7 @@
             const activeOrderForTable = selectedTable 
                 ? liveOrders.find(o => 
                     parseInt(o.TableNumber) === parseInt(selectedTable.number) && 
-                    o.Status !== "served" && o.Status !== "closed"
+                    o.Status !== "closed"
                   )
                 : null;
 
@@ -770,23 +798,35 @@
                     </div>
 
                     <div className="main-layout">
-                        {/* Tables Panel */}
+                        {/* Tables Panel with Live Alert ready-badges */}
                         <div className="panel">
                             <h2>Tables</h2>
                             <div className="tables-grid">
                                 {tables.map(table => {
-                                    const hasActive = liveOrders.some(o => parseInt(o.TableNumber) === parseInt(table.number) && o.Status !== "served" && o.Status !== "closed");
-                                    const statusClass = hasActive ? "occupied" : "available";
+                                    const matchOrder = liveOrders.find(o => parseInt(o.TableNumber) === parseInt(table.number) && o.Status !== "closed");
+                                    const isFoodReady = matchOrder && matchOrder.Status === "ready";
+                                    
+                                    // Map dynamic styling depending on active checkout sub-state
+                                    let statusClass = "available";
+                                    if (table.status === "occupied" || (matchOrder && ["new", "preparing"].includes(matchOrder.Status))) {
+                                        statusClass = "occupied";
+                                    } else if (table.status === "delivered" || (matchOrder && matchOrder.Status === "served")) {
+                                        statusClass = "delivered";
+                                    } else if (table.status === "paid") {
+                                        statusClass = "paid";
+                                    }
+
                                     return (
                                         <div
                                             key={table.id}
                                             className={`table-card ${statusClass} ${selectedTable?.id === table.id ? 'selected' : ''}`}
                                             onClick={() => handleTableSelect(table)}
                                         >
+                                            {isFoodReady && <div className="ready-badge">🔔 Food Ready</div>}
                                             <div className="table-number">Table {table.number}</div>
                                             <div className="table-status">
-                                                <span className={`badge ${statusClass === 'available' ? 'badge-success' : 'badge-warning'}`}>
-                                                    {hasActive ? "occupied" : "available"}
+                                                <span className={`badge badge-${statusClass}`}>
+                                                    {statusClass}
                                                 </span>
                                             </div>
                                             <div className="table-guests">
@@ -854,23 +894,25 @@
                                     <div>Select a table to start</div>
                                 </div>
                             ) : activeOrderForTable ? (
-                                // ── Table is occupied: Show active dishes & elapsed timers ──
+                                // ── Table is active: Show dishes & elapsed timers ──
                                 <div>
                                     <div className="progress-box">
                                         <div className="progress-header">
                                             <div>
                                                 <strong style={{ fontSize: "14px" }}>{activeOrderForTable.OrderID}</strong>
-                                                <div style={{ fontSize: "11px", color: "#666", marginTop: "2px" }}>Wait Tracker</div>
+                                                <div style={{ fontSize: "11px", color: "#666", marginTop: "2px" }}>Order Status</div>
                                             </div>
                                             <div style={{ textAlign: "right" }}>
-                                                <OrderTimer orderTime={activeOrderForTable.OrderTime} />
+                                                {activeOrderForTable.Status !== "served" && <OrderTimer orderTime={activeOrderForTable.OrderTime} />}
                                                 <div style={{ marginTop: "4px" }}>
                                                     <span className={`progress-status ${
                                                         activeOrderForTable.Status === 'ready' ? 'status-ready' : 
-                                                        activeOrderForTable.Status === 'preparing' ? 'status-cooking' : 'status-queue'
+                                                        activeOrderForTable.Status === 'preparing' ? 'status-cooking' : 
+                                                        activeOrderForTable.Status === 'served' ? 'status-delivered' : 'status-queue'
                                                     }`}>
                                                         {activeOrderForTable.Status === 'ready' ? 'Ready to Serve' : 
-                                                         activeOrderForTable.Status === 'preparing' ? 'Cooking' : 'In Queue'}
+                                                         activeOrderForTable.Status === 'preparing' ? 'Cooking' : 
+                                                         activeOrderForTable.Status === 'served' ? 'Served' : 'In Queue'}
                                                     </span>
                                                 </div>
                                             </div>
@@ -887,7 +929,8 @@
                                                     <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "14px" }}>
                                                         <span>{item.qty || item.quantity}× {item.name || item.Name}</span>
                                                         <span style={{ fontWeight: "600", color: "#667eea" }}>
-                                                            {activeOrderForTable.Status === 'ready' ? "✅ Done" : 
+                                                            {activeOrderForTable.Status === 'served' ? "✓ Delivered" :
+                                                             activeOrderForTable.Status === 'ready' ? "✅ Done" : 
                                                              activeOrderForTable.Status === 'preparing' ? "👨‍🍳 Cooking" : "⏳ Queued"}
                                                         </span>
                                                     </div>
@@ -904,14 +947,27 @@
                                     </div>
 
                                     <div className="action-buttons">
+                                        {/* Deliver Option: Only available when order is ready */}
                                         {activeOrderForTable.Status === "ready" && (
                                             <button className="btn btn-success" onClick={() => handleDeliverOrder(activeOrderForTable.OrderID)}>
                                                 🚀 Deliver Order to Table
                                             </button>
                                         )}
-                                        <button className="btn btn-secondary" onClick={handleCloseTable}>
-                                            🧾 Checkout & Bill Table
-                                        </button>
+
+                                        {/* Payment Option: Visible after food is delivered, but before cleaning */}
+                                        {activeOrderForTable.Status === "served" && selectedTable.status !== "paid" && (
+                                            <button className="btn btn-secondary" onClick={() => handleProcessPayment(activeOrderForTable.OrderID)}>
+                                                💷 Checkout & Pay Bill
+                                            </button>
+                                        )}
+
+                                        {/* Cleaning Option: STRICTLY hidden until bill is paid */}
+                                        {selectedTable.status === "paid" && (
+                                            <button className="btn btn-success" onClick={handleClearTable}>
+                                                🧹 Clear & Clean Table
+                                            </button>
+                                        )}
+
                                         <button className="btn btn-ghost" onClick={() => setSelectedTable(null)}>
                                             ← Back to Tables
                                         </button>
