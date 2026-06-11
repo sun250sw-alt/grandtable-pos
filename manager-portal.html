@@ -905,7 +905,7 @@
                     💡 Steps will appear live in Kitchen Prep Display
                   </div>
                   <button className="btn btn-ghost" onClick={()=>setShowRecipe(false)}>Cancel</button>
-                  <button className="btn btn-success" onClick={saveRecipe} disabled={saving}>{saving?"Saving to Sheet...":"✅ Save Recipe"}</button>
+                  <button className="btn btn-success" onClick={saveRecipe} disabled={saving}>{saving?"Saving to Sheet...":"✅ Save Recipe</button>
                 </div>
               </div>
             </div>
@@ -917,46 +917,116 @@
     function Inventory() {
         const [inv, setInv] = useState([]);
         const [loading, setLoading] = useState(true);
+        const [showAddModal, setShowAddModal] = useState(false);
+        const [showEditModal, setShowEditModal] = useState(false);
+        const [editItem, setEditItem] = useState(null);
+        const [saving, setSaving] = useState(false);
+        const [form, setForm] = useState({ name: "", unit: "kg", qty: "", reorder: "", supplier: "", cost: "" });
+        
         const criticalItems = inv.filter(i => i.status === 'critical' || i.status === 'low');
 
-        useEffect(() => {
-            async function load() {
-                if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
-                try {
-                    const res = await window.POS_GAPI.Inventory.getAll();
-                    if (res && res.data && res.data.length > 0) {
-                        setInv(res.data.map(i => ({
-                            id: i.ItemID,
-                            item: i.Name,
-                            qty: parseFloat(i.Quantity) || 0,
-                            unit: i.Unit || "pcs",
-                            reorder: parseFloat(i.ReorderLevel) || 10,
-                            status: i.AlertStatus || "ok"
-                        })));
-                    } else {
-                        setInv(INVENTORY);
-                    }
-                } catch(e) { 
-                    console.error("Inventory load error:", e);
+        const loadInventory = async () => {
+            if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
+            try {
+                const res = await window.POS_GAPI.Inventory.getAll();
+                if (res && res.data) {
+                    setInv(res.data
+                      .filter(i => i !== null && i !== undefined)
+                      .map(i => ({
+                        id: i.ItemID,
+                        item: i.Name,
+                        qty: parseFloat(i.Quantity) || 0,
+                        unit: i.Unit || "pcs",
+                        reorder: parseFloat(i.ReorderLevel) || 10,
+                        supplier: i.Supplier || "Unknown",
+                        cost: parseFloat(i.Cost) || 0,
+                        status: i.AlertStatus || "ok"
+                      }))
+                    );
+                } else {
                     setInv(INVENTORY);
                 }
-                setLoading(false);
+            } catch(e) { 
+                console.error("Inventory load error:", e);
+                setInv(INVENTORY);
             }
-            load();
+            setLoading(false);
+        };
+
+        useEffect(() => {
+            loadInventory();
         }, []);
 
-        const restockItem = async (idx, id) => {
-            setInv(prev => prev.map((it, j) => j === idx ? { ...it, qty: it.qty + 5, status: 'ok' } : it));
-            if (window.POS_GAPI && window.POS_GAPI.getSheetId() && id) {
+        const handleOpenAdd = () => {
+            setForm({ name: "", unit: "kg", qty: "", reorder: "", supplier: "", cost: "" });
+            setShowAddModal(true);
+        };
+
+        const handleOpenEdit = (item) => {
+            setEditItem(item);
+            setForm({
+                name: item.item,
+                unit: item.unit,
+                qty: item.qty,
+                reorder: item.reorder,
+                supplier: item.supplier,
+                cost: item.cost
+            });
+            setShowEditModal(true);
+        };
+
+        const handleSaveNewItem = async () => {
+            if (!form.name || !form.qty || !form.reorder) return;
+            setSaving(true);
+            try {
+                const id = window.POS_GAPI.uid("INV");
+                const now = new Date().toISOString();
+                await window.POS_GAPI.appendRow("Inventory", [
+                    id, form.name, form.unit, parseFloat(form.qty), parseFloat(form.reorder), now, form.supplier || "", parseFloat(form.cost) || 0
+                ]);
+                await loadInventory();
+                setShowAddModal(false);
+            } catch(e) { alert("Failed to add inventory: " + e.message); }
+            setSaving(false);
+        };
+
+        const handleSaveEditItem = async () => {
+            if (!form.name || !form.qty || !form.reorder || !editItem) return;
+            setSaving(true);
+            try {
+                await window.POS_GAPI.updateRow("Inventory", 0, editItem.id, {
+                    Name: form.name,
+                    Unit: form.unit,
+                    Quantity: parseFloat(form.qty),
+                    ReorderLevel: parseFloat(form.reorder),
+                    Supplier: form.supplier || "",
+                    Cost: parseFloat(form.cost) || 0,
+                    LastUpdated: new Date().toISOString()
+                });
+                await loadInventory();
+                setShowEditModal(false);
+                setEditItem(null);
+            } catch(e) { alert("Failed to update inventory: " + e.message); }
+            setSaving(false);
+        };
+
+        const handleDeleteItem = async (itemId) => {
+            if (!confirm("Are you sure you want to permanently delete this inventory stock item?")) return;
+            try {
+                await window.POS_GAPI.Inventory.delete(itemId);
+                await loadInventory();
+            } catch(e) { alert("Failed to delete stock item: " + e.message); }
+        };
+
+        const restockItem = async (item) => {
+            if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
                 try {
-                    const item = inv[idx];
                     await window.POS_GAPI.Inventory.update({
-                        itemId: id,
-                        quantity: item.qty + 5
+                        itemId: item.id,
+                        quantity: item.qty + 10
                     });
-                } catch(e) {
-                    console.error("Failed to update inventory level:", e);
-                }
+                    await loadInventory();
+                } catch(e) { console.error("Failed to restock:", e); }
             }
         };
 
@@ -974,10 +1044,10 @@
                 <div className="table-card">
                     <div className="table-card-header">
                         <div className="table-card-title">Stock Levels</div>
-                        <button className="btn btn-success">+ Add Stock</button>
+                        <button className="btn btn-success" onClick={handleOpenAdd}>+ Add Stock Item</button>
                     </div>
                     <table className="data-table">
-                        <thead><tr><th>Item</th><th>In Stock</th><th>Unit</th><th>Reorder At</th><th>Status</th><th>Action</th></tr></thead>
+                        <thead><tr><th>Item</th><th>In Stock</th><th>Unit</th><th>Reorder At</th><th>Supplier</th><th>Cost</th><th>Status</th><th>Actions</th></tr></thead>
                         <tbody>
                             {inv.map((item, i) => (
                                 <tr key={i}>
@@ -985,11 +1055,21 @@
                                     <td style={{ fontWeight: 700, color: item.status === 'critical' ? '#e74c3c' : item.status === 'low' ? '#f39c12' : '#27ae60' }}>{item.qty}</td>
                                     <td>{item.unit}</td>
                                     <td>{item.reorder} {item.unit}</td>
+                                    <td>{item.supplier}</td>
+                                    <td>Rs. {item.cost.toFixed(2)}</td>
                                     <td><span className={`badge ${item.status === 'critical' ? 'badge-red' : item.status === 'low' ? 'badge-yellow' : 'badge-green'}`}>{item.status}</span></td>
-                                    <td>
+                                    <td style={{ display: 'flex', gap: '6px' }}>
                                         <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: '12px' }}
-                                            onClick={() => restockItem(i, item.id)}>
-                                            + Restock 5
+                                            onClick={() => restockItem(item)}>
+                                            + Restock 10
+                                        </button>
+                                        <button className="btn btn-primary" style={{ padding: '5px 12px', fontSize: '12px' }}
+                                            onClick={() => handleOpenEdit(item)}>
+                                            📝 Edit
+                                        </button>
+                                        <button className="btn btn-danger" style={{ padding: '5px 12px', fontSize: '12px' }}
+                                            onClick={() => handleDeleteItem(item.id)}>
+                                            🗑️ Delete
                                         </button>
                                     </td>
                                 </tr>
@@ -997,6 +1077,90 @@
                         </tbody>
                     </table>
                 </div>
+
+                {/* Add Stock Item Modal */}
+                {showAddModal && (
+                    <div className="modal-overlay">
+                        <div className="modal">
+                            <h3>Add Inventory Stock Item</h3>
+                            <div className="form-grid">
+                                <div className="form-group" style={{ gridColumn: "1/-1" }}>
+                                    <label>Ingredient Name</label>
+                                    <input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="e.g. Beef Patties"/>
+                                </div>
+                                <div className="form-group">
+                                    <label>Stock Unit</label>
+                                    <select value={form.unit} onChange={e => setForm({...form, unit: e.target.value})}>
+                                        <option>kg</option><option>g</option><option>pcs</option>
+                                        <option>ml</option><option>L</option><option>slices</option>
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label>Current Quantity</label>
+                                    <input type="number" value={form.qty} onChange={e => setForm({...form, qty: e.target.value})} placeholder="0"/>
+                                </div>
+                                <div className="form-group">
+                                    <label>Safety Reorder Limit</label>
+                                    <input type="number" value={form.reorder} onChange={e => setForm({...form, reorder: e.target.value})} placeholder="10"/>
+                                </div>
+                                <div className="form-group">
+                                    <label>Unit Cost (Rs.)</label>
+                                    <input type="number" value={form.cost} onChange={e => setForm({...form, cost: e.target.value})} placeholder="150"/>
+                                </div>
+                                <div className="form-group" style={{ gridColumn: "1/-1" }}>
+                                    <label>Supplier / Vendor Name</label>
+                                    <input value={form.supplier} onChange={e => setForm({...form, supplier: e.target.value})} placeholder="e.g. Prime Meats Ltd"/>
+                                </div>
+                            </div>
+                            <div className="modal-actions">
+                                <button className="btn btn-ghost" onClick={() => setShowAddModal(false)}>Cancel</button>
+                                <button className="btn btn-primary" onClick={handleSaveNewItem} disabled={saving}>{saving?"Saving...":"✓ Save Ingredient"}</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Edit Stock Item Modal */}
+                {showEditModal && (
+                    <div className="modal-overlay">
+                        <div className="modal">
+                            <h3>Edit Inventory Stock Item</h3>
+                            <div className="form-grid">
+                                <div className="form-group" style={{ gridColumn: "1/-1" }}>
+                                    <label>Ingredient Name</label>
+                                    <input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="e.g. Beef Patties"/>
+                                </div>
+                                <div className="form-group">
+                                    <label>Stock Unit</label>
+                                    <select value={form.unit} onChange={e => setForm({...form, unit: e.target.value})}>
+                                        <option>kg</option><option>g</option><option>pcs</option>
+                                        <option>ml</option><option>L</option><option>slices</option>
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label>Current Quantity</label>
+                                    <input type="number" value={form.qty} onChange={e => setForm({...form, qty: e.target.value})} placeholder="0"/>
+                                </div>
+                                <div className="form-group">
+                                    <label>Safety Reorder Limit</label>
+                                    <input type="number" value={form.reorder} onChange={e => setForm({...form, reorder: e.target.value})} placeholder="10"/>
+                                </div>
+                                <div className="form-group">
+                                    <label>Unit Cost (Rs.)</label>
+                                    <input type="number" value={form.cost} onChange={e => setForm({...form, cost: e.target.value})} placeholder="150"/>
+                                </div>
+                                <div className="form-group" style={{ gridColumn: "1/-1" }}>
+                                    <label>Supplier / Vendor Name</label>
+                                    <input value={form.supplier} onChange={e => setForm({...form, supplier: e.target.value})} placeholder="e.g. Prime Meats Ltd"/>
+                                </div>
+                            </div>
+                            <div className="modal-actions">
+                                <button className="btn btn-ghost" onClick={() => setShowEditModal(false)}>Cancel</button>
+                                <button className="btn btn-primary" onClick={handleSaveEditItem} disabled={saving}>{saving?"Updating...":"✓ Save Changes"}</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </>
         );
     }
