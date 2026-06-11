@@ -226,23 +226,19 @@
 
         .search-input { padding: 10px 16px; border: 2px solid #e8e8e8; border-radius: 8px; font-size: 14px; width: 280px; }
         .search-input:focus { outline: none; border-color: #667eea; }
+        
+        .notification-toast {
+            position: fixed; top: 20px; right: 20px; background: #27ae60; color: white;
+            padding: 12px 24px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 9999;
+            font-weight: 700; font-size: 13px; animation: slideIn 0.3s ease;
+        }
+        @keyframes slideIn { from { transform: translateX(300px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
     </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
-
-    const SALES_DATA = [
-        { day: 'Mon', revenue: 1240 }, { day: 'Tue', revenue: 980 },
-        { day: 'Wed', revenue: 1560 }, { day: 'Thu', revenue: 1380 },
-        { day: 'Fri', revenue: 2100 }, { day: 'Sat', revenue: 2680 }, { day: 'Sun', revenue: 1920 },
-    ];
-
-    const TOP_ITEMS = [
-        { name: "Burger Deluxe", count: 124 }, { name: "Fish & Chips", count: 98 },
-        { name: "Steak", count: 87 }, { name: "Pasta Carbonara", count: 76 }, { name: "Caesar Salad", count: 65 },
-    ];
+    const { useState, useEffect } = React;
 
     const STAFF = [
         { name: "John Doe", role: "Waiter", status: "active", orders: 18, tips: "Rs.420" },
@@ -264,41 +260,109 @@
         { item: "Parmesan", unit: "kg", qty: 0.5, reorder: 1, status: "critical" },
     ];
 
-    const maxRevenue = Math.max(...SALES_DATA.map(d => d.revenue));
-    const maxCount = Math.max(...TOP_ITEMS.map(i => i.count));
-
     function Dashboard() {
+        const [ordersList, setOrdersList] = useState([]);
+        const [tablesList, setTablesList] = useState([]);
         const [currency, setCurrency] = useState("Rs.");
 
-        useEffect(() => {
-            if (window.POS_GAPI) {
+        const loadStats = async () => {
+            if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
+            try {
                 const settings = window.POS_GAPI.getSettings();
                 if (settings && settings.currency) setCurrency(settings.currency + " ");
-            }
+
+                const [ordRes, tblRes] = await Promise.all([
+                    window.POS_GAPI.getRows("Orders"),
+                    window.POS_GAPI.getRows("Tables")
+                ]);
+                if (ordRes) setOrdersList(ordRes);
+                if (tblRes) setTablesList(tblRes);
+            } catch(e) { console.error("Dashboard stats sync error:", e); }
+        };
+
+        useEffect(() => {
+            loadStats();
+            const iv = setInterval(loadStats, 6000);
+            return () => clearInterval(iv);
         }, []);
+
+        const todayStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+        const todayOrders = ordersList.filter(o => o.OrderTime && o.OrderTime.startsWith(todayStr));
+        const todayRevenue = todayOrders.reduce((sum, o) => sum + (parseFloat(o.Total) || 0), 0);
+        const todayCount = todayOrders.length;
+        const avgOrderValue = todayCount > 0 ? (todayRevenue / todayCount) : 0;
+
+        const occupiedTablesCount = tablesList.filter(t => t.Status === "occupied" || t.Status === "delivered" || t.Status === "paid").length;
+        const totalTablesCount = tablesList.length || 12;
+
+        const getWeeklyRevenue = () => {
+            const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+            const revenueByDay = { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 };
+            
+            ordersList.forEach(o => {
+                if (!o.OrderTime) return;
+                const date = new Date(o.OrderTime);
+                const dayName = days[(date.getDay() + 6) % 7];
+                revenueByDay[dayName] += (parseFloat(o.Total) || 0);
+            });
+            
+            return days.map(d => ({ day: d, revenue: parseFloat(revenueByDay[d].toFixed(0)) }));
+        };
+
+        const weeklyData = getWeeklyRevenue();
+        const maxRevenue = Math.max(...weeklyData.map(d => d.revenue), 1);
+
+        const getTopItems = () => {
+            const itemCounts = {};
+            ordersList.forEach(o => {
+                let itemsArray = [];
+                try { itemsArray = JSON.parse(o.Items); } catch(e){}
+                itemsArray.forEach(it => {
+                    const name = it.name || it.Name;
+                    if (name) {
+                        itemCounts[name] = (itemCounts[name] || 0) + (parseInt(it.qty || it.quantity) || 1);
+                    }
+                });
+            });
+            return Object.entries(itemCounts)
+                .map(([name, count]) => ({ name, count }))
+                .sort((a,b) => b.count - a.count)
+                .slice(0, 5);
+        };
+
+        const topItemsList = getTopItems();
+        const maxItemCount = Math.max(...topItemsList.map(i => i.count), 1);
 
         return (
             <>
                 <div className="stats-grid">
-                    {[
-                        { label: "Today's Revenue", value: `${currency}1,842`, change: "↑ 12% vs yesterday", up: true },
-                        { label: "Orders Today", value: "87", change: "↑ 8 more than yesterday", up: true },
-                        { label: "Avg Order Value", value: `${currency}21.17`, change: "↓ Rs.1.20 vs last week", up: false },
-                        { label: "Tables Occupied", value: "6 / 10", change: "60% occupancy", up: true },
-                    ].map((stat, i) => (
-                        <div key={i} className="stat-card">
-                            <div className="stat-card-label">{stat.label}</div>
-                            <div className="stat-card-value">{stat.value}</div>
-                            <div className={`stat-card-change ${stat.up ? 'change-up' : 'change-down'}`}>{stat.change}</div>
-                        </div>
-                    ))}
+                    <div className="stat-card">
+                        <div className="stat-card-label">Today's Revenue</div>
+                        <div className="stat-card-value">{currency}{todayRevenue.toLocaleString()}</div>
+                        <div className="stat-card-change change-up">↑ Live Sync</div>
+                    </div>
+                    <div className="stat-card">
+                        <div className="stat-card-label">Orders Today</div>
+                        <div className="stat-card-value">{todayCount}</div>
+                        <div className="stat-card-change change-up">↑ Live Sync</div>
+                    </div>
+                    <div className="stat-card">
+                        <div className="stat-card-label">Avg Order Value</div>
+                        <div className="stat-card-value">{currency}{avgOrderValue.toFixed(2)}</div>
+                        <div className="stat-card-change change-up">Live calculation</div>
+                    </div>
+                    <div className="stat-card">
+                        <div className="stat-card-label">Tables Occupied</div>
+                        <div className="stat-card-value">{occupiedTablesCount} / {totalTablesCount}</div>
+                        <div className="stat-card-change change-up">{Math.round((occupiedTablesCount/totalTablesCount)*100)}% occupancy</div>
+                    </div>
                 </div>
 
                 <div className="charts-grid">
                     <div className="chart-card">
                         <div className="chart-title">Weekly Revenue</div>
                         <div className="bar-chart">
-                            {SALES_DATA.map((d, i) => (
+                            {weeklyData.map((d, i) => (
                                 <div key={i} className="bar-group">
                                     <div className="bar-value">{currency}{d.revenue}</div>
                                     <div className="bar" style={{ height: `${(d.revenue / maxRevenue) * 110}px` }}/>
@@ -309,11 +373,13 @@
                     </div>
                     <div className="chart-card">
                         <div className="chart-title">Top Selling Items</div>
-                        {TOP_ITEMS.map((item, i) => (
+                        {topItemsList.length === 0 ? (
+                            <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>No sales data available yet</div>
+                        ) : topItemsList.map((item, i) => (
                             <div key={i} className="top-item-row">
                                 <div className="top-item-name">{item.name}</div>
                                 <div className="top-item-bar">
-                                    <div className="top-item-fill" style={{ width: `${(item.count / maxCount) * 100}%` }}/>
+                                    <div className="top-item-fill" style={{ width: `${(item.count / maxItemCount) * 100}%` }}/>
                                 </div>
                                 <div className="top-item-count">{item.count}</div>
                             </div>
@@ -330,22 +396,27 @@
                             <tr><th>Order ID</th><th>Table</th><th>Waiter</th><th>Items</th><th>Total</th><th>Status</th><th>Time</th></tr>
                         </thead>
                         <tbody>
-                            {[
-                                { id: "ORD-087", table: 3, waiter: "John", items: 4, total: "3,850.00", status: "served", time: "2 min ago" },
-                                { id: "ORD-086", table: 7, waiter: "Sarah", items: 2, total: "2,100.00", status: "ready", time: "8 min ago" },
-                                { id: "ORD-085", table: 1, waiter: "Mike", items: 6, total: "7,240.00", status: "preparing", time: "14 min ago" },
-                                { id: "ORD-084", table: 5, waiter: "Sarah", items: 3, total: "4,497.00", status: "served", time: "22 min ago" },
-                            ].map((order, i) => (
-                                <tr key={i}>
-                                    <td><strong>{order.id}</strong></td>
-                                    <td>Table {order.table}</td>
-                                    <td>{order.waiter}</td>
-                                    <td>{order.items} items</td>
-                                    <td><strong>{currency}{order.total}</strong></td>
-                                    <td><span className={`badge ${order.status === 'served' ? 'badge-green' : order.status === 'ready' ? 'badge-blue' : 'badge-yellow'}`}>{order.status}</span></td>
-                                    <td style={{ color: '#888' }}>{order.time}</td>
-                                </tr>
-                            ))}
+                            {ordersList.slice(0, 5).map((order, i) => {
+                                let badgeClass = "badge-gray";
+                                if (order.Status === "served") badgeClass = "badge-green";
+                                else if (order.Status === "ready") badgeClass = "badge-blue";
+                                else if (order.Status === "preparing") badgeClass = "badge-yellow";
+
+                                let count = 0;
+                                try { count = JSON.parse(order.Items).length; } catch(e){}
+
+                                return (
+                                    <tr key={i}>
+                                        <td><strong>{order.OrderID}</strong></td>
+                                        <td>Table {order.TableNumber}</td>
+                                        <td>{order.WaiterName}</td>
+                                        <td>{count} dishes</td>
+                                        <td><strong>{currency}{parseFloat(order.Total).toFixed(2)}</strong></td>
+                                        <td><span className={`badge ${badgeClass}`}>{order.Status}</span></td>
+                                        <td style={{ color: '#888' }}>{order.OrderTime ? new Date(order.OrderTime).toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"}) : "—"}</td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
@@ -356,7 +427,7 @@
     const RECIPE_UNITS = ["pcs","g","kg","ml","L","tsp","tbsp","cup","slice","portion"];
     const RECIPE_DIFFS = ["Easy","Medium","Hard","Chef Special"];
 
-    function MenuManagement() {
+    function MenuManagement({ toast }) {
       const [items, setItems]         = useState([]);
       const [showModal, setShowModal] = useState(false);
       const [showRecipe, setShowRecipe] = useState(false);
@@ -365,7 +436,8 @@
       const [saving, setSaving]       = useState(false);
       const [currency, setCurrency]   = useState("Rs.");
       const [recipesList, setRecipesList] = useState([]);
-      const [form, setForm]           = useState({ name:"", category:"Main Course", price:"", status:"active" });
+      const [cookingRequired, setCookingRequired] = useState(true);
+      const [form, setForm]           = useState({ name:"", category:"Main Course", price:"", description:"", emoji:"🍽️", prepTime:"10 min" });
 
       const load = async () => {
         if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
@@ -378,12 +450,12 @@
           if (res && res.data) setItems(res.data.map(i => ({
             id: i.ItemID, name: i.Name, category: i.Category,
             price: parseFloat(i.Price)||0, status: String(i.Available).toLowerCase()==="false"?"inactive":"active",
-            description: i.Description||"", emoji: i.Emoji||"🍽️"
+            description: i.Description||"", emoji: i.Emoji||"🍽️", prepTime: i.PrepTime || ""
           })));
 
           const recs = await window.POS_GAPI.getRows("Recipes");
           if (recs) setRecipesList(recs.map(r => r.DishName));
-        } catch(e) { console.error("Menu management list load error:", e); }
+        } catch(e) { console.error("Menu list load error:", e); }
       };
 
       useEffect(() => {
@@ -409,8 +481,10 @@
             await window.POS_GAPI.Menu.add({
               name: form.name, category: form.category,
               price: parseFloat(form.price), description: form.description||"",
-              emoji: form.emoji||"🍽️"
+              emoji: form.emoji||"🍽️",
+              prepTime: cookingRequired ? (form.prepTime || "10 min") : "Bypass Prep"
             });
+            toast("✅ Menu item added successfully!");
             await load();
           } else {
             setItems([...items, { ...form, id: Date.now(), price: parseFloat(form.price) }]);
@@ -418,7 +492,8 @@
         } catch(e) { alert("Save failed: " + e.message); }
         setSaving(false);
         setShowModal(false);
-        setForm({ name:"", category:"Main Course", price:"", status:"active" });
+        setForm({ name:"", category:"Main Course", price:"", description:"", emoji:"🍽️", prepTime:"10 min" });
+        setCookingRequired(true);
       };
 
       const toggleStatus = async (id) => {
@@ -429,8 +504,20 @@
         if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
           try {
             await window.POS_GAPI.Menu.update({ itemId: id, available: newAvail });
+            toast("✅ Item status updated!");
           } catch(e) { console.error("Toggle failed:", e); }
         }
+      };
+
+      const handleDeleteItem = async (itemId) => {
+         if (!confirm("Are you sure you want to delete this menu item permanently?")) return;
+         try {
+             if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+                 await window.POS_GAPI.Menu.delete(itemId);
+                 toast("🗑️ Menu item deleted permanently!");
+                 await load();
+             }
+         } catch(e) { alert("Delete failed: " + e.message); }
       };
 
       const openRecipeEditor = async (item) => {
@@ -444,7 +531,7 @@
               currentRecipe = res.data;
             }
           }
-        } catch(e) { console.warn("No custom recipe in database yet for:", item.name); }
+        } catch(e) { console.warn("No recipe in database yet for:", item.name); }
 
         if (!currentRecipe) {
           currentRecipe = RECIPE_DATA[item.name];
@@ -489,8 +576,9 @@
               cookTime   : recipe.cookTime,
               difficulty : recipe.difficulty,
               ingredients: JSON.stringify(recipe.ingredients.filter(i=>i.name)),
-              steps      : JSON.stringify(recipe.steps.filter(s=>s.title)),
+              steps: JSON.stringify(recipe.steps.filter(s=>s.title)),
             });
+            toast("✅ Recipe saved successfully!");
           }
           RECIPE_DATA[editItem.name] = {
             prepTime: recipe.prepTime, cookTime: recipe.cookTime,
@@ -526,18 +614,28 @@
                     <td><strong>{currency} {parseFloat(item.price).toLocaleString()}</strong></td>
                     <td><span className={`badge ${item.status==="active"?"badge-green":"badge-gray"}`}>{item.status}</span></td>
                     <td>
-                      {(recipesList.includes(item.name) || RECIPE_DATA[item.name])
-                        ? <span className="badge badge-green">✓ Has Recipe</span>
-                        : <span className="badge badge-yellow">No Recipe</span>}
+                      {item.prepTime === "Bypass Prep" ? (
+                        <span className="badge badge-gray">Bypassed (No Cooking)</span>
+                      ) : (recipesList.includes(item.name) || RECIPE_DATA[item.name]) ? (
+                        <span className="badge badge-green">✓ Has Recipe</span>
+                      ) : (
+                        <span className="badge badge-yellow">No Recipe</span>
+                      )}
                     </td>
                     <td style={{display:"flex",gap:"6px"}}>
                       <button className="btn btn-ghost" style={{padding:"5px 10px",fontSize:"12px"}}
                               onClick={()=>toggleStatus(item.id)}>
                         {item.status==="active"?"Disable":"Enable"}
                       </button>
-                      <button className="btn btn-primary" style={{padding:"5px 10px",fontSize:"12px",background:"#667eea"}}
-                              onClick={()=>openRecipeEditor(item)}>
-                        📋 Recipe
+                      {item.prepTime !== "Bypass Prep" && (
+                        <button className="btn btn-primary" style={{padding:"5px 10px",fontSize:"12px",background:"#667eea"}}
+                                onClick={()=>openRecipeEditor(item)}>
+                          📋 Recipe
+                        </button>
+                      )}
+                      <button className="btn btn-danger" style={{padding:"5px 10px",fontSize:"12px"}}
+                              onClick={()=>handleDeleteItem(item.id)}>
+                        🗑️ Delete
                       </button>
                     </td>
                   </tr>
@@ -559,15 +657,36 @@
                   <div className="form-group">
                     <label>Category</label>
                     <select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>
-                      <option>Appetizers</option><option>Main Course</option>
-                      <option>Desserts</option><option>Beverages</option>
+                      <option>Appetizers</option>
+                      <option>Main Course</option>
+                      <option>Desserts</option>
+                      <option>Beverages</option>
                     </select>
                   </div>
                   <div className="form-group">
                     <label>Price ({currency})</label>
                     <input type="number" value={form.price} onChange={e=>setForm({...form,price:e.target.value})} placeholder="0" />
                   </div>
+                  
+                  <div className="form-group" style={{gridColumn:"1/-1", display:"flex", alignItems:"center", gap:"8px"}}>
+                    <input type="checkbox" checked={cookingRequired} onChange={e=>setCookingRequired(e.target.checked)} style={{width:"18px", height:"18px"}}/>
+                    <label style={{margin:0, cursor:"pointer"}}>🍳 Kitchen Prep Required? (Needs Cooking)</label>
+                  </div>
+
+                  {cookingRequired && (
+                    <div className="form-group" style={{gridColumn:"1/-1"}}>
+                      <label>Estimated Prep Time</label>
+                      <input value={form.prepTime} onChange={e=>setForm({...form,prepTime:e.target.value})} placeholder="e.g. 10 min" />
+                    </div>
+                  )}
                 </div>
+                
+                {!cookingRequired && (
+                    <div style={{ background: '#eff6ff', color: '#1e40af', padding: '10px', borderRadius: '8px', fontSize: '11px', marginBottom: '16px', fontWeight: 'bold' }}>
+                        💡 Unticking this bypasses the Chef Prep Display entirely. It will still show on the kitchen monitor but go straight to Waiter Collection!
+                    </div>
+                )}
+
                 <div className="modal-actions">
                   <button className="btn btn-ghost" onClick={()=>setShowModal(false)}>Cancel</button>
                   <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving?"Saving...":"Save Item"}</button>
@@ -769,65 +888,113 @@
         );
     }
 
-    const ROTA_STAFF = ["John Doe","Sarah Lee","Mike Chen","Emma Brown","Tom Wilson"];
-    const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-
-    function StaffWithDrivers() {
+    function StaffWithDrivers({ toast }) {
       const [subTab, setSubTab] = useState("staff");
       const [drivers, setDrivers] = useState([]);
-      const [showAdd, setShowAdd] = useState(false);
+      const [showAddDriver, setShowAddDriver] = useState(false);
+      const [showAddStaff, setShowAddStaff] = useState(false);
       const [saving, setSaving]   = useState(false);
-      const [form, setForm]       = useState({ name:"", email:"", phone:"", vehicle:"", plate:"" });
+      const [driverForm, setDriverForm] = useState({ name:"", email:"", phone:"", vehicle:"", plate:"" });
+      const [staffForm, setStaffForm]   = useState({ name:"", email:"", role:"Waiter" });
       const [staffList, setStaffList] = useState([]);
 
+      const load = async () => {
+        if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
+        try {
+          const [drRes, stRes] = await Promise.all([
+            window.POS_GAPI.Drivers.getAll(),
+            window.POS_GAPI.Staff.getAll(),
+          ]);
+          if (drRes && drRes.data) setDrivers(drRes.data);
+          if (stRes && stRes.data) setStaffList(stRes.data);
+        } catch(e) { console.error("Staff load error:", e); }
+      };
+
       useEffect(() => {
-        async function load() {
-          if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
-          try {
-            const [drRes, stRes] = await Promise.all([
-              window.POS_GAPI.Drivers.getAll(),
-              window.POS_GAPI.Staff.getAll(),
-            ]);
-            if (drRes && drRes.data) setDrivers(drRes.data);
-            if (stRes && stRes.data) setStaffList(stRes.data);
-          } catch(e) { console.error("Staff load error:", e); }
-        }
         load();
         const pollMs = (window.POS_CONFIG && window.POS_CONFIG.POLL_MS) || 5000;
         const iv = setInterval(load, pollMs);
         return () => clearInterval(iv);
       }, []);
 
-      async function addDriver() {
-        if (!form.name || !form.email) { alert("Name and Gmail are required"); return; }
+      const addDriver = async () => {
+        if (!driverForm.name || !driverForm.email) { alert("Name and Gmail are required"); return; }
         setSaving(true);
         try {
           if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
             await window.POS_GAPI.Drivers.add({
-              name: form.name, email: form.email, phone: form.phone,
-              vehicle: form.vehicle, plate: form.plate
+              name: driverForm.name, email: driverForm.email, phone: driverForm.phone,
+              vehicle: driverForm.vehicle, plate: driverForm.plate
             });
             await window.POS_GAPI.Staff.add({
-              name: form.name, email: form.email, role: "Driver"
+              name: driverForm.name, email: driverForm.email, role: "Driver"
             });
-            const res = await window.POS_GAPI.Drivers.getAll();
-            if (res && res.data) setDrivers(res.data);
+            toast("✅ Driver approved successfully!");
+            await load();
           } else {
-            setDrivers([...drivers, { ...form, status:"active", rating:5.0, approved:true }]);
+            setDrivers([...drivers, { ...driverForm, status:"active", rating:5.0, approved:true }]);
           }
-          setForm({ name:"", email:"", phone:"", vehicle:"", plate:"" });
-          setShowAdd(false);
+          setDriverForm({ name:"", email:"", phone:"", vehicle:"", plate:"" });
+          setShowAddDriver(false);
         } catch(e) { alert("Failed to add driver: " + e.message); }
         setSaving(false);
-      }
+      };
+
+      const handleSaveStaff = async () => {
+        if (!staffForm.name || !staffForm.email) { alert("Name and Gmail are required"); return; }
+        setSaving(true);
+        try {
+            if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+                await window.POS_GAPI.Staff.add({
+                    name: staffForm.name,
+                    role: staffForm.role,
+                    email: staffForm.email
+                });
+                toast("✅ Staff member added successfully!");
+                await load();
+            }
+        } catch(e) { alert("Add staff failed: " + e.message); }
+        setSaving(false);
+        setShowAddStaff(false);
+        setStaffForm({ name: "", email: "", role: "Waiter" });
+      };
+
+      const handleDeleteStaff = async (staffId) => {
+         if (!confirm("Are you sure you want to remove this staff member permanently?")) return;
+         try {
+             if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+                 await window.POS_GAPI.Staff.delete(staffId);
+                 toast("🗑️ Staff member removed permanently!");
+                 await load();
+             }
+         } catch(e) { alert("Failed to delete staff: " + e.message); }
+      };
+
+      const handleDeleteDriver = async (driverId, email) => {
+         if (!confirm("Are you sure you want to remove this driver from the database?")) return;
+         try {
+             if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+                 await window.POS_GAPI.deleteRow("Drivers", 0, driverId);
+                 
+                 const matchStaff = staffList.find(s => s.Email === email);
+                 if (matchStaff) {
+                     await window.POS_GAPI.Staff.delete(matchStaff.StaffID);
+                 }
+                 toast("🗑️ Driver deleted permanently!");
+                 await load();
+             }
+         } catch(e) { alert("Delete failed: " + e.message); }
+      };
 
       const displayStaff = staffList.length > 0 
         ? staffList.map(s => ({
+            id: s.StaffID,
             name: s.Name || s.name || "Unknown",
             role: s.Role || s.role || "Staff",
             status: s.Status || s.status || "active",
             orders: parseInt(s.Orders) || 0,
-            tips: s.Tips || "—"
+            tips: s.Tips || "—",
+            email: s.Email
           }))
         : STAFF;
 
@@ -845,7 +1012,7 @@
           {subTab==="staff" && (
             <>
               <div style={{ marginBottom:"16px", display:"flex", justifyContent:"flex-end" }}>
-                <button className="btn btn-primary">+ Add Staff Member</button>
+                <button className="btn btn-primary" onClick={() => setShowAddStaff(true)}>+ Add Staff Member</button>
               </div>
               <div className="staff-grid">
                 {displayStaff.map((s,i)=>(
@@ -854,22 +1021,53 @@
                     <div className="staff-name">{s.name}</div>
                     <div className="staff-role">{s.role}</div>
                     <span className={`badge ${s.status==="active"?"badge-green":"badge-yellow"}`}>{s.status}</span>
-                    <div className="staff-stats" style={{ marginTop:"12px" }}>
+                    <div className="staff-stats" style={{ marginTop:"12px", marginBottom: "14px" }}>
                       {s.role==="Waiter"&&<><span>📋 {s.orders} orders</span><span>💷 {s.tips}</span></>}
                       {s.role==="Chef"&&<span>👨‍🍳 On kitchen</span>}
-                      {s.role==="Manager"&&<span>🏠 In charge</span>}
-                      {s.role==="Driver"&&<span>🚗 On Deliveries</span>}
+                      {s.role==="Manager"&&<span>In charge</span>}
+                      {s.role==="Driver"&&<span>🚗 Delivery</span>}
                     </div>
+                    <button className="btn btn-ghost" style={{ padding: '6px 14px', fontSize: '11px', width: '100%', borderColor: '#ef4444', color: '#ef4444' }} onClick={() => handleDeleteStaff(s.id)}>
+                        🗑️ Delete Permanent
+                    </button>
                   </div>
                 ))}
               </div>
+
+              {showAddStaff && (
+                 <div className="modal-overlay">
+                   <div className="modal">
+                     <h3>Add Roster Staff Member</h3>
+                     <div className="form-group">
+                       <label>Full Name</label>
+                       <input value={staffForm.name} onChange={e=>setStaffForm({...staffForm, name:e.target.value})} placeholder="John Smith"/>
+                     </div>
+                     <div className="form-group">
+                       <label>Gmail Address</label>
+                       <input value={staffForm.email} onChange={e=>setStaffForm({...staffForm, email:e.target.value})} placeholder="johnsmith@gmail.com"/>
+                     </div>
+                     <div className="form-group">
+                       <label>Role</label>
+                       <select value={staffForm.role} onChange={e=>setStaffForm({...staffForm, role:e.target.value})}>
+                           <option>Waiter</option>
+                           <option>Chef</option>
+                           <option>Manager</option>
+                       </select>
+                     </div>
+                     <div className="modal-actions">
+                       <button className="btn btn-ghost" onClick={()=>setShowAddStaff(false)}>Cancel</button>
+                       <button className="btn btn-success" onClick={handleSaveStaff} disabled={saving}>{saving?"Saving...":"✓ Add Staff"}</button>
+                     </div>
+                   </div>
+                 </div>
+              )}
             </>
           )}
 
           {subTab==="drivers" && (
             <>
               <div style={{ marginBottom:"16px", display:"flex", justifyContent:"flex-end" }}>
-                <button className="btn btn-primary" onClick={()=>setShowAdd(true)}>+ Approve Driver Gmail</button>
+                <button className="btn btn-primary" onClick={()=>setShowAddDriver(true)}>+ Approve Driver Gmail</button>
               </div>
               <div className="table-card">
                 <table className="data-table">
@@ -886,7 +1084,7 @@
                         <td><span className={`badge ${(d.approved || d.Approved) ?"badge-green":"badge-red"}`}>
                           {(d.approved || d.Approved) ?"✓ Approved":"Revoked"}
                         </span></td>
-                        <td>
+                        <td style={{ display: 'flex', gap: '6px' }}>
                           <button className="btn btn-ghost" style={{padding:"4px 12px",fontSize:"12px"}}
                             onClick={async ()=>{
                               const currentVal = !!(d.approved || d.Approved);
@@ -895,10 +1093,14 @@
                               if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
                                 try {
                                   await window.POS_GAPI.updateRow("Drivers", 2, d.Email||d.email, {Approved: newVal});
+                                  toast("✅ Driver approval updated!");
                                 } catch(e) { console.error("Revoke failed:", e); }
                               }
                             }}>
                             {(d.approved||d.Approved)?"Revoke":"Re-approve"}
+                          </button>
+                          <button className="btn btn-danger" style={{padding:"4px 12px",fontSize:"12px"}} onClick={() => handleDeleteDriver(d.DriverID, d.Email || d.email)}>
+                              🗑️ Delete
                           </button>
                         </td>
                       </tr>
@@ -907,30 +1109,30 @@
                 </table>
               </div>
 
-              {showAdd && (
+              {showAddDriver && (
                 <div className="modal-overlay">
                   <div className="modal">
                     <h3>Approve Driver Google Account</h3>
                     <div className="form-group">
                       <label>Full Name</label>
-                      <input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Jane Smith"/>
+                      <input value={driverForm.name} onChange={e=>setDriverForm({...driverForm,name:e.target.value})} placeholder="Jane Smith"/>
                     </div>
                     <div className="form-group">
                       <label>Gmail Address ← must match exactly</label>
-                      <input value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="janesmith@gmail.com"/>
+                      <input value={driverForm.email} onChange={e=>setDriverForm({...driverForm,email:e.target.value})} placeholder="janesmith@gmail.com"/>
                     </div>
                     <div className="form-grid">
                       <div className="form-group">
                         <label>Phone</label>
-                        <input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})}/>
+                        <input value={driverForm.phone} onChange={e=>setDriverForm({...driverForm,phone:e.target.value})}/>
                       </div>
                       <div className="form-group">
                         <label>Vehicle</label>
-                        <input value={form.vehicle} onChange={e=>setForm({...form,vehicle:e.target.value})}/>
+                        <input value={driverForm.vehicle} onChange={e=>setDriverForm({...driverForm,vehicle:e.target.value})}/>
                       </div>
                     </div>
                     <div className="modal-actions">
-                      <button className="btn btn-ghost" onClick={()=>setShowAdd(false)}>Cancel</button>
+                      <button className="btn btn-ghost" onClick={()=>setShowAddDriver(false)}>Cancel</button>
                       <button className="btn btn-success" onClick={addDriver} disabled={saving}>{saving?"Saving...":"✓ Approve Driver"}</button>
                     </div>
                   </div>
@@ -1162,42 +1364,6 @@
       );
     }
 
-    const RECIPE_DATA = {
-      "Burger Deluxe": {
-        prepTime:"5 min", cookTime:"12 min", difficulty:"Easy",
-        ingredients:[
-          {name:"Beef patty (180g)",amount:"1 pc"},{name:"Brioche bun",amount:"1 pc"},
-          {name:"Cheddar cheese",amount:"2 slices"},{name:"Lettuce",amount:"2 leaves"},
-          {name:"Tomato",amount:"2 slices"},{name:"Special sauce",amount:"1 tbsp"},
-          {name:"Fries",amount:"150g"}
-        ],
-        steps:[
-          {title:"Prep Ingredients",description:"Slice tomatoes and lettuce. Pat patty dry. Season both sides with salt and pepper.",timerSec:0,tip:"Patty at room temp for even cooking."},
-          {title:"Cook Fries",description:"Place fries in fryer at 180°C. Shake halfway through.",timerSec:600,tip:"Don't overcrowd the basket!"},
-          {title:"Grill Patty",description:"Place patty on hot grill. DO NOT move. Cook 4 min first side.",timerSec:240,tip:"Resist pressing — keeps juices in."},
-          {title:"Add Cheese & Toast Bun",description:"Add cheese on patty. Place bun face-down on grill.",timerSec:60,tip:null},
-          {title:"Assemble & Serve",description:"Bottom bun → sauce → lettuce → tomato → patty → top bun. Serve immediately.",timerSec:0,tip:"Add sauce to top bun too."},
-        ]
-      },
-      "Steak": {
-        prepTime:"5 min", cookTime:"15 min", difficulty:"Medium",
-        ingredients:[
-          {name:"Ribeye steak (250g)",amount:"1 pc"},{name:"Butter",amount:"30g"},
-          {name:"Garlic cloves",amount:"3 pcs"},{name:"Rosemary",amount:"2 sprigs"},
-          {name:"Sea salt & pepper",amount:"To taste"},{name:"Olive oil",amount:"1 tbsp"}
-        ],
-        steps:[
-          {title:"Bring to Room Temp",description:"Remove steak from fridge 15 minutes before. Pat completely dry with paper towel.",timerSec:900,tip:"Dry surface = better sear."},
-          {title:"Season Generously",description:"Season all sides with sea salt and black pepper. Press seasoning firmly.",timerSec:0,tip:null},
-          {title:"Heat Pan",description:"Cast iron on highest heat 3 minutes until smoking. Add olive oil just before steak.",timerSec:180,tip:"Pan must be screaming hot."},
-          {title:"Sear First Side",description:"Place steak away from you. DO NOT MOVE. Sear 2.5 min.",timerSec:150,tip:"Peek for deep brown crust."},
-          {title:"Flip & Baste",description:"Flip steak. Add butter, garlic, rosemary. Tilt pan and baste continuously.",timerSec:120,tip:"Basting constantly adds flavour."},
-          {title:"Rest the Steak",description:"Remove from heat. Tent loosely with foil. Rest 5 minutes — mandatory.",timerSec:300,tip:"Never skip resting — juices redistribute."},
-          {title:"Slice & Plate",description:"Slice against the grain. Pour resting juices over. Serve with sides.",timerSec:0,tip:null},
-        ]
-      },
-    };
-
     const NAV = [
         { icon: "📊", label: "Dashboard", section: "overview" },
         { icon: "📋", label: "Menu Management", section: "menu" },
@@ -1209,12 +1375,18 @@
 
     function ManagerPortal() {
         const [active, setActive] = useState("overview");
+        const [toastMsg, setToastMsg] = useState("");
+
+        const triggerToast = (msg) => {
+            setToastMsg(msg);
+            setTimeout(() => setToastMsg(""), 3000);
+        };
 
         const titles = { 
-          overview: { title: "Dashboard", sub: "Today's overview and analytics" }, 
-          menu: { title: "Menu Management", sub: "Add, edit and manage menu items" }, 
+          overview: { title: "Dashboard", sub: "Live database analysis" }, 
+          menu: { title: "Menu Management", sub: "Add, edit, and delete dishes" }, 
           inventory: { title: "Inventory", sub: "Track and manage stock levels" }, 
-          staff: { title: "Staff Management", sub: "View and manage your team" }, 
+          staff: { title: "Staff Management", sub: "Add or delete team members" }, 
           rota: { title: "Rota Manager", sub: "Build and publish staff schedules" }, 
           clockings: { title: "Team Clockings", sub: "View all staff clock in/out records" } 
         };
@@ -1272,13 +1444,14 @@
                     </div>
                     <div className="page-content">
                         {active === "overview" && <Dashboard />}
-                        {active === "menu" && <MenuManagement />}
+                        {active === "menu" && <MenuManagement toast={triggerToast} />}
                         {active === "inventory" && <Inventory />}
-                        {active === "staff" && <StaffWithDrivers />}
+                        {active === "staff" && <StaffWithDrivers toast={triggerToast} />}
                         {active === "rota" && <RotaManager />}
                         {active === "clockings" && <TeamClockings />}
                     </div>
                 </div>
+                {toastMsg && <div className="notification-toast">{toastMsg}</div>}
             </div>
         );
     }
