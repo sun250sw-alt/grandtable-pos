@@ -161,6 +161,7 @@
 
         /* Form Elements */
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .form-grid.settings-grid { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
         .form-group { margin-bottom: 16px; }
         .form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #444; }
         .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 10px 14px; border: 2px solid #e8e8e8; border-radius: 8px; font-size: 14px; transition: border-color 0.2s; }
@@ -1726,8 +1727,83 @@
       );
     }
 
-    const ROTA_STAFF = ["John Doe","Sarah Lee","Mike Chen","Emma Brown","Tom Wilson"];
-    const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+    function SettingsPage({ toast }) {
+        const [form, setForm] = useState({ name: "", currency: "LKR", tax: "10", delivery: "250", pin: "1234" });
+        const [saving, setSaving] = useState(false);
+
+        const loadSettings = async () => {
+            if (!window.POS_GAPI) return;
+            try {
+                const settings = window.POS_GAPI.getSettings() || {};
+                setForm({
+                    name: settings.restaurant_name || "",
+                    currency: settings.currency || "LKR",
+                    tax: String((parseFloat(settings.tax_rate) || 0.10) * 100),
+                    delivery: String(settings.delivery_fee || "250"),
+                    pin: settings.admin_pin || "1234"
+                });
+            } catch(e) { console.error("Load settings page error:", e); }
+        };
+
+        useEffect(() => {
+            loadSettings();
+        }, []);
+
+        const handleSave = async () => {
+            if (!form.name || !form.pin) { alert("Restaurant Name and PIN are required"); return; }
+            if (form.pin.replace(/\D/g, "").length !== 4) { alert("PIN must be exactly 4 digits"); return; }
+            
+            setSaving(true);
+            try {
+                if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+                    await window.POS_GAPI.Settings.update({
+                        restaurant_name: form.name,
+                        currency: form.currency,
+                        tax_rate: String(parseFloat(form.tax) / 100),
+                        delivery_fee: form.delivery,
+                        admin_pin: form.pin
+                    });
+                    toast("⚙️ Settings updated successfully!");
+                }
+            } catch(e) { alert("Failed to save settings: " + e.message); }
+            setSaving(false);
+        };
+
+        return (
+            <div className="table-card" style={{ padding: "28px" }}>
+                <div className="table-card-header" style={{ borderBottom: "1px solid #f0f0f0", paddingBottom: "14px", marginBottom: "20px" }}>
+                    <div className="table-card-title">⚙️ Restaurant Preferences</div>
+                </div>
+                <div className="form-grid settings-grid" style={{ maxWidth: "600px" }}>
+                    <div className="form-group" style={{ gridColumn: "1/-1" }}>
+                        <label>Restaurant Name</label>
+                        <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. The Grand Table" />
+                    </div>
+                    <div className="form-group">
+                        <label>Currency Symbol / Code</label>
+                        <input value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })} placeholder="LKR" />
+                    </div>
+                    <div className="form-group">
+                        <label>Tax Rate (%)</label>
+                        <input type="number" min="0" max="50" value={form.tax} onChange={e => setForm({ ...form, tax: e.target.value })} placeholder="10" />
+                    </div>
+                    <div className="form-group">
+                        <label>Delivery Fee</label>
+                        <input type="number" min="0" value={form.delivery} onChange={e => setForm({ ...form, delivery: e.target.value })} placeholder="250" />
+                    </div>
+                    <div className="form-group">
+                        <label>🔐 Manager Access PIN (4 digits)</label>
+                        <input type="password" maxLength="4" value={form.pin} onChange={e => setForm({ ...form, pin: e.target.value.replace(/\D/g, "") })} placeholder="1234" />
+                    </div>
+                </div>
+                <div style={{ borderTop: "1px solid #f0f0f0", marginTop: "24px", paddingTop: "20px", maxWidth: "600px" }}>
+                    <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                        {saving ? "Saving Preferences..." : "Save Settings"}
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     const NAV = [
         { icon: "📊", label: "Dashboard", section: "overview" },
@@ -1735,7 +1811,8 @@
         { icon: "📦", label: "Inventory", section: "inventory" },
         { icon: "👥", label: "Staff", section: "staff" },
         { icon: "📅", label: "Rota Manager", section: "rota" },
-        { icon: "🕐", label: "Team Clockings", section: "clockings" }
+        { icon: "🕐", label: "Team Clockings", section: "clockings" },
+        { icon: "⚙️", label: "Settings", section: "settings" }
     ];
 
     function ManagerPortal() {
@@ -1753,7 +1830,8 @@
           inventory: { title: "Inventory", sub: "Track and manage stock levels" }, 
           staff: { title: "Staff Management", sub: "Add or delete team members" }, 
           rota: { title: "Rota Manager", sub: "Build and publish staff schedules" }, 
-          clockings: { title: "Team Clockings", sub: "View all staff clock in/out records" } 
+          clockings: { title: "Team Clockings", sub: "View all staff clock in/out records" },
+          settings: { title: "Settings", sub: "Configure restaurant preferences and security" }
         };
 
         return (
@@ -1814,6 +1892,7 @@
                         {active === "staff" && <StaffWithDrivers toast={triggerToast} />}
                         {active === "rota" && <RotaManager />}
                         {active === "clockings" && <TeamClockings />}
+                        {active === "settings" && <SettingsPage toast={triggerToast} />}
                     </div>
                 </div>
                 {toastMsg && <div className="notification-toast">{toastMsg}</div>}
