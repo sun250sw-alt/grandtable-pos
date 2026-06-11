@@ -554,7 +554,7 @@ window.POS_GAPI = (() => {
       const rows = await getRows("Recipes");
       const existing = rows.find(r => r.DishName && r.DishName.toLowerCase() === data.dishName.toLowerCase());
       if (existing) {
-        await updateRow("Recipes", 1, data.dishName, {
+        await updateRow("Recipes", 1, existing.DishName, {
           PrepTime:data.prepTime||"", CookTime:data.cookTime||"",
           Difficulty:data.difficulty||"Medium",
           Ingredients:data.ingredients||"[]", Steps:data.steps||"[]"
@@ -926,3 +926,5 @@ window.POS_AUTH = (() => {
 
   return { init, signOut, renderBadge, renderUtilBar, openSheet, refreshApp };
 })();
+
+window.POS_API = window.POS_GAPI;
