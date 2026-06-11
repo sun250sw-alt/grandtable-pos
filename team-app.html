@@ -1,1 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Team Portal — The Grand Table</title>
+<script src="pos-config.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:#f0f2f5;min-height:100vh;color:#1a1a2e;}
 
+/* ── APP SHELL ── */
+.app{max-width:480px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;background:#f0f2f5;}
+
+/* ── HEADER ── */
+.header{background:linear-gradient(135deg,#1a1a2e 0%,#2d3561 100%);
+  padding:0;color:#fff;flex-shrink:0;}
+.header-top{display:flex;justify-content:space-between;align-items:center;
+  padding:14px 18px 0;}
+.brand{font-size:13px;font-weight:700;opacity:.5;}
+.signout-btn{background:rgba(255,255,255,.1);border:none;color:rgba(255,255,255,.6);
+  padding:5px 12px;border-radius:8px;font-size:11px;cursor:pointer;}
+.profile-row{display:flex;align-items:center;gap:14px;padding:16px 18px 20px;}
+.avatar{width:52px;height:52px;border-radius:50%;
+  background:linear-gradient(135deg,#667eea,#f39c12);
+  display:flex;align-items:center;justify-content:center;
+  font-size:22px;font-weight:800;color:#fff;flex-shrink:0;}
+.profile-info{}
+.profile-name{font-size:20px;font-weight:800;margin-bottom:2px;}
+.profile-role{font-size:13px;opacity:.5;}
+
+/* Clock-in status chip */
+.clock-chip{display:inline-flex;align-items:center;gap:6px;
+  background:rgba(255,255,255,.1);border-radius:20px;padding:5px 14px;
+  font-size:12px;font-weight:600;margin-top:6px;}
+.clock-chip.in{background:rgba(39,174,96,.25);color:#5dde9a;}
+.clock-chip.out{background:rgba(255,255,255,.08);color:rgba(255,255,255,.45);}
+.chip-dot{width:7px;height:7px;border-radius:50%;}
+.in .chip-dot{background:#27ae60;animation:blink 2s infinite;}
+.out .chip-dot{background:rgba(255,255,255,.3);}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── NAV TABS ── */
+.nav{display:flex;background:#fff;border-bottom:2px solid #eee;flex-shrink:0;}
+.nav-tab{flex:1;padding:12px 0;text-align:center;font-size:11px;font-weight:700;
+  color:#888;cursor:pointer;border-bottom:3px solid transparent;
+  transition:all .2s;text-transform:uppercase;letter-spacing:.5px;}
+.nav-tab.active{color:#1a1a2e;border-bottom-color:#667eea;}
+.nav-tab .tab-icon{font-size:18px;display:block;margin-bottom:2px;}
+
+/* ── CONTENT ── */
+.content{flex:1;overflow-y:auto;padding:16px;}
+
+/* ── DASHBOARD ── */
+.section-title{font-size:13px;font-weight:700;text-transform:uppercase;
+  letter-spacing:1px;color:#888;margin-bottom:12px;}
+
+/* Clock card */
+.clock-card{background:#fff;border-radius:16px;padding:22px 20px;
+  margin-bottom:14px;box-shadow:0 2px 10px rgba(0,0,0,.06);text-align:center;}
+.clock-time{font-size:48px;font-weight:900;font-family:'Courier New',monospace;
+  color:#1a1a2e;line-height:1;margin-bottom:4px;}
+.clock-date{font-size:13px;color:#888;margin-bottom:20px;}
+.clock-btn{width:100%;padding:15px;border:none;border-radius:12px;
+  font-size:16px;font-weight:800;cursor:pointer;transition:all .2s;}
+.clock-btn.clock-in-btn{background:linear-gradient(135deg,#27ae60,#1e8449);color:#fff;
+  box-shadow:0 4px 16px rgba(39,174,96,.35);}
+.clock-btn.clock-out-btn{background:linear-gradient(135deg,#e74c3c,#c0392b);color:#fff;
+  box-shadow:0 4px 16px rgba(231,76,60,.35);}
+.clock-btn:hover{transform:translateY(-1px);}
+.clock-btn:disabled{opacity:.5;cursor:default;transform:none;}
+.clocked-since{font-size:13px;color:#27ae60;font-weight:600;margin-top:10px;}
+
+/* Stats row */
+.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;}
+.stat-box{background:#fff;border-radius:14px;padding:16px 12px;text-align:center;
+  box-shadow:0 2px 8px rgba(0,0,0,.05);}
+.stat-val{font-size:22px;font-weight:900;margin-bottom:3px;}
+.stat-lbl{font-size:11px;color:#888;font-weight:600;}
+
+/* Week rota preview */
+.week-card{background:#fff;border-radius:16px;padding:18px 16px;
+  margin-bottom:14px;box-shadow:0 2px 10px rgba(0,0,0,.06);}
+.week-title{font-size:15px;font-weight:700;margin-bottom:14px;}
+.shift-row{display:flex;align-items:center;gap:12px;padding:10px 0;
+  border-bottom:1px solid #f5f5f5;}
+.shift-row:last-child{border-bottom:none;}
+.shift-day{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;
+  width:32px;flex-shrink:0;}
+.shift-day.today{color:#667eea;}
+.shift-bar{flex:1;background:#f0f0ff;border-radius:8px;padding:8px 12px;
+  border-left:3px solid #667eea;}
+.shift-bar.off{background:#f9f9f9;border-left-color:#ddd;}
+.shift-time{font-size:13px;font-weight:700;color:#1a1a2e;}
+.shift-role{font-size:11px;color:#888;margin-top:1px;}
+.shift-bar.off .shift-time{color:#bbb;}
+.shift-hours{font-size:12px;font-weight:700;color:#667eea;flex-shrink:0;}
+
+/* ── ROTA PAGE ── */
+.month-nav{display:flex;align-items:center;justify-content:space-between;
+  background:#fff;border-radius:14px;padding:14px 16px;margin-bottom:12px;
+  box-shadow:0 2px 8px rgba(0,0,0,.05);}
+.month-nav-btn{background:rgba(102,126,234,.1);border:none;border-radius:8px;
+  width:34px;height:34px;font-size:18px;cursor:pointer;color:#667eea;}
+.month-label{font-size:16px;font-weight:800;}
+
+.calendar{background:#fff;border-radius:16px;overflow:hidden;
+  box-shadow:0 2px 10px rgba(0,0,0,.06);margin-bottom:14px;}
+.cal-header{display:grid;grid-template-columns:repeat(7,1fr);
+  background:#f8f8ff;}
+.cal-day-name{text-align:center;padding:10px 0;font-size:10px;font-weight:700;
+  color:#888;text-transform:uppercase;}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);}
+.cal-cell{min-height:52px;border:1px solid #f5f5f5;padding:4px;
+  display:flex;flex-direction:column;align-items:center;}
+.cal-num{font-size:12px;font-weight:600;color:#888;margin-bottom:2px;}
+.cal-num.today{background:#667eea;color:#fff;width:22px;height:22px;
+  border-radius:50%;display:flex;align-items:center;justify-content:center;}
+.cal-num.other-month{color:#ccc;}
+.shift-dot{width:100%;background:#e8eaff;border-radius:4px;padding:2px 3px;
+  font-size:9px;font-weight:700;color:#667eea;text-align:center;margin-top:1px;}
+.shift-dot.rest{background:#f9f9f9;color:#ccc;}
+
+/* Shift detail list */
+.shift-detail-card{background:#fff;border-radius:14px;padding:16px;
+  margin-bottom:10px;box-shadow:0 2px 8px rgba(0,0,0,.05);
+  border-left:4px solid #667eea;}
+.shift-detail-card.rest{border-left-color:#eee;}
+.sd-date{font-size:12px;color:#888;margin-bottom:4px;}
+.sd-time{font-size:17px;font-weight:800;margin-bottom:2px;}
+.sd-role{font-size:13px;color:#888;}
+.sd-badge{display:inline-block;padding:3px 10px;border-radius:8px;font-size:11px;
+  font-weight:700;margin-top:6px;}
+.badge-confirmed{background:#d5f5e3;color:#27ae60;}
+.badge-pending{background:#fef9e7;color:#d4ac0d;}
+
+/* ── HOURS PAGE ── */
+.hours-hero{background:linear-gradient(135deg,#667eea,#764ba2);
+  border-radius:16px;padding:24px 20px;color:#fff;text-align:center;
+  margin-bottom:14px;box-shadow:0 4px 20px rgba(102,126,234,.35);}
+.hours-big{font-size:56px;font-weight:900;line-height:1;}
+.hours-sub{font-size:14px;opacity:.75;margin-top:6px;}
+.hours-meta{display:flex;justify-content:center;gap:24px;margin-top:16px;font-size:13px;}
+.hours-meta span{opacity:.75;}
+.hours-meta strong{opacity:1;}
+
+.week-breakdown{background:#fff;border-radius:16px;padding:18px 16px;
+  margin-bottom:14px;box-shadow:0 2px 10px rgba(0,0,0,.06);}
+.wb-row{display:flex;justify-content:space-between;align-items:center;
+  padding:10px 0;border-bottom:1px solid #f5f5f5;}
+.wb-row:last-child{border-bottom:none;}
+.wb-week{font-size:14px;font-weight:600;}
+.wb-right{display:flex;align-items:center;gap:12px;}
+.wb-bar-wrap{width:80px;height:6px;background:#f0f0ff;border-radius:3px;overflow:hidden;}
+.wb-bar{height:100%;background:#667eea;border-radius:3px;}
+.wb-hrs{font-size:14px;font-weight:800;color:#667eea;min-width:36px;text-align:right;}
+
+/* ── CLOCKINGS PAGE ── */
+.clocking-card{background:#fff;border-radius:14px;padding:16px;
+  margin-bottom:10px;box-shadow:0 2px 8px rgba(0,0,0,.05);}
+.clocking-date{font-size:12px;color:#888;font-weight:600;margin-bottom:8px;}
+.clocking-times{display:flex;gap:16px;align-items:center;margin-bottom:6px;}
+.ct-box{flex:1;}
+.ct-label{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;}
+.ct-time{font-size:18px;font-weight:800;}
+.ct-time.in{color:#27ae60;}
+.ct-time.out{color:#e74c3c;}
+.ct-arrow{font-size:20px;color:#ddd;}
+.clocking-total{display:flex;justify-content:space-between;align-items:center;
+  padding-top:8px;border-top:1px solid #f5f5f5;}
+.ct-status-badge{font-size:11px;font-weight:700;padding:3px 10px;border-radius:8px;}
+.ct-total{font-size:16px;font-weight:800;color:#667eea;}
+.status-complete{background:#d5f5e3;color:#27ae60;}
+.status-active{background:#fef3c7;color:#f39c12;}
+
+/* ── MISC ── */
+.empty{text-align:center;padding:48px 20px;color:#bbb;}
+.empty-icon{font-size:48px;margin-bottom:12px;}
+.empty-text{font-size:15px;font-weight:600;margin-bottom:4px;color:#aaa;}
+.empty-sub{font-size:13px;}
+.loading{text-align:center;padding:40px;color:#aaa;font-size:14px;}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  background:#1a1a2e;color:#fff;padding:12px 24px;border-radius:12px;
+  font-size:14px;font-weight:600;z-index:9999;box-shadow:0 8px 24px rgba(0,0,0,.3);
+  animation:toastin .3s ease;}
+.toast.success{border-left:4px solid #27ae60;}
+.toast.error{border-left:4px solid #e74c3c;}
+@keyframes toastin{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+</style>
+</head>
+<body>
+<div id="app" class="app" style="display:none">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-top">
+      <div class="brand">🍽️ The Grand Table</div>
+      <div id="user-badge" style="display:flex;align-items:center;gap:6px;"></div>
+      <button class="signout-btn" onclick="doSignOut()">Sign out</button>
+    </div>
+    <div class="profile-row">
+      <div class="avatar" id="hdr-avatar">?</div>
+      <div class="profile-info">
+        <div class="profile-name" id="hdr-name">Loading…</div>
+        <div class="profile-role" id="hdr-role"></div>
+        <div class="clock-chip out" id="clock-status-chip">
+          <div class="chip-dot"></div>
+          <span id="chip-label">Not clocked in</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NAV -->
+  <div class="nav">
+    <div class="nav-tab active" onclick="switchTab('dashboard')">
+      <span class="tab-icon">🏠</span>Today
+    </div>
+    <div class="nav-tab" onclick="switchTab('rota')">
+      <span class="tab-icon">📅</span>Rota
+    </div>
+    <div class="nav-tab" onclick="switchTab('hours')">
+      <span class="tab-icon">⏱</span>Hours
+    </div>
+    <div class="nav-tab" onclick="switchTab('clockings')">
+      <span class="tab-icon">🕐</span>Clockings
+    </div>
+  </div>
+
+  <!-- CONTENT -->
+  <div class="content" id="content">
+    <div class="loading">Loading your data…</div>
+  </div>
+
+</div><!-- /app -->
+
+<div id="loading-placeholder" style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:sans-serif;background:#f0f2f5;">
+  <div style="font-size:40px">👥</div>
+  <div style="font-size:16px;font-weight:700">Team Portal</div>
+  <div style="font-size:13px;color:#888">Verifying roster profile...</div>
+</div>
+
+<script>
+let SESSION  = null;   
+let STATE    = {
+  tab        : "dashboard",
+  clockedIn  : false,
+  clockInTime: null,
+  rota       : [],
+  clockings  : [],
+  hours      : null,
+  month      : new Date().getMonth() + 1,
+  year       : new Date().getFullYear(),
+};
+
+function doSignOut() {
+  localStorage.removeItem("pos_session");
+  if (window.google?.accounts?.id) google.accounts.id.disableAutoSelect();
+  location.reload();
+}
+
+function initHeader() {
+  const name = SESSION.name || SESSION.staffData?.Name || "Team Member";
+  const role = SESSION.staffData?.Role || "Staff";
+  var avatarEl = document.getElementById("hdr-avatar");
+  var nameEl = document.getElementById("hdr-name");
+  var roleEl = document.getElementById("hdr-role");
+  if (avatarEl) avatarEl.textContent = name.charAt(0).toUpperCase();
+  if (nameEl) nameEl.textContent   = name;
+  if (roleEl) roleEl.textContent   = role;
+}
+
+function updateLiveClock() {
+  const el = document.getElementById("live-clock");
+  if (el) el.textContent = new Date().toLocaleTimeString("en-GB");
+}
+setInterval(updateLiveClock, 1000);
+
+function switchTab(tab) {
+  STATE.tab = tab;
+  document.querySelectorAll(".nav-tab").forEach((t,i) => {
+    t.classList.toggle("active", ["dashboard","rota","hours","clockings"][i] === tab);
+  });
+  render();
+}
+
+async function loadAll() {
+  const email = SESSION.email;
+  const m     = STATE.month;
+  const y     = STATE.year;
+  const api   = window.POS_GAPI || window.POS_API;
+  
+  if (api && !api.getSheetId()) {
+    try { await api.initUserSheet(); } catch(e){}
+  }
+
+  if (!api || !api.getSheetId || !api.getSheetId()) {
+    STATE.rota      = DEMO_ROTA;
+    STATE.clockings = DEMO_CLOCKINGS;
+    STATE.hours     = DEMO_HOURS;
+  } else {
+    const [rotaRes, clockingsRes, hoursRes] = await Promise.all([
+      api.Team.getRota(email, m, y),
+      api.Team.getClockings(email, m),
+      api.Team.getHours(email, m, y),
+    ]);
+    STATE.rota      = (rotaRes      && rotaRes.data)      || DEMO_ROTA;
+    STATE.clockings = (clockingsRes && clockingsRes.data) || DEMO_CLOCKINGS;
+    STATE.hours     = (hoursRes     && hoursRes.data)     || DEMO_HOURS;
+  }
+
+  const todayStr = new Date().toISOString().split("T")[0];
+  const todayClocking = STATE.clockings.find(c => c.Date === todayStr && c.Status === "in");
+  if (todayClocking) {
+    STATE.clockedIn   = true;
+    STATE.clockInTime = todayClocking.ClockIn;
+    updateClockChip(true, todayClocking.ClockIn);
+  }
+
+  render();
+}
+
+function updateClockChip(clockedIn, time) {
+  const chip  = document.getElementById("clock-status-chip");
+  const label = document.getElementById("chip-label");
+  if (!chip || !label) return;
+  chip.className  = `clock-chip ${clockedIn ? "in" : "out"}`;
+  label.textContent = clockedIn ? `Clocked in at ${time}` : "Not clocked in";
+}
+
+function render() {
+  const content = document.getElementById("content");
+  if (!content) return;
+  switch(STATE.tab) {
+    case "dashboard" : content.innerHTML = renderDashboard(); break;
+    case "rota"      : content.innerHTML = renderRota();      break;
+    case "hours"     : content.innerHTML = renderHours();     break;
+    case "clockings" : content.innerHTML = renderClockings(); break;
+  }
+  updateLiveClock();
+}
+
+function renderDashboard() {
+  const today    = new Date();
+  const todayStr = today.toISOString().split("T")[0];
+  const todayShift = STATE.rota.find(r => r.Date === todayStr);
+  const h = STATE.hours || {};
+  const weekShifts = getThisWeekShifts();
+  const monthDays  = (STATE.clockings||[]).filter(c => c.Status === "out").length;
+
+  return `
+  <!-- Clock card -->
+  <div class="clock-card">
+    <div class="clock-time" id="live-clock">${new Date().toLocaleTimeString("en-GB")}</div>
+    <div class="clock-date">${today.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"})}</div>
+    ${STATE.clockedIn
+      ? `<button class="clock-btn clock-out-btn" onclick="handleClockOut()">🔴 Clock Out</button>
+         <div class="clocked-since">Clocked in since ${STATE.clockInTime}</div>`
+      : `<button class="clock-btn clock-in-btn" onclick="handleClockIn()">🟢 Clock In</button>`
+    }
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-box">
+      <div class="stat-val" style="color:#667eea">${(h.totalHours||0).toFixed(1)}</div>
+      <div class="stat-lbl">Hrs This Month</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" style="color:#27ae60">${monthDays}</div>
+      <div class="stat-lbl">Days Worked</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" style="color:#f39c12">${STATE.rota.length}</div>
+      <div class="stat-lbl">Shifts Scheduled</div>
+    </div>
+  </div>
+
+  <!-- Today's shift -->
+  ${todayShift ? `
+  <div class="week-card">
+    <div class="week-title">📋 Today's Shift</div>
+    <div class="shift-detail-card">
+      <div class="sd-time">${todayShift.ShiftStart} – ${todayShift.ShiftEnd}</div>
+      <div class="sd-role">${todayShift.Role||""}${todayShift.Location?" · "+todayShift.Location:""}</div>
+      ${todayShift.Notes?`<div class="sd-role" style="margin-top:4px;color:#f39c12">💬 ${todayShift.Notes}</div>`:""}
+      <span class="sd-badge badge-confirmed">✓ Confirmed</span>
+    </div>
+  </div>` : `
+  <div class="week-card">
+    <div class="week-title">📋 Today's Shift</div>
+    <div style="text-align:center;padding:16px;color:#aaa;font-size:14px;">No shift scheduled today</div>
+  </div>`}
+
+  <!-- This week -->
+  <div class="section-title">This Week</div>
+  <div class="week-card">
+    ${weekShifts.map(d => {
+      const isToday = d.dateStr === todayStr;
+      const hrs = d.shift ? calcHours(d.shift.ShiftStart, d.shift.ShiftEnd) : null;
+      return `
+      <div class="shift-row">
+        <div class="shift-day ${isToday?"today":""}">${d.dayLabel}</div>
+        ${d.shift
+          ? `<div class="shift-bar" style="flex:1">
+               <div class="shift-time">${d.shift.ShiftStart} – ${d.shift.ShiftEnd}</div>
+               <div class="shift-role">${d.shift.Role||""}</div>
+             </div>
+             <div class="shift-hours">${hrs}h</div>`
+          : `<div class="shift-bar off" style="flex:1"><div class="shift-time">Day off</div></div>
+             <div class="shift-hours" style="color:#ccc">—</div>`}
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+function renderRota() {
+  const months = ["January","February","March","April","May","June",
+                  "July","August","September","October","November","December"];
+  const cal    = buildCalendar(STATE.month, STATE.year, STATE.rota);
+
+  return `
+  <!-- Month nav -->
+  <div class="month-nav">
+    <button class="month-nav-btn" onclick="changeMonth(-1)">‹</button>
+    <div class="month-label">${months[STATE.month-1]} ${STATE.year}</div>
+    <button class="month-nav-btn" onclick="changeMonth(1)">›</button>
+  </div>
+
+  <!-- Calendar -->
+  <div class="calendar">
+    <div class="cal-header">
+      ${["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>`<div class="cal-day-name">${d}</div>`).join("")}
+    </div>
+    <div class="cal-grid">
+      ${cal.map(cell => {
+        const todayStr = new Date().toISOString().split("T")[0];
+        const isToday  = cell.dateStr === todayStr;
+        return `<div class="cal-cell">
+          <div class="cal-num ${isToday?"today":""} ${!cell.inMonth?"other-month":""}">${cell.day}</div>
+          ${cell.shift
+            ? `<div class="shift-dot">${cell.shift.ShiftStart.slice(0,5)}</div>`
+            : cell.inMonth ? `<div class="shift-dot rest">off</div>` : ""}
+        </div>`;
+      }).join("")}
+    </div>
+  </div>
+
+  <!-- Shift list -->
+  <div class="section-title">Scheduled Shifts</div>
+  ${STATE.rota.length === 0
+    ? `<div class="empty"><div class="empty-icon">📅</div>
+       <div class="empty-text">No shifts scheduled</div>
+       <div class="empty-sub">Check back later or ask your manager</div></div>`
+    : STATE.rota.sort((a,b) => new Date(a.Date) - new Date(b.Date)).map(s => {
+        const d   = new Date(s.Date);
+        const hrs = calcHours(s.ShiftStart, s.ShiftEnd);
+        return `
+        <div class="shift-detail-card">
+          <div class="sd-date">${d.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"})}</div>
+          <div class="sd-time">${s.ShiftStart} – ${s.ShiftEnd} <span style="font-size:13px;color:#667eea;font-weight:600">(${hrs}h)</span></div>
+          <div class="sd-role">${s.Role||""}${s.Location?" · "+s.Location:""}</div>
+          ${s.Notes?`<div class="sd-role" style="color:#f39c12;margin-top:4px;">💬 ${s.Notes}</div>`:""}
+          <span class="sd-badge ${s.Status==="confirmed"?"badge-confirmed":"badge-pending"}">
+            ${s.Status==="confirmed"?"✓ Confirmed":"⏳ Pending"}
+          </span>
+        </div>`;
+      }).join("")
+  }`;
+}
+
+function renderHours() {
+  const months = ["January","February","March","April","May","June",
+                  "July","August","September","October","November","December"];
+  const h   = STATE.hours || { totalHours:0, totalDays:0, byWeek:{} };
+  const max = Math.max(...Object.values(h.byWeek||{}).map(Number), 1);
+
+  return `
+  <!-- Month nav -->
+  <div class="month-nav">
+    <button class="month-nav-btn" onclick="changeMonth(-1)">‹</button>
+    <div class="month-label">${months[STATE.month-1]} ${STATE.year}</div>
+    <button class="month-nav-btn" onclick="changeMonth(1)">›</button>
+  </div>
+
+  <!-- Hero total -->
+  <div class="hours-hero">
+    <div class="hours-big">${h.totalHours.toFixed(1)}</div>
+    <div class="hours-sub">Total hours worked</div>
+    <div class="hours-meta">
+      <span><strong>${h.totalDays}</strong> days</span>
+      <span><strong>${(h.totalHours/Math.max(h.totalDays,1)).toFixed(1)}</strong> avg/day</span>
+      <span><strong>LKR ${(h.totalHours*600).toFixed(0)}</strong> est. pay</span>
+    </div>
+  </div>
+
+  <!-- Weekly breakdown -->
+  <div class="section-title">Weekly Breakdown</div>
+  <div class="week-breakdown">
+    ${Object.entries(h.byWeek||{}).length === 0
+      ? `<div style="text-align:center;padding:16px;color:#aaa">No hours recorded yet</div>`
+      : Object.entries(h.byWeek).map(([week, hrs]) => `
+        <div class="wb-row">
+          <div class="wb-week">Week ${week}</div>
+          <div class="wb-right">
+            <div class="wb-bar-wrap">
+              <div class="wb-bar" style="width:${Math.round((+hrs/max)*100)}%"></div>
+            </div>
+            <div class="wb-hrs">${(+hrs).toFixed(1)}h</div>
+          </div>
+        </div>`).join("")
+    }
+  </div>
+
+  <!-- Target vs actual -->
+  <div class="week-card">
+    <div class="week-title">📊 Month Summary</div>
+    ${[
+      ["Total Hours",      `${h.totalHours.toFixed(1)} hrs`,  "#667eea"],
+      ["Days Worked",      `${h.totalDays} days`,             "#27ae60"],
+      ["Avg Per Day",      `${(h.totalHours/Math.max(h.totalDays,1)).toFixed(1)} hrs`, "#f39c12"],
+      ["Est. Earnings",    `LKR ${(h.totalHours*600).toFixed(2)}`, "#1a1a2e"],
+    ].map(([label, val, color]) => `
+      <div class="wb-row">
+        <div class="wb-week">${label}</div>
+        <div style="font-size:15px;font-weight:800;color:${color}">${val}</div>
+      </div>`).join("")}
+  </div>`;
+}
+
+function renderClockings() {
+  const months = ["January","February","March","April","May","June",
+                  "July","August","September","October","November","December"];
+
+  return `
+  <div class="month-nav">
+    <button class="month-nav-btn" onclick="changeMonth(-1)">‹</button>
+    <div class="month-label">${months[STATE.month-1]} ${STATE.year}</div>
+    <button class="month-nav-btn" onclick="changeMonth(1)">›</button>
+  </div>
+  ${STATE.clockings.length === 0
+    ? `<div class="empty"><div class="empty-icon">🕐</div>
+       <div class="empty-text">No clockings recorded</div>
+       <div class="empty-sub">Use the Today tab to clock in and out</div></div>`
+    : [...STATE.clockings].reverse().map(c => {
+        const d = new Date(c.Date);
+        const isActive = c.Status === "in";
+        return `
+        <div class="clocking-card">
+          <div class="clocking-date">${d.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"})}</div>
+          <div class="clocking-times">
+            <div class="ct-box">
+              <div class="ct-label">Clock In</div>
+              <div class="ct-time in">${c.ClockIn || "—"}</div>
+            </div>
+            <div class="ct-arrow">→</div>
+            <div class="ct-box">
+              <div class="ct-label">Clock Out</div>
+              <div class="ct-time out">${c.ClockOut || (isActive?"Still in":"—")}</div>
+            </div>
+          </div>
+          <div class="clocking-total">
+            <span class="ct-status-badge ${isActive?"status-active":"status-complete"}">
+              ${isActive?"🟡 Active":"✅ Complete"}
+            </span>
+            <div class="ct-total">${isActive?"Working…":`${(+c.TotalHours||0).toFixed(2)} hrs`}</div>
+          </div>
+        </div>`;
+      }).join("")
+  }`;
+}
+
+async function handleClockIn() {
+  const btn = document.querySelector(".clock-in-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "Clocking in…"; }
+
+  const api = window.POS_GAPI || window.POS_API;
+  const res = await api.Team.clockIn({ email:SESSION.email, name:SESSION.name });
+  if (res.data && res.data.clockedIn) {
+    STATE.clockedIn   = true;
+    STATE.clockInTime = res.data.clockedIn;
+    STATE.clockings   = (await api.Team.getClockings(SESSION.email, STATE.month)).data || STATE.clockings;
+    updateClockChip(true, res.data.clockedIn);
+    showToast("✅ Clocked in at " + res.data.clockedIn, "success");
+    render();
+  } else {
+    showToast(res.data?.error || "Clock in failed", "error");
+    if (btn) { btn.disabled = false; btn.textContent = "🟢 Clock In"; }
+  }
+}
+
+async function handleClockOut() {
+  const btn = document.querySelector(".clock-out-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "Clocking out…"; }
+
+  const api = window.POS_GAPI || window.POS_API;
+  const res = await api.Team.clockOut({ email:SESSION.email });
+  if (res.data && res.data.clockedOut) {
+    STATE.clockedIn   = false;
+    STATE.clockInTime = null;
+    const [clockingsRes, hoursRes] = await Promise.all([
+      api.Team.getClockings(SESSION.email, STATE.month),
+      api.Team.getHours(SESSION.email, STATE.month, STATE.year),
+    ]);
+    STATE.clockings = clockingsRes.data || STATE.clockings;
+    STATE.hours     = hoursRes.data    || STATE.hours;
+    updateClockChip(false);
+    showToast(`✅ Clocked out — ${res.data.totalHours}h today`, "success");
+    render();
+  } else {
+    showToast(res.data?.error || "Clock out failed", "error");
+    if (btn) { btn.disabled = false; btn.textContent = "🔴 Clock Out"; }
+  }
+}
+
+async function changeMonth(delta) {
+  STATE.month += delta;
+  if (STATE.month > 12) { STATE.month = 1;  STATE.year++; }
+  if (STATE.month < 1)  { STATE.month = 12; STATE.year--; }
+  document.getElementById("content").innerHTML = `<div class="loading">Loading…</div>`;
+  await loadAll();
+}
+
+function calcHours(start, end) {
+  if (!start || !end) return 0;
+  const [sh,sm] = start.split(":").map(Number);
+  const [eh,em] = end.split(":").map(Number);
+  return +((eh*60+em - sh*60-sm)/60).toFixed(1);
+}
+
+function getThisWeekShifts() {
+  const today   = new Date();
+  const dow     = (today.getDay() + 6) % 7; 
+  const days    = [];
+  const labels  = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - dow + i);
+    const str = d.toISOString().split("T")[0];
+    days.push({
+      dayLabel: labels[i],
+      dateStr : str,
+      shift   : STATE.rota.find(r => r.Date === str),
+    });
+  }
+  return days;
+}
+
+function buildCalendar(month, year, rota) {
+  const first = new Date(year, month-1, 1);
+  const last  = new Date(year, month, 0);
+  const cells = [];
+  let dow = (first.getDay() + 6) % 7; 
+
+  for (let i = 0; i < dow; i++) {
+    const d = new Date(year, month-1, -dow+1+i);
+    cells.push({ day:d.getDate(), inMonth:false, dateStr:"", shift:null });
+  }
+  for (let d = 1; d <= last.getDate(); d++) {
+    const date = new Date(year, month-1, d);
+    const str  = date.toISOString().split("T")[0];
+    cells.push({ day:d, inMonth:true, dateStr:str,
+                 shift: rota.find(r => r.Date === str) || null });
+  }
+  const rem = (7 - cells.length % 7) % 7;
+  for (let i = 1; i <= rem; i++) {
+    cells.push({ day:i, inMonth:false, dateStr:"", shift:null });
+  }
+  return cells;
+}
+
+function showToast(msg, type="success") {
+  const t = document.createElement("div");
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+const today = new Date();
+const todayStr = today.toISOString().split("T")[0];
+function demoDate(delta) {
+  const d = new Date(); d.setDate(d.getDate()+delta);
+  return d.toISOString().split("T")[0];
+}
+
+const DEMO_ROTA = [
+  { RotaID:"r1", StaffEmail:"demo@demo.com", StaffName:"Demo", Date:todayStr,       ShiftStart:"09:00", ShiftEnd:"17:00", Role:"Waiter",    Location:"Floor 1", Notes:"", Status:"confirmed" },
+  { RotaID:"r2", StaffEmail:"demo@demo.com", StaffName:"Demo", Date:demoDate(1),    ShiftStart:"12:00", ShiftEnd:"20:00", Role:"Waiter",    Location:"Floor 1", Notes:"", Status:"confirmed" },
+  { RotaID:"r3", StaffEmail:"demo@demo.com", StaffName:"Demo", Date:demoDate(3),    ShiftStart:"10:00", ShiftEnd:"18:00", Role:"Waiter",    Location:"Bar",     Notes:"Cover for Sarah", Status:"pending" },
+  { RotaID:"r4", StaffEmail:"demo@demo.com", StaffName:"Demo", Date:demoDate(-1),   ShiftStart:"09:00", ShiftEnd:"17:00", Role:"Waiter",    Location:"Floor 1", Notes:"", Status:"confirmed" },
+  { RotaID:"r5", StaffEmail:"demo@demo.com", StaffName:"Demo", Date:demoDate(-3),   ShiftStart:"14:00", ShiftEnd:"22:00", Role:"Waiter",    Location:"Floor 2", Notes:"", Status:"confirmed" },
+];
+
+const DEMO_CLOCKINGS = [
+  { ClockingID:"c1", Date:todayStr,     ClockIn:"09:03", ClockOut:"",      TotalHours:0,   Status:"in"  },
+  { ClockingID:"c2", Date:demoDate(-1), ClockIn:"09:02", ClockOut:"17:05", TotalHours:8.0, Status:"out" },
+  { ClockingID:"c3", Date:demoDate(-2), ClockIn:"12:01", ClockOut:"20:10", TotalHours:8.1, Status:"out" },
+  { ClockingID:"c4", Date:demoDate(-3), ClockIn:"14:05", ClockOut:"22:00", TotalHours:7.9, Status:"out" },
+  { ClockingID:"c5", Date:demoDate(-6), ClockIn:"09:00", ClockOut:"17:00", TotalHours:8.0, Status:"out" },
+];
+
+const DEMO_HOURS = {
+  totalHours:32.0, totalDays:4,
+  byWeek:{ 1:16.0, 2:16.0 },
+  month: today.getMonth()+1, year: today.getFullYear(),
+};
+</script>
+<script>
+(function() {
+  function startAuth() {
+    if (typeof POS_AUTH === "undefined") {
+      console.error("POS_AUTH failed to load");
+      return;
+    }
+    POS_AUTH.init("team-app", {
+      onReady: function(session) {
+        SESSION = session;
+        var root = document.getElementById("app");
+        if (root) root.style.display = "flex";
+        var loader = document.getElementById("loading-placeholder");
+        if (loader) loader.style.display = "none";
+        
+        initHeader();
+        loadAll();
+
+        setTimeout(function() {
+          if (typeof POS_AUTH.renderUtilBar === "function") {
+            POS_AUTH.renderUtilBar("user-badge", "team-app");
+          }
+        }, 500);
+      },
+      onError: function(msg) { console.error("Auth error:", msg); }
+    });
+  }
+
+  if (typeof POS_AUTH !== "undefined") {
+    startAuth();
+  } else {
+    var tries = 0;
+    var iv = setInterval(function() {
+      tries++;
+      if (typeof POS_AUTH !== "undefined") { clearInterval(iv); startAuth(); }
+      else if (tries > 50) { clearInterval(iv); startAuth(); }
+    }, 100);
+  }
+})();
+</script>
+</body>
+</html>
