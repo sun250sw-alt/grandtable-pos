@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Waiter App - Restaurant POS</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -461,6 +461,7 @@
 </head>
 <body>
     <div id="root" style="display: none;"></div>
+    
     <div id="loading-placeholder" style="display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; flex-direction: column; gap: 12px;">
         <div style="font-size:40px">🧑‍💼</div>
         <div style="font-size:16px;font-weight:700">Waiter Terminal</div>
@@ -802,7 +803,9 @@
             );
         }
 
-        ReactDOM.render(<WaiterApp />, document.getElementById('root'));
+        window.startWaiterApp = function() {
+            ReactDOM.render(<WaiterApp />, document.getElementById('root'));
+        };
     </script>
 
 
@@ -819,6 +822,11 @@
         if (root) root.style.display = "block";
         var loader = document.getElementById("loading-placeholder");
         if (loader) loader.style.display = "none";
+        
+        if (typeof window.startWaiterApp === "function") {
+            window.startWaiterApp();
+        }
+
         setTimeout(function() {
           if (typeof POS_AUTH.renderUtilBar === "function") {
             POS_AUTH.renderUtilBar("user-badge", "waiter-app");
