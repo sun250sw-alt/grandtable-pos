@@ -256,9 +256,9 @@
 <body>
 <div id="root"></div>
 <script type="text/babel">
-    const { useState } = React;
+    const { useState, useEffect } = React;
 
-    const MENU = [
+    const DEFAULT_MENU = [
         { id:1, name:"Burger Deluxe", cat:"Main Course", price:12.99, emoji:"🍔", desc:"Beef patty, cheddar, special sauce, fries", popular:true },
         { id:2, name:"Fish & Chips", cat:"Main Course", price:13.99, emoji:"🐟", desc:"Beer-battered cod with tartare sauce", popular:false },
         { id:3, name:"Steak", cat:"Main Course", price:24.99, emoji:"🥩", desc:"8oz ribeye, choice of sides & sauce", popular:true },
@@ -274,7 +274,6 @@
         { id:13, name:"Coffee", cat:"Beverages", price:2.49, emoji:"☕", desc:"Espresso, latte, cappuccino", popular:false },
     ];
 
-    const CATS = ["All", "Popular", "Main Course", "Appetizers", "Desserts", "Beverages"];
     const TRACKING_STEPS = [
         { icon:"✅", name:"Order Received", desc:"Your order is confirmed", done:true, active:false },
         { icon:"👨‍🍳", name:"Being Prepared", desc:"Kitchen is making your food", done:false, active:true },
@@ -284,21 +283,56 @@
     ];
 
     function CustomerApp() {
+        const [menuItems, setMenuItems] = useState(DEFAULT_MENU);
         const [cart, setCart] = useState({});
-        const [screen, setScreen] = useState("menu"); // menu | checkout | tracking
-        const [mode, setMode] = useState("delivery"); // delivery | pickup
+        const [screen, setScreen] = useState("menu"); 
+        const [mode, setMode] = useState("delivery"); 
         const [cat, setCat] = useState("All");
         const [search, setSearch] = useState("");
         const [form, setForm] = useState({ name:'', phone:'', address:'', notes:'' });
+        const [currency, setCurrency] = useState("Rs.");
 
-        const filtered = MENU.filter(item => {
+        useEffect(() => {
+            async function loadLiveMenu() {
+                if (window.POS_GAPI) {
+                    try {
+                        if (!window.POS_GAPI.getSheetId()) {
+                            await window.POS_GAPI.initUserSheet();
+                        }
+                        
+                        const settings = window.POS_GAPI.getSettings();
+                        if (settings && settings.currency) {
+                            setCurrency(settings.currency + " ");
+                        }
+
+                        const res = await window.POS_GAPI.Menu.getAll();
+                        if (res && res.data && res.data.length > 0) {
+                            setMenuItems(res.data.map(i => ({
+                                id: i.ItemID || i.Name,
+                                name: i.Name,
+                                cat: i.Category,
+                                price: parseFloat(i.Price) || 0,
+                                emoji: i.Emoji || "🍽️",
+                                desc: i.Description || "",
+                                popular: false
+                            })));
+                        }
+                    } catch(e) { console.warn("Live sheets connection bypassed, using defaults:", e); }
+                }
+            }
+            loadLiveMenu();
+        }, []);
+
+        const cats = ["All", "Popular", ...new Set(menuItems.map(item => item.cat))];
+
+        const filtered = menuItems.filter(item => {
             const matchCat = cat === "All" ? true : cat === "Popular" ? item.popular : item.cat === cat;
             const matchSearch = item.name.toLowerCase().includes(search.toLowerCase());
             return matchCat && matchSearch;
         });
 
         const totalItems = Object.values(cart).reduce((s, q) => s + q, 0);
-        const subtotal = MENU.reduce((s, item) => s + (cart[item.id] || 0) * item.price, 0);
+        const subtotal = menuItems.reduce((s, item) => s + (cart[item.id] || 0) * item.price, 0);
         const delivery = mode === "delivery" && subtotal > 0 ? 2.50 : 0;
         const total = subtotal + delivery;
 
@@ -310,7 +344,23 @@
             });
         };
 
-        const cartItems = MENU.filter(item => cart[item.id] > 0);
+        const cartItems = menuItems.filter(item => cart[item.id] > 0);
+
+        const handlePlaceOrder = async () => {
+            if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+                try {
+                    await window.POS_GAPI.Orders.create({
+                        tableNumber: mode === "pickup" ? 0 : 99, 
+                        customerName: form.name || "Online Guest",
+                        waiterName: "Online App",
+                        items: cartItems.map(item => ({ name: item.name, qty: cart[item.id], price: item.price })),
+                        subtotal: subtotal,
+                        notes: form.notes || ""
+                    });
+                } catch(e) { console.error("Could not write online order to database:", e); }
+            }
+            setScreen("tracking");
+        };
 
         if (screen === "tracking") {
             return (
@@ -358,7 +408,7 @@
                                         <div className="checkout-item-name">{item.emoji} {item.name}</div>
                                         <div className="checkout-item-qty">× {cart[item.id]}</div>
                                     </div>
-                                    <div className="checkout-item-price">Rs.{(item.price * cart[item.id]).toFixed(2)}</div>
+                                    <div className="checkout-item-price">{currency}{(item.price * cart[item.id]).toFixed(2)}</div>
                                 </div>
                             ))}
                         </div>
@@ -371,12 +421,12 @@
                         </div>
                         <div className="checkout-section">
                             <h3>Order Total</h3>
-                            <div className="totals-row"><span>Subtotal</span><span>Rs.{subtotal.toFixed(2)}</span></div>
-                            {mode === "delivery" && <div className="totals-row"><span>Delivery fee</span><span>Rs.{delivery.toFixed(2)}</span></div>}
-                            <div className="totals-row total"><span>Total</span><span>Rs.{total.toFixed(2)}</span></div>
+                            <div className="totals-row"><span>Subtotal</span><span>{currency}{subtotal.toFixed(2)}</span></div>
+                            {mode === "delivery" && <div className="totals-row"><span>Delivery fee</span><span>{currency}{delivery.toFixed(2)}</span></div>}
+                            <div className="totals-row total"><span>Total</span><span>{currency}{total.toFixed(2)}</span></div>
                         </div>
-                        <button className="place-order-btn" onClick={() => setScreen("tracking")}>
-                            Place Order · Rs.{total.toFixed(2)}
+                        <button className="place-order-btn" onClick={handlePlaceOrder}>
+                            Place Order · {currency}{total.toFixed(2)}
                         </button>
                     </div>
                 </div>
@@ -397,7 +447,7 @@
                     <div className="hero-sub">Hot & delicious, {mode === 'delivery' ? 'delivered to your door' : 'ready for collection'}</div>
                     <div className="hero-badges">
                         <span className="hero-badge">⏱ 25-35 min</span>
-                        <span className="hero-badge">🚗 Rs.2.50 delivery</span>
+                        <span className="hero-badge">🚗 {currency}2.50 delivery</span>
                         <span className="hero-badge">⭐ 4.8 (320 reviews)</span>
                     </div>
                 </div>
@@ -408,7 +458,7 @@
                 </div>
 
                 <div className="categories">
-                    {CATS.map(c => <button key={c} className={`cat-chip ${cat === c ? 'active' : ''}`} onClick={() => setCat(c)}>{c}</button>)}
+                    {cats.map(c => <button key={c} className={`cat-chip ${cat === c ? 'active' : ''}`} onClick={() => setCat(c)}>{c}</button>)}
                 </div>
 
                 <div className="section-title">
@@ -424,7 +474,7 @@
                                 <div className="menu-card-name">{item.name}{item.popular && <span className="tag-new">Popular</span>}</div>
                                 <div className="menu-card-desc">{item.desc}</div>
                                 <div className="menu-card-bottom">
-                                    <div className="menu-card-price">Rs.{item.price.toFixed(2)}</div>
+                                    <div className="menu-card-price">{currency}{item.price.toFixed(2)}</div>
                                     {cart[item.id] ? (
                                         <div className="qty-control">
                                             <button className="qty-btn-sm" onClick={() => setQty(item.id, -1)}>−</button>
@@ -446,7 +496,7 @@
                             <div className="cart-count">{totalItems}</div>
                             <div className="cart-label">View Order</div>
                         </div>
-                        <div className="cart-total">Rs.{total.toFixed(2)} →</div>
+                        <div className="cart-total">{currency}{total.toFixed(2)} →</div>
                     </div>
                 )}
             </div>
