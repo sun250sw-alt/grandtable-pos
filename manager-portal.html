@@ -240,6 +240,43 @@
 <script type="text/babel">
     const { useState, useEffect } = React;
 
+    // Placed at the top to avoid TDZ compile errors
+    const RECIPE_DATA = {
+      "Burger Deluxe": {
+        prepTime:"5 min", cookTime:"12 min", difficulty:"Easy",
+        ingredients:[
+          {name:"Beef patty (180g)",amount:"1 pc"},{name:"Brioche bun",amount:"1 pc"},
+          {name:"Cheddar cheese",amount:"2 slices"},{name:"Lettuce",amount:"2 leaves"},
+          {name:"Tomato",amount:"2 slices"},{name:"Special sauce",amount:"1 tbsp"},
+          {name:"Fries",amount:"150g"}
+        ],
+        steps:[
+          {title:"Prep Ingredients",description:"Slice tomatoes and lettuce. Pat patty dry. Season both sides with salt and pepper.",timerSec:120,tip:"Patty at room temp for even cooking."},
+          {title:"Cook Fries",description:"Place fries in fryer at 180°C. Shake halfway through.",timerSec:300,tip:"Don't overcrowd the basket!"},
+          {title:"Grill Patty",description:"Place patty on hot grill. DO NOT move. Cook 4 min first side.",timerSec:240,tip:"Resist pressing — keeps juices in."},
+          {title:"Add Cheese & Toast Bun",description:"Add cheese on patty. Place bun face-down on grill.",timerSec:60,tip:null},
+          {title:"Assemble & Serve",description:"Bottom bun → sauce → lettuce → tomato → patty → top bun. Serve immediately.",timerSec:45,tip:"Add sauce to top bun too."},
+        ]
+      },
+      "Steak": {
+        prepTime:"5 min", cookTime:"15 min", difficulty:"Medium",
+        ingredients:[
+          {name:"Ribeye steak (250g)",amount:"1 pc"},{name:"Butter",amount:"30g"},
+          {name:"Garlic cloves",amount:"3 pcs"},{name:"Rosemary",amount:"2 sprigs"},
+          {name:"Sea salt & pepper",amount:"To taste"},{name:"Olive oil",amount:"1 tbsp"}
+        ],
+        steps:[
+          {title:"Bring to Room Temp",description:"Remove steak from fridge 15 minutes before. Pat completely dry with paper towel.",timerSec:900,tip:"Dry surface = better sear."},
+          {title:"Season Generously",description:"Season all sides with sea salt and black pepper. Press seasoning firmly.",timerSec:30,tip:null},
+          {title:"Heat Pan",description:"Cast iron on highest heat 3 minutes until smoking. Add olive oil just before steak.",timerSec:180,tip:"Pan must be screaming hot."},
+          {title:"Sear First Side",description:"Place steak away from you. DO NOT MOVE. Sear 2.5 min.",timerSec:150,tip:"Peek for deep brown crust."},
+          {title:"Flip & Baste",description:"Flip steak. Add butter, garlic, rosemary. Tilt pan and baste continuously.",timerSec:120,tip:"Basting constantly adds flavour."},
+          {title:"Rest the Steak",description:"Remove from heat. Tent loosely with foil. Rest 5 minutes — mandatory.",timerSec:300,tip:"Never skip resting — juices redistribute."},
+          {title:"Slice & Plate",description:"Slice against the grain. Pour resting juices over. Serve with sides.",timerSec:45,tip:null},
+        ]
+      },
+    };
+
     const STAFF = [
         { name: "John Doe", role: "Waiter", status: "active", orders: 18, tips: "Rs.420" },
         { name: "Sarah Lee", role: "Waiter", status: "active", orders: 22, tips: "Rs.580" },
@@ -275,8 +312,8 @@
                     window.POS_GAPI.getRows("Orders"),
                     window.POS_GAPI.getRows("Tables")
                 ]);
-                if (ordRes) setOrdersList(ordRes);
-                if (tblRes) setTablesList(tblRes);
+                if (ordRes) setOrdersList(ordRes.filter(o => o !== null && o !== undefined));
+                if (tblRes) setTablesList(tblRes.filter(t => t !== null && t !== undefined));
             } catch(e) { console.error("Dashboard stats sync error:", e); }
         };
 
@@ -452,14 +489,24 @@
 
         try {
           const res = await window.POS_GAPI.Menu.getAll();
-          if (res && res.data) setItems(res.data.map(i => ({
-            id: i.ItemID, name: i.Name || "", category: i.Category || "Main Course",
-            price: parseFloat(i.Price)||0, status: String(i.Available).toLowerCase()==="false"?"inactive":"active",
-            description: i.Description||"", emoji: i.Emoji||"🍽️", prepTime: i.PrepTime || ""
-          })));
+          if (res && res.data) {
+              setItems(res.data
+                .filter(i => i !== null && i !== undefined)
+                .map(i => ({
+                  id: i.ItemID, name: i.Name || "", category: i.Category || "Main Course",
+                  price: parseFloat(i.Price)||0, status: String(i.Available).toLowerCase()==="false"?"inactive":"active",
+                  description: i.Description||"", emoji: i.Emoji||"🍽️", prepTime: i.PrepTime || ""
+                }))
+              );
+          }
 
           const recs = await window.POS_GAPI.getRows("Recipes");
-          if (recs) setRecipesList(recs.map(r => r.DishName || ""));
+          if (recs) {
+              setRecipesList(recs
+                .filter(r => r !== null && r !== undefined)
+                .map(r => r.DishName || "")
+              );
+          }
         } catch(e) { console.error("Menu list load error:", e); }
       };
 
@@ -910,8 +957,12 @@
             window.POS_GAPI.Drivers.getAll(),
             window.POS_GAPI.Staff.getAll(),
           ]);
-          if (drRes && drRes.data) setDrivers(drRes.data);
-          if (stRes && stRes.data) setStaffList(stRes.data);
+          if (drRes && drRes.data) {
+              setDrivers(drRes.data.filter(d => d !== null && d !== undefined));
+          }
+          if (stRes && stRes.data) {
+              setStaffList(stRes.data.filter(s => s !== null && s !== undefined));
+          }
         } catch(e) { console.error("Staff load error:", e); }
       };
 
@@ -1001,7 +1052,15 @@
             tips: s.Tips || "—",
             email: s.Email
           }))
-        : STAFF;
+        : STAFF.map((s, idx) => ({
+            id: s.StaffID || "STF-DEMO-" + idx,
+            name: s.name || s.Name || "Unknown",
+            role: s.role || s.Role || "Staff",
+            status: s.status || s.Status || "active",
+            orders: parseInt(s.orders) || 0,
+            tips: s.tips || "—",
+            email: s.email || ""
+          }));
 
       return (
         <>
@@ -1537,7 +1596,7 @@
             'onmousedown="this.style.background=\'rgba(243,156,18,.25)\'" ' +
             'onmouseup="this.style.background=\'rgba(255,255,255,.05)\'">' + k + '</button>';
         }).join('') +
-      '</div>' +
+      }
       '<div id="pin-err" style="color:#e74c3c;font-size:13px;min-height:18px;margin-bottom:12px"></div>' +
       '<button onclick="localStorage.removeItem(\'pos_session\');location.href=\'index.html\'" ' +
         'style="background:none;border:none;color:rgba(255,255,255,.25);font-size:12px;cursor:pointer;">Sign out</button>' +
