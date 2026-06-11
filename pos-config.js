@@ -723,20 +723,20 @@ window.POS_AUTH = (() => {
             await POS_GAPI.initUserSheet();
             onReady && onReady(POS_GAPI.getSession());
           } else {
-            window.location.href = "index.html?redirect=" + encodeURIComponent(location.href);
+            _showSignIn(appId, onReady, onError);
           }
         });
       } else {
-        window.location.href = "index.html?redirect=" + encodeURIComponent(location.href);
+        _showSignIn(appId, onReady, onError);
       }
       return;
     }
 
     if (mode === "pin") {
       const saved = _savedSession();
-      if (!saved) { window.location.href = "index.html?redirect=" + encodeURIComponent(location.href); return; }
+      if (!saved) { _showSignIn(appId, onReady, onError); return; }
       POS_GAPI.silentSignIn(async (s) => {
-        if (!s) { window.location.href = "index.html"; return; }
+        if (!s) { _showSignIn(appId, onReady, onError); return; }
         await POS_GAPI.initUserSheet();
         _showPinModal(POS_GAPI.getSession(), onReady, onError);
       });
@@ -783,24 +783,38 @@ window.POS_AUTH = (() => {
           ${POS_CONFIG.RESTAURANT_NAME}
         </h1>
         <p style="color:rgba(255,255,255,.4);font-size:14px;margin-bottom:32px">
-          Sign in to continue
+          Authenticate your restaurant terminal
         </p>
-        <div id="gsi-wall-btn" style="display:flex;justify-content:center"></div>
+        <button id="gsi-trigger-btn" style="background:#fff; color:#333; border:none;
+          padding:12px 24px; border-radius:8px; font-size:15px; font-weight:700;
+          cursor:pointer; display:inline-flex; align-items:center; gap:10px;
+          box-shadow:0 4px 12px rgba(0,0,0,0.15); transition:background 0.2s;">
+          <svg width="18" height="18" viewBox="0 0 18 18">
+            <path fill="#4285F4" d="M17.64 9.2c0-.63-.06-1.25-.16-1.84H9v3.47h4.84c-.15.79-.6 1.46-1.28 1.92v2.4h2.07c1.21-1.11 1.9-2.75 1.9-4.57z"/>
+            <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.07-2.4c-.58.39-1.32.62-2.2.62-1.69 0-3.13-1.14-3.64-2.67H4.72v2.48C6.2 16.92 7.48 18 9 18z"/>
+            <path fill="#FBBC05" d="M5.36 11.37c-.13-.39-.2-.8-.2-1.22s.07-.83.2-1.22V6.45H4.72a9 9 0 0 0 0 7.41l.64-2.49z"/>
+            <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.47 1.15 11.43.5 9 .5 7.48.5 6.2 1.58 4.72 2.97l2.48 2.48c.51-1.53 1.95-2.67 3.64-2.67z"/>
+          </svg>
+          Sign In with Google
+        </button>
         <div id="gsi-wall-err" style="color:#e74c3c;font-size:13px;margin-top:16px"></div>
       </div>`;
     document.body.appendChild(wall);
 
-    POS_GAPI.signIn(async (session, err) => {
-      if (err || !session) {
-        document.getElementById("gsi-wall-err").textContent = "Sign-in failed. Please try again.";
-        return;
-      }
-      if (wall.parentNode) document.body.removeChild(wall);
+    document.getElementById("gsi-trigger-btn").addEventListener("click", () => {
+      document.getElementById("gsi-wall-err").textContent = "Opening Google popup...";
+      POS_GAPI.signIn(async (session, err) => {
+        if (err || !session) {
+          document.getElementById("gsi-wall-err").textContent = "Sign-in failed. Please try again.";
+          return;
+        }
+        if (wall.parentNode) document.body.removeChild(wall);
 
-      if (appId === "index" || appId === "hub") {
-        await POS_GAPI.initUserSheet();
-      }
-      onReady && onReady(session);
+        if (appId === "index" || appId === "hub") {
+          await POS_GAPI.initUserSheet();
+        }
+        onReady && onReady(session);
+      });
     });
   }
 
