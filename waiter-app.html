@@ -650,3 +650,471 @@
                 setOrderItems(orderItems.map(item => {
                     if (item.id === itemId) {
                         const newQty = item.quantity + delta;
+                        return newQty > 0 ? { ...item, quantity: newQty } : null;
+                    }
+                    return item;
+                }).filter(Boolean));
+            };
+
+            const calculateTotal = () => {
+                return orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            };
+
+            const handleSendToKitchen = async () => {
+                if (orderItems.length === 0) {
+                    showNotification("Please add items to the order!", "error");
+                    return;
+                }
+
+                try {
+                    const subtotal = calculateTotal();
+                    await window.POS_GAPI.Orders.create({
+                        tableNumber  : selectedTable.number,
+                        waiterName   : currentServer,
+                        items        : orderItems.map(i => ({ name:i.name, qty:i.quantity, price:i.price })),
+                        subtotal     : subtotal,
+                        notes        : "",
+                    });
+                    await window.POS_GAPI.Tables.update({
+                        tableNumber  : selectedTable.number,
+                        status       : "occupied",
+                        currentWaiter: currentServer,
+                        guests       : selectedTable.guests || 2,
+                    });
+                    showNotification(`Order sent to kitchen for Table ${selectedTable.number}!`);
+                    
+                    setCurrentServer(null);
+                    setSelectedTable(null);
+                    setOrderItems([]);
+                    loadData();
+                } catch(e) {
+                    showNotification("Failed to save order: " + e.message, "error");
+                }
+            };
+
+            const handleDeliverOrder = async (orderId) => {
+                try {
+                    await window.POS_GAPI.Orders.update({ orderId, status: "served" });
+                    await window.POS_GAPI.Tables.update({
+                        tableNumber: selectedTable.number,
+                        status: "delivered",
+                        currentWaiter: currentServer,
+                        guests: selectedTable.guests
+                    });
+                    showNotification("Order marked as delivered!");
+                    setSelectedTable(prev => prev ? { ...prev, status: "delivered" } : null);
+                    loadData();
+                } catch(e) {
+                    showNotification("Failed to deliver order: " + e.message, "error");
+                }
+            };
+
+            const handleProcessPayment = async (orderId) => {
+                try {
+                    await window.POS_GAPI.Orders.update({ orderId, status: "closed" });
+                    await window.POS_GAPI.Tables.update({
+                        tableNumber: selectedTable.number,
+                        status: "paid",
+                        currentWaiter: currentServer,
+                        guests: selectedTable.guests
+                    });
+                    showNotification("Payment processed successfully!");
+                    setSelectedTable(prev => prev ? { ...prev, status: "paid" } : null);
+                    loadData();
+                } catch(e) {
+                    showNotification("Failed to process payment: " + e.message, "error");
+                }
+            };
+
+            const handleClearTable = async () => {
+                if (!selectedTable) return;
+
+                try {
+                    await window.POS_GAPI.Tables.update({
+                        tableNumber  : selectedTable.number,
+                        status       : "available",
+                        currentWaiter: "",
+                        guests       : 0,
+                    });
+                    showNotification(`Table ${selectedTable.number} cleared and ready!`);
+                    
+                    setCurrentServer(null);
+                    setSelectedTable(null);
+                    setOrderItems([]);
+                    loadData();
+                } catch(e) {
+                    showNotification("Failed to clean table: " + e.message, "error");
+                }
+            };
+
+            // Locate active order for currently highlighted table (if any)
+            const activeOrderForTable = selectedTable 
+                ? liveOrders.find(o => 
+                    parseInt(o.TableNumber) === parseInt(selectedTable.number) && 
+                    o.Status !== "closed"
+                  )
+                : null;
+
+            // ── SCREEN A: Server Selection Home Screen ──
+            if (!currentServer) {
+                const defaultStaffList = ["John Doe", "Sarah Lee", "Mike Chen", "Emma Brown"];
+                const renderList = staff.length > 0 ? staff.map(s => s.Name) : defaultStaffList;
+
+                return (
+                    <div className="app-container">
+                        <div className="header">
+                            <h1>🍽️ The Grand Table POS</h1>
+                            <div id="user-badge"></div>
+                        </div>
+                        <div className="server-screen">
+                            <div style={{ fontSize: "52px" }}>🧑‍💼</div>
+                            <h2 style={{ fontSize: "24px", fontWeight: "800", marginTop: "12px" }}>Who is serving today?</h2>
+                            <p style={{ color: "#666", marginTop: "4px" }}>Select your name to access the terminal floorplan</p>
+                            <div className="server-grid">
+                                {renderList.map((name, i) => (
+                                    <div key={i} className="server-card" onClick={() => setCurrentServer(name)}>
+                                        <div className="server-avatar">{name.charAt(0)}</div>
+                                        <div className="server-name">{name}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // ── SCREEN B: Active Tables and Floorplan ──
+            return (
+                <div className="app-container">
+                    <div className="header">
+                        <div>
+                            <h1>🍽️ Waiter App</h1>
+                        </div>
+                        <div id="user-badge" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}></div>
+                        <div className="header-info">
+                            <button className="btn btn-ghost" style={{ padding: '8px 14px', marginRight: '10px' }} onClick={() => { setCurrentServer(null); setSelectedTable(null); setOrderItems([]); }}>
+                                ↩ Switch Server
+                            </button>
+                            <div>Server: <strong>{currentServer}</strong></div>
+                            <div>{new Date().toLocaleDateString()}</div>
+                        </div>
+                    </div>
+
+                    <div className="main-layout">
+                        {/* Tables Panel with Live Alert ready-badges */}
+                        <div className="panel">
+                            <h2>Tables</h2>
+                            <div className="tables-grid">
+                                {tables.map(table => {
+                                    const matchOrder = liveOrders.find(o => parseInt(o.TableNumber) === parseInt(table.number) && o.Status !== "closed");
+                                    const isFoodReady = matchOrder && matchOrder.Status === "ready";
+                                    
+                                    // Map dynamic styling depending on active checkout sub-state
+                                    let statusClass = "available";
+                                    if (table.status === "occupied" || (matchOrder && ["new", "preparing"].includes(matchOrder.Status))) {
+                                        statusClass = "occupied";
+                                    } else if (table.status === "delivered" || (matchOrder && matchOrder.Status === "served")) {
+                                        statusClass = "delivered";
+                                    } else if (table.status === "paid") {
+                                        statusClass = "paid";
+                                    }
+
+                                    return (
+                                        <div
+                                            key={table.id}
+                                            className={`table-card ${statusClass} ${selectedTable?.id === table.id ? 'selected' : ''}`}
+                                            onClick={() => handleTableSelect(table)}
+                                        >
+                                            {isFoodReady && <div className="ready-badge">🔔 Food Ready</div>}
+                                            <div className="table-number">Table {table.number}</div>
+                                            <div className="table-status">
+                                                <span className={`badge badge-${statusClass}`}>
+                                                    {statusClass}
+                                                </span>
+                                            </div>
+                                            <div className="table-guests">
+                                                {table.guests ? `${table.guests} guests` : `Seats ${table.capacity}`}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Menu Panel */}
+                        <div className="panel">
+                            <h2>Menu</h2>
+                            
+                            <input
+                                type="text"
+                                className="search-box"
+                                placeholder="🔍 Search menu items..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+
+                            <div className="menu-categories">
+                                {categories.map(cat => (
+                                    <button
+                                        key={cat}
+                                        className={`category-btn ${selectedCategory === cat ? 'active' : ''}`}
+                                        onClick={() => setSelectedCategory(cat)}
+                                    >
+                                        {cat}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="menu-items">
+                                {filteredMenu.map(item => (
+                                    <div
+                                        key={item.id}
+                                        className="menu-item"
+                                        onClick={() => addToOrder(item)}
+                                    >
+                                        <div className="menu-item-name">{item.name}</div>
+                                        <div className="menu-item-price">{currency} {item.price.toFixed(2)}</div>
+                                        <div className="menu-item-desc">{item.description}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Order Detail Panel & Live Kitchen Tracking */}
+                        <div className="panel">
+                            <div className="order-header">
+                                <h2>Current Order</h2>
+                                {selectedTable && (
+                                    <span className="badge badge-warning">
+                                        Table {selectedTable.number}
+                                    </span>
+                                )}
+                            </div>
+
+                            {!selectedTable ? (
+                                <div className="empty-state">
+                                    <div className="empty-state-icon">🍽️</div>
+                                    <div>Select a table to start</div>
+                                </div>
+                            ) : selectedTable.status === "paid" ? (
+                                // ── 1. Table is Paid: Dedicated Clearing State View ──
+                                <div>
+                                    <div className="progress-box" style={{ borderLeft: "4px solid #10b981", background: "#f0fdf4" }}>
+                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                            <div>
+                                                <strong style={{ fontSize: "16px", color: "#065f46" }}>💵 Table Paid</strong>
+                                                <div style={{ fontSize: "12px", color: "#047857", marginTop: "2px" }}>Paid. Ready for clean.</div>
+                                            </div>
+                                            <span className="progress-status" style={{ background: "#d1fae5", color: "#065f46" }}>Paid</span>
+                                        </div>
+                                    </div>
+                                    <div className="action-buttons" style={{ marginTop: "20px" }}>
+                                        <button className="btn btn-success" onClick={handleClearTable} style={{ fontSize: "15px", padding: "16px" }}>
+                                            🧹 Clear & Clean Table
+                                        </button>
+                                        <button className="btn btn-ghost" onClick={() => setSelectedTable(null)}>
+                                            ← Back to Tables
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : activeOrderForTable ? (
+                                // ── 2. Table is Occupied: Show active dishes & elapsed timers ──
+                                <div>
+                                    <div className="progress-box">
+                                        <div className="progress-header">
+                                            <div>
+                                                <strong style={{ fontSize: "14px" }}>{activeOrderForTable.OrderID}</strong>
+                                                <div style={{ fontSize: "11px", color: "#666", marginTop: "2px" }}>Order Status</div>
+                                            </div>
+                                            <div style={{ textAlign: "right" }}>
+                                                {activeOrderForTable.Status !== "served" && <OrderTimer orderTime={activeOrderForTable.OrderTime} />}
+                                                <div style={{ marginTop: "4px" }}>
+                                                    <span className={`progress-status ${
+                                                        activeOrderForTable.Status === 'ready' ? 'status-ready' : 
+                                                        activeOrderForTable.Status === 'preparing' ? 'status-cooking' : 
+                                                        activeOrderForTable.Status === 'served' ? 'status-delivered' : 'status-queue'
+                                                    }`}>
+                                                        {activeOrderForTable.Status === 'ready' ? 'Ready' : 
+                                                         activeOrderForTable.Status === 'preparing' ? 'Cooking' : 
+                                                         activeOrderForTable.Status === 'served' ? 'Served' : 'In Queue'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ margin: "12px 0 6px" }}>
+                                            <strong style={{ fontSize: "12px", textTransform: "uppercase", color: "#888" }}>Dishes Ordered:</strong>
+                                        </div>
+                                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                                            {(() => {
+                                                let parsed = [];
+                                                try { parsed = JSON.parse(activeOrderForTable.Items); } catch(e){}
+                                                return parsed.map((item, idx) => {
+                                                    let itemStatusText = "⏳ Queued";
+                                                    let statusColor = "#667eea";
+                                                    
+                                                    if (activeOrderForTable.Status === 'served') {
+                                                        itemStatusText = "✓ Delivered";
+                                                        statusColor = "#7e22ce";
+                                                    } else if (item.status === "ready") {
+                                                        itemStatusText = "✅ Ready";
+                                                        statusColor = "#10b981";
+                                                    } else if (item.status === "preparing" || item.chef) {
+                                                        itemStatusText = `👨‍🍳 Cook (${item.chef || "Chef"})`;
+                                                        statusColor = "#f59e0b";
+                                                    }
+                                                    
+                                                    return (
+                                                        <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "14px" }}>
+                                                            <span>{item.qty || item.quantity}× {item.name || item.Name}</span>
+                                                            <span style={{ fontWeight: "600", color: statusColor }}>
+                                                                {itemStatusText}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                });
+                                            })()}
+                                        </div>
+                                    </div>
+
+                                    <div className="order-summary" style={{ borderTop: "none", marginTop: 0 }}>
+                                        <div className="summary-row" style={{ fontWeight: "700", fontSize: "16px", color: "#1a1a2e" }}>
+                                            <span>Active Total:</span>
+                                            <span>{currency} {parseFloat(activeOrderForTable.Total).toFixed(2)}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="action-buttons">
+                                        {/* Deliver Option: Only available when order is ready */}
+                                        {activeOrderForTable.Status === "ready" && (
+                                            <button className="btn btn-success" onClick={() => handleDeliverOrder(activeOrderForTable.OrderID)}>
+                                                🚀 Deliver Order to Table
+                                            </button>
+                                        )}
+
+                                        {/* Payment Option: Visible after food is delivered, but before cleaning */}
+                                        {activeOrderForTable.Status === "served" && (
+                                            <button className="btn btn-secondary" onClick={() => handleProcessPayment(activeOrderForTable.OrderID)}>
+                                                💷 Checkout & Pay Bill
+                                            </button>
+                                        )}
+
+                                        <button className="btn btn-ghost" onClick={() => setSelectedTable(null)}>
+                                            ← Back to Tables
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : orderItems.length === 0 ? (
+                                <div className="empty-state">
+                                    <div className="empty-state-icon">📝</div>
+                                    <div>No active order</div>
+                                    <div style={{ fontSize: '12px', marginTop: '8px' }}>
+                                        Click menu items on the left to build order
+                                    </div>
+                                </div>
+                            ) : (
+                                // ── Table is available/building: Show cart ──
+                                <>
+                                    <div className="order-items">
+                                        {orderItems.map(item => (
+                                            <div key={item.id} className="order-item">
+                                                <div className="order-item-info">
+                                                    <div className="order-item-name">{item.name}</div>
+                                                    <div className="order-item-price">
+                                                        {currency} {item.price.toFixed(2)} × {item.quantity} = {currency} {(item.price * item.quantity).toFixed(2)}
+                                                    </div>
+                                                </div>
+                                                <div className="order-item-qty">
+                                                    <button className="qty-btn" onClick={() => updateQuantity(item.id, -1)}>−</button>
+                                                    <span className="qty-number">{item.quantity}</span>
+                                                    <button className="qty-btn" onClick={() => updateQuantity(item.id, 1)}>+</button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <div className="order-summary">
+                                        <div className="summary-row">
+                                            <span>Subtotal:</span>
+                                            <span>{currency} {calculateTotal().toFixed(2)}</span>
+                                        </div>
+                                        <div className="summary-row">
+                                            <span>Tax (10%):</span>
+                                            <span>{currency} {(calculateTotal() * 0.1).toFixed(2)}</span>
+                                        </div>
+                                        <div className="summary-row total">
+                                            <span>Total:</span>
+                                            <span>{currency} {(calculateTotal() * 1.1).toFixed(2)}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="action-buttons">
+                                        <button className="btn btn-primary" onClick={handleSendToKitchen}>
+                                            📤 Send to Kitchen
+                                        </button>
+                                        <button className="btn btn-danger" onClick={() => setOrderItems([])}>
+                                            🗑️ Clear Cart
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+
+                    {notification && (
+                        <div className={`notification ${notification.type}`}>
+                            {notification.message}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        window.startWaiterApp = function() {
+            ReactDOM.render(<WaiterApp />, document.getElementById('root'));
+        };
+    </script>
+
+
+<script>
+(function() {
+  function startAuth() {
+    if (typeof POS_AUTH === "undefined") {
+      console.error("POS_AUTH failed to load");
+      return;
+    }
+    POS_AUTH.init("waiter-app", {
+      onReady: function(session) {
+        var root = document.getElementById("root");
+        if (root) root.style.display = "block";
+        var loader = document.getElementById("loading-placeholder");
+        if (loader) loader.style.display = "none";
+        
+        if (typeof window.startWaiterApp === "function") {
+            window.startWaiterApp();
+        }
+
+        setTimeout(function() {
+          if (typeof POS_AUTH.renderUtilBar === "function") {
+            POS_AUTH.renderUtilBar("user-badge", "waiter-app");
+          }
+        }, 500);
+      },
+      onError: function(msg) { console.error("Auth error:", msg); }
+    });
+  }
+
+  if (typeof POS_AUTH !== "undefined") {
+    startAuth();
+  } else {
+    var tries = 0;
+    var iv = setInterval(function() {
+      tries++;
+      if (typeof POS_AUTH !== "undefined") { clearInterval(iv); startAuth(); }
+      else if (tries > 50) { clearInterval(iv); startAuth(); }
+    }, 100);
+  }
+})();
+</script>
+</body>
+</html>
