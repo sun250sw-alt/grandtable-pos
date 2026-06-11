@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1443,6 +1444,46 @@
       const [showModal, setShowModal]   = useState(false);
       const [editCell, setEditCell]     = useState(null);
       const [form, setForm]             = useState({ start:"09:00", end:"17:00", role:"Waiter", notes:"" });
+      const [staffNames, setStaffNames] = useState([]);
+
+      const loadRotaAndStaff = async () => {
+        if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
+        try {
+          // 1. Pull dynamic roster names directly from sheets database
+          const staffRes = await window.POS_GAPI.Staff.getAll();
+          if (staffRes && staffRes.data) {
+              const activeNames = staffRes.data
+                .filter(s => s !== null && s !== undefined && s.Status === "active")
+                .map(s => s.Name);
+              setStaffNames(activeNames);
+          }
+
+          // 2. Pull dynamic shift schedules directly from sheets database
+          const rotaRes = await window.POS_GAPI.getRows("Rota");
+          if (rotaRes) {
+              const map = {};
+              rotaRes.filter(r => r !== null && r !== undefined).forEach(r => {
+                const key = r.StaffName + "|" + r.Date;
+                map[key] = {
+                  id: r.RotaID,
+                  start: r.ShiftStart,
+                  end: r.ShiftEnd,
+                  role: r.Role,
+                  notes: r.Notes || "",
+                  status: r.Status || "confirmed"
+                };
+              });
+              setRota(map);
+          }
+        } catch(e) { console.error("Rota load error:", e); }
+      };
+
+      useEffect(() => {
+        loadRotaAndStaff();
+        const pollMs = (window.POS_CONFIG && window.POS_CONFIG.POLL_MS) || 5000;
+        const iv = setInterval(loadRotaAndStaff, pollMs);
+        return () => clearInterval(iv);
+      }, []);
 
       function getWeekDates() {
         return DAYS.map((_,i) => {
@@ -1467,21 +1508,42 @@
         setShowModal(true);
       }
 
-      function saveShift() {
+      const saveShift = async () => {
         if (!editCell) return;
-        setRota(prev => ({ ...prev, [editCell.key]: form }));
-        setShowModal(false);
-      }
+        const existing = rota[editCell.key];
+        try {
+            if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+                const dateStr = editCell.date.toISOString().split("T")[0];
+                if (existing && existing.id) {
+                    await window.POS_GAPI.updateRow("Rota", 0, existing.id, {
+                        ShiftStart: form.start,
+                        ShiftEnd: form.end,
+                        Role: form.role,
+                        Notes: form.notes
+                    });
+                } else {
+                    const id = window.POS_GAPI.uid("ROT");
+                    await window.POS_GAPI.appendRow("Rota", [
+                        id, "", editCell.staff, dateStr, form.start, form.end, form.role, "", form.notes, "confirmed"
+                    ]);
+                }
+                await loadRotaAndStaff();
+                setShowModal(false);
+            }
+        } catch(e) { alert("Failed to save shift: " + e.message); }
+      };
 
-      function clearShift() {
-        if (!editCell) return;
-        setRota(prev => {
-          const next = { ...prev };
-          delete next[editCell.key];
-          return next;
-        });
-        setShowModal(false);
-      }
+      const clearShift = async () => {
+        if (!editCell || !rota[editCell.key]) return;
+        const existing = rota[editCell.key];
+        try {
+            if (window.POS_GAPI && window.POS_GAPI.getSheetId() && existing.id) {
+                await window.POS_GAPI.deleteRow("Rota", 0, existing.id);
+                await loadRotaAndStaff();
+                setShowModal(false);
+            }
+        } catch(e) { alert("Failed to clear shift: " + e.message); }
+      };
 
       function calcH(start, end) {
         const [sh,sm] = start.split(":").map(Number);
@@ -1490,6 +1552,7 @@
       }
 
       const todayStr = new Date().toISOString().split("T")[0];
+      const activeStaffRender = staffNames.length > 0 ? staffNames : ROTA_STAFF;
 
       return (
         <>
@@ -1526,7 +1589,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {ROTA_STAFF.map(staff => {
+                  {activeStaffRender.map(staff => {
                     let totalHrs = 0;
                     return (
                       <tr key={staff}>
@@ -1609,18 +1672,29 @@
     }
 
     function TeamClockings() {
-      const DEMO = [
-        { name:"John Doe",   date:"2026-05-21", clockIn:"09:03", clockOut:"17:05", hours:8.0,  status:"complete" },
-        { name:"Sarah Lee",  date:"2026-05-21", clockIn:"11:58", clockOut:"",      hours:null, status:"active"   },
-        { name:"Emma Brown", date:"2026-05-21", clockIn:"08:55", clockOut:"17:00", hours:8.1,  status:"complete" },
-        { name:"John Doe",   date:"2026-05-20", clockIn:"09:00", clockOut:"17:02", hours:8.0,  status:"complete" },
-        { name:"Sarah Lee",  date:"2026-05-20", clockIn:"12:03", clockOut:"20:07", hours:8.1,  status:"complete" },
-        { name:"Mike Chen",  date:"2026-05-20", clockIn:"14:00", clockOut:"22:05", hours:8.1,  status:"complete" },
-      ];
-      const [search, setSearch] = useState("");
-      const filtered = DEMO.filter(c =>
-        c.name.toLowerCase().includes(search.toLowerCase())
+      const [clockings, setClockings] = useState([]);
+      const [search, setSearch]       = useState("");
+
+      const loadClockings = async () => {
+         if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
+         try {
+             const res = await window.POS_GAPI.getRows("Clockings");
+             if (res) {
+                 setClockings(res.filter(c => c !== null && c !== undefined));
+             }
+         } catch(e) { console.error("Load clocking error:", e); }
+      };
+
+      useEffect(() => {
+         loadClockings();
+         const iv = setInterval(loadClockings, 5000);
+         return () => clearInterval(iv);
+      }, []);
+
+      const filtered = clockings.filter(c =>
+        (c.StaffName || "").toLowerCase().includes(search.toLowerCase())
       );
+
       return (
         <div className="table-card">
           <div className="table-card-header">
@@ -1635,14 +1709,14 @@
             <tbody>
               {filtered.map((c,i)=>(
                 <tr key={i}>
-                  <td><strong>{c.name}</strong></td>
-                  <td>{new Date(c.date).toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</td>
-                  <td style={{color:"#27ae60",fontWeight:700}}>{c.clockIn}</td>
-                  <td style={{color:"#e74c3c",fontWeight:700}}>{c.clockOut||"—"}</td>
-                  <td style={{fontWeight:700}}>{c.hours!=null?c.hours.toFixed(2)+" hrs":"Working…"}</td>
+                  <td><strong>{c.StaffName || c.StaffEmail}</strong></td>
+                  <td>{c.Date ? new Date(c.Date).toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"}) : "—"}</td>
+                  <td style={{color:"#27ae60",fontWeight:700}}>{c.ClockIn || "—"}</td>
+                  <td style={{color:"#e74c3c",fontWeight:700}}>{c.ClockOut || "—"}</td>
+                  <td style={{fontWeight:700}}>{parseFloat(c.TotalHours) > 0 ? parseFloat(c.TotalHours).toFixed(2)+" hrs":"Working…"}</td>
                   <td>
-                    <span className={`badge ${c.status==="complete"?"badge-green":"badge-yellow"}`}>
-                      {c.status==="complete"?"✅ Complete":"🟡 Active"}
+                    <span className={`badge ${c.Status==="out"?"badge-green":"badge-yellow"}`}>
+                      {c.Status==="out"?"✅ Complete":"🟡 Active"}
                     </span>
                   </td>
                 </tr>
