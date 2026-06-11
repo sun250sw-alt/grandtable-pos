@@ -159,32 +159,32 @@
         .order-item-row {
             display: flex;
             justify-content: space-between;
-            align-items: flex-start;
+            align-items: center;
             padding: 10px 0;
             border-bottom: 1px solid rgba(255,255,255,0.07);
         }
 
         .order-item-row:last-child { border-bottom: none; }
 
-        .item-left { display: flex; gap: 10px; align-items: flex-start; }
+        .item-left { display: flex; gap: 10px; align-items: center; }
 
         .item-qty {
             background: #e74c3c;
             color: white;
-            width: 26px;
-            height: 26px;
-            border-radius: 6px;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: 700;
-            font-size: 13px;
+            font-size: 12px;
             flex-shrink: 0;
         }
 
         .item-name {
             font-weight: 600;
-            font-size: 15px;
+            font-size: 14px;
             line-height: 1.3;
         }
 
@@ -194,31 +194,11 @@
             margin-top: 3px;
         }
 
-        .item-check {
-            width: 24px;
-            height: 24px;
-            border: 2px solid rgba(255,255,255,0.3);
-            border-radius: 50%;
-            cursor: pointer;
-            transition: all 0.2s;
-            flex-shrink: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .item-check.checked {
-            background: #27ae60;
-            border-color: #27ae60;
-        }
-
-        .item-check.checked::after { content: '✓'; font-size: 13px; }
-
         .card-waiter {
             padding: 8px 16px;
-            font-size: 12px;
-            color: rgba(255,255,255,0.5);
-            background: rgba(0,0,0,0.15);
+            font-size: 11px;
+            color: rgba(255,255,255,0.4);
+            background: rgba(0,0,0,0.1);
             border-top: 1px solid rgba(255,255,255,0.05);
         }
 
@@ -269,32 +249,21 @@
     function sheetToKitchenOrder(row) {
         let items = [];
         try { items = JSON.parse(row.Items || "[]"); } catch(e) {}
-        
-        // Extract Chef name from Notes prefix if present
-        let chefName = "";
-        let cleanNotes = row.Notes || "";
-        if (row.Notes && row.Notes.startsWith("[Chef:")) {
-            const match = row.Notes.match(/^\[Chef:\s*([^\]]+)\]/);
-            if (match) {
-                chefName = match[1];
-                cleanNotes = row.Notes.replace(/^\[Chef:\s*[^\]]+\]\s*/, "");
-            }
-        }
 
         return {
             id       : row.OrderID,
             table    : row.TableNumber,
             waiter   : row.WaiterName || "Staff",
             status   : row.Status || "new",
-            chef     : chefName,
-            notes    : cleanNotes,
+            notes    : row.Notes || "",
             createdAt: row.OrderTime ? new Date(row.OrderTime).getTime() : Date.now(),
             items    : items.map((it, i) => ({
                 id     : i,
                 name   : it.name || it.Name || "Item",
                 qty    : it.qty  || it.quantity || 1,
+                chef   : it.chef || "",
+                status : it.status || "new",
                 note   : it.note || "",
-                checked: false,
             }))
         };
     }
@@ -327,13 +296,13 @@
         );
     }
 
-    function OrderCard({ order, onToggleItem }) {
+    function OrderCard({ order }) {
         const isUrgent = (Date.now() - order.createdAt) > 15 * 60 * 1000;
 
         let statusLabel = "Queue";
         let badgeClass = "new";
         if (order.status === "preparing") {
-            statusLabel = order.chef ? `Cooking (Chef: ${order.chef})` : "Cooking";
+            statusLabel = "Preparing";
             badgeClass = "preparing";
         } else if (order.status === "ready") {
             statusLabel = "Ready";
@@ -345,7 +314,7 @@
                 <div className="card-header">
                     <div>
                         <div className="order-id">{order.id}</div>
-                        <div className="table-info">🍽️ Table {order.table} &nbsp;·&nbsp; {order.items.reduce((s, i) => s + i.qty, 0)} items</div>
+                        <div className="table-info">🍽️ Table {order.table} &nbsp;·&nbsp; {order.items.length} items</div>
                     </div>
                     <span className={`status-badge ${badgeClass}`}>{statusLabel}</span>
                 </div>
@@ -353,21 +322,32 @@
                 <Timer createdAt={order.createdAt} />
 
                 <div className="card-items">
-                    {order.items.map((item, idx) => (
-                        <div key={idx} className="order-item-row">
-                            <div className="item-left">
-                                <div className="item-qty">{item.qty}</div>
-                                <div>
-                                    <div className="item-name">{item.name}</div>
-                                    {item.note && <div className="item-note">⚠️ {item.note}</div>}
+                    {order.items.map((item, idx) => {
+                        let chefStatusText = "⏳ Queue";
+                        let statusColor = "rgba(255,255,255,0.4)";
+                        if (item.status === "preparing" || item.chef) {
+                            chefStatusText = `👨‍🍳 ${item.chef || "Cooking"}`;
+                            statusColor = "#f39c12";
+                        }
+                        if (item.status === "ready") {
+                            chefStatusText = `✅ Ready (${item.chef || "Done"})`;
+                            statusColor = "#27ae60";
+                        }
+                        return (
+                            <div key={idx} className="order-item-row">
+                                <div className="item-left">
+                                    <div className="item-qty">{item.qty}</div>
+                                    <div>
+                                        <div className="item-name">{item.name}</div>
+                                        {item.note && <div className="item-note">⚠️ {item.note}</div>}
+                                    </div>
                                 </div>
+                                <span style={{ fontSize: '12px', fontWeight: '800', color: statusColor }}>
+                                    {chefStatusText}
+                                </span>
                             </div>
-                            <div
-                                className={`item-check ${item.checked ? 'checked' : ''}`}
-                                onClick={() => onToggleItem(order.id, idx)}
-                            />
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
 
                 {order.notes && (
@@ -399,16 +379,7 @@
                             .filter(o => o.Status !== "served" && o.Status !== "closed")
                             .map(sheetToKitchenOrder);
                         
-                        setOrders(prev => {
-                            return active.map(newO => {
-                                const existing = prev.find(p => p.id === newO.id);
-                                if (!existing) return newO;
-                                return { ...newO, items: newO.items.map((it, i) => ({
-                                    ...it,
-                                    checked: existing.items[i] ? existing.items[i].checked : false
-                                }))};
-                            });
-                        });
+                        setOrders(active);
                     }
                 } catch(e) { console.error("Kitchen poll error:", e); }
             }
@@ -418,16 +389,6 @@
             const interval = setInterval(fetchOrders, pollMs);
             return () => clearInterval(interval);
         }, []);
-
-        const toggleItem = (orderId, itemIdx) => {
-            setOrders(prev => prev.map(o => {
-                if (o.id !== orderId) return o;
-                const items = o.items.map((item, idx) =>
-                    idx === itemIdx ? { ...item, checked: !item.checked } : item
-                );
-                return { ...o, items };
-            }));
-        };
 
         const filtered = orders.filter(o => {
             if (filter === 'active') return o.status !== 'ready';
@@ -450,7 +411,7 @@
                     <div className="header-stats">
                         <div className="stat-box">
                             <div className="stat-number" style={{ color: '#e74c3c' }}>{counts.new}</div>
-                            <div className="stat-label">In Queue</div>
+                            <div class="stat-label">In Queue</div>
                         </div>
                         <div className="stat-box">
                             <div className="stat-number" style={{ color: '#f39c12' }}>{counts.preparing}</div>
@@ -498,7 +459,6 @@
                         <OrderCard
                             key={order.id}
                             order={order}
-                            onToggleItem={toggleItem}
                         />
                     ))}
                 </div>
