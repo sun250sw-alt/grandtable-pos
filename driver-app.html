@@ -230,7 +230,7 @@ var APP = {
 };
 
 var DEMO_ORDERS = [
-  { id:"ORD-082", time:"12:34 PM", status:"pickup",
+  { id:"ORD-082", deliveryId:"DEL-DEMO-82", time:"12:34 PM", status:"pickup",
     rest:{ name:"The Grand Table", addr:"15 Galle Road, Colombo", lat:6.9271, lng:79.8612 },
     cust:{ name:"Mr. James",       addr:"42 Duplication Rd, Colombo", phone:"+94 77 123 4567", lat:6.9012, lng:79.8562 },
     items:["Burger Deluxe ×2","Coca Cola ×2"], val:310.00 },
@@ -521,10 +521,10 @@ function orderCardHtml(o) {
       (isPickup
         ? '<button class="act-btn btn-nav-rest" onclick="openGoogleMaps(\'' + o.rest.addr + '\')">🗺️ Navigate to Restaurant</button>' +
           '<button class="act-btn btn-show-route" onclick="showRouteOnMap(\'' + o.id + '\')">📍 Show Full Route on Map</button>' +
-          '<button class="act-btn btn-pickup" onclick="updateStatus(\'' + o.id + '\',\'transit\')">✅ Picked Up — Start Delivery</button>'
+          '<button class="act-btn btn-pickup" onclick="updateStatus(\'' + o.deliveryId + '\',\'transit\')">✅ Picked Up — Start Delivery</button>'
         : '<button class="act-btn btn-nav-cust" onclick="openGoogleMaps(\'' + o.cust.addr + '\')">🗺️ Navigate to Customer</button>' +
           '<button class="act-btn btn-show-route" onclick="showRouteOnMap(\'' + o.id + '\')">📍 Show Route on Map</button>' +
-          '<button class="act-btn btn-delivered" onclick="updateStatus(\'' + o.id + '\',\'delivered\')">🎉 Mark as Delivered</button>') +
+          '<button class="act-btn btn-delivered" onclick="updateStatus(\'' + o.deliveryId + '\',\'delivered\')">🎉 Mark as Delivered</button>') +
       '<button class="act-btn btn-call" onclick="window.location.href=\'tel:' + o.cust.phone + '\'">📞 Call Customer (' + o.cust.phone + ')</button>' +
     '</div>' +
   '</div>';
@@ -556,24 +556,31 @@ async function loadLiveDeliveries() {
   }
 }
 
-function updateStatus(id, status) {
+function updateStatus(deliveryId, status) {
   var api = window.POS_GAPI || window.POS_API;
   if (status === "delivered") {
-    APP.orders = APP.orders.filter(function(o){ return o.id !== id; });
+    var matchOrder = APP.orders.find(function(o){ return o.deliveryId === deliveryId; });
+    APP.orders = APP.orders.filter(function(o){ return o.deliveryId !== deliveryId; });
     APP.earn.today += 240.00;
     APP.earn.dels++;
-    APP.history.unshift({ id:id, addr:"Delivered successfully",
-      time: new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}), earn:240.00 });
+    
+    if (matchOrder) {
+      APP.history.unshift({ id: matchOrder.id, addr: matchOrder.cust.addr,
+        time: new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}), earn: 240.00 });
+    } else {
+      APP.history.unshift({ id: deliveryId, addr:"Delivered successfully",
+        time: new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}), earn: 240.00 });
+    }
     
     var earnEl = document.getElementById("st-earn");
     var delEl = document.getElementById("st-del");
     if (earnEl) earnEl.textContent = "Rs." + APP.earn.today.toFixed(2);
     if (delEl) delEl.textContent = APP.earn.dels;
 
-    if (api && api.Deliveries) api.Deliveries.update({ deliveryId: id, status: 'delivered' }).catch(function(){});
+    if (api && api.Deliveries) api.Deliveries.update({ deliveryId: deliveryId, status: 'delivered' }).catch(function(){});
   } else {
-    APP.orders = APP.orders.map(function(o){ return o.id===id ? Object.assign({},o,{status:status}) : o; });
-    if (api && api.Deliveries) api.Deliveries.update({ deliveryId: id, status: status }).catch(function(){});
+    APP.orders = APP.orders.map(function(o){ return o.deliveryId===deliveryId ? Object.assign({},o,{status:status}) : o; });
+    if (api && api.Deliveries) api.Deliveries.update({ deliveryId: deliveryId, status: status }).catch(function(){});
   }
   render();
   if (APP.mapReady && APP.orders.length) setTimeout(function(){ drawRoute(APP.orders[0]); }, 100);
@@ -636,6 +643,7 @@ function acceptOrder() {
   APP.newBanner = false;
   var newOrder = {
     id:"ORD-091",
+    deliveryId: "DEL-DEMO-91",
     time: new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}),
     status:"pickup",
     rest:{ name:"The Grand Table", addr:"15 Galle Road, Colombo", lat:6.9271, lng:79.8612 },
