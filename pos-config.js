@@ -58,7 +58,6 @@ window.POS_GAPI = (() => {
       if (window.gapi && window.gapi.client && window.google && window.google.accounts) {
         resolve(); return;
       }
-      // Check for existing elements to avoid duplicates
       let s1 = document.querySelector('script[src="https://apis.google.com/js/api.js"]');
       if (!s1) {
         s1 = document.createElement("script");
@@ -554,7 +553,7 @@ window.POS_GAPI = (() => {
       const rows = await getRows("Recipes");
       const existing = rows.find(r => r.DishName && r.DishName.toLowerCase() === data.dishName.toLowerCase());
       if (existing) {
-        await updateRow("Recipes", 1, existing.DishName, {
+        await updateRow("Recipes", 1, data.dishName, {
           PrepTime:data.prepTime||"", CookTime:data.cookTime||"",
           Difficulty:data.difficulty||"Medium",
           Ingredients:data.ingredients||"[]", Steps:data.steps||"[]"
@@ -926,5 +925,3 @@ window.POS_AUTH = (() => {
 
   return { init, signOut, renderBadge, renderUtilBar, openSheet, refreshApp };
 })();
-
-window.POS_API = window.POS_GAPI;
