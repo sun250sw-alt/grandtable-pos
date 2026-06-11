@@ -286,11 +286,17 @@
     </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root" style="display: none;"></div>
+
+<div id="loading-placeholder" style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:sans-serif;background:#1a1a2e;color:white;">
+  <div style="font-size:40px">📺</div>
+  <div style="font-size:16px;font-weight:700">Kitchen Display System</div>
+  <div style="font-size:13px;color:#888">Connecting to TV queue channel...</div>
+</div>
+
 <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    // Orders loaded live from Google Sheet
     const INITIAL_ORDERS = [];
 
     // Convert sheet row to kitchen order format
@@ -303,7 +309,7 @@
             waiter   : row.WaiterName || "Staff",
             status   : row.Status || "new",
             createdAt: row.OrderTime ? new Date(row.OrderTime).getTime() : Date.now(),
-            items    : items.map((it,i) => ({
+            items    : items.map((it, i) => ({
                 id     : i,
                 name   : it.name || it.Name || "Item",
                 qty    : it.qty  || it.quantity || 1,
@@ -411,13 +417,11 @@
         const [filter, setFilter] = useState('active');
         const [soundOn, setSoundOn] = useState(true);
 
-        // Keep a reference to sound settings to avoid hook closure issues in setInterval
         const soundOnRef = useRef(soundOn);
         useEffect(() => {
             soundOnRef.current = soundOn;
         }, [soundOn]);
 
-        // Triggers a native Web Audio synth ping without requiring sound file loading
         const playNotificationSound = () => {
             if (!soundOnRef.current) return;
             try {
@@ -429,7 +433,7 @@
                 gainNode.connect(audioCtx.destination);
 
                 oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 note
+                oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
                 gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
 
                 oscillator.start();
@@ -439,7 +443,6 @@
             }
         };
 
-        // Poll Google Sheet for live orders
         useEffect(() => {
             async function fetchOrders() {
                 if (!window.POS_GAPI) return;
@@ -455,17 +458,15 @@
                             .map(sheetToKitchenOrder);
                         
                         setOrders(prev => {
-                            // Sound notification check: Check if new order IDs arrived
                             const incomingNewOrder = active.some(newO => !prev.some(p => p.id === newO.id));
                             if (incomingNewOrder && prev.length > 0) {
                                 playNotificationSound();
                             }
 
-                            // Preserve checked state for existing items
                             return active.map(newO => {
                                 const existing = prev.find(p => p.id === newO.id);
                                 if (!existing) return newO;
-                                return { ...newO, items: newO.items.map((it,i) => ({
+                                return { ...newO, items: newO.items.map((it, i) => ({
                                     ...it,
                                     checked: existing.items[i] ? existing.items[i].checked : false
                                 }))};
@@ -482,7 +483,6 @@
         }, []);
 
         const updateStatus = async (orderId, newStatus) => {
-            // Update in sheet
             if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
                 try {
                     await window.POS_GAPI.Orders.update({ orderId, status: newStatus });
@@ -586,26 +586,51 @@
         );
     }
 
-    // Modern React 18 Mounting
-    const rootElement = document.getElementById('root');
-    const root = ReactDOM.createRoot(rootElement);
-    root.render(<KitchenDisplay />);
+    window.startKitchenDisplay = function() {
+        const rootElement = document.getElementById('root');
+        const root = ReactDOM.createRoot(rootElement);
+        root.render(<KitchenDisplay />);
+    };
 </script>
 
 <script>
-// Kitchen display: render immediately, load live data when ready
 (function() {
-  function tryLoadData() {
-    if (typeof POS_GAPI === "undefined" || typeof POS_GAPI.initUserSheet === "undefined") {
-      setTimeout(tryLoadData, 500); return;
+  function startAuth() {
+    if (typeof POS_AUTH === "undefined") {
+      console.error("POS_AUTH failed to load");
+      return;
     }
-    // initUserSheet loads sheetId from localStorage - no sign-in wall needed
-    POS_GAPI.initUserSheet().catch(function(){}).then(function() {
-      // Data polling starts automatically inside the React component
-      console.log("POS_GAPI ready, sheetId:", POS_GAPI.getSheetId());
+    POS_AUTH.init("kitchen-display", {
+      onReady: function(session) {
+        var root = document.getElementById("root");
+        if (root) root.style.display = "block";
+        var loader = document.getElementById("loading-placeholder");
+        if (loader) loader.style.display = "none";
+        
+        if (typeof window.startKitchenDisplay === "function") {
+          window.startKitchenDisplay();
+        }
+
+        setTimeout(function() {
+          if (typeof POS_AUTH.renderUtilBar === "function") {
+            POS_AUTH.renderUtilBar("user-badge", "kitchen-display");
+          }
+        }, 500);
+      },
+      onError: function(msg) { console.error("Auth error:", msg); }
     });
   }
-  tryLoadData();
+
+  if (typeof POS_AUTH !== "undefined") {
+    startAuth();
+  } else {
+    var tries = 0;
+    var iv = setInterval(function() {
+      tries++;
+      if (typeof POS_AUTH !== "undefined") { clearInterval(iv); startAuth(); }
+      else if (tries > 50) { clearInterval(iv); startAuth(); }
+    }, 100);
+  }
 })();
 </script>
 </body>
