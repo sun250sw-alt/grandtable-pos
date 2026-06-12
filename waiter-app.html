@@ -699,6 +699,71 @@
                 }
             };
 
+            const handleSendAddOnToKitchen = async (orderId) => {
+                if (orderItems.length === 0) return;
+                setLoading(true);
+                try {
+                    // 1. Fetch freshest order row from Sheets
+                    const rows = await window.POS_GAPI.getRows("Orders");
+                    const orderRow = rows.find(r => r.OrderID === orderId);
+                    if (orderRow) {
+                        let itemsArray = [];
+                        try { itemsArray = JSON.parse(orderRow.Items); } catch(e){}
+                        
+                        // 2. Append/merge newly added items
+                        orderItems.forEach(newItem => {
+                            const existing = itemsArray.find(it => it.name === newItem.name || it.Name === newItem.name);
+                            if (existing) {
+                                existing.qty = (parseInt(existing.qty || existing.quantity || 1, 10) + newItem.quantity);
+                                // If it was already ready/delivered, but we added more, reset its status to cooking
+                                if (newItem.prepTime !== "Bypass Prep") {
+                                    existing.status = "new";
+                                    delete existing.chef; // remove previous chef assignment
+                                }
+                            } else {
+                                itemsArray.push({
+                                    name: newItem.name,
+                                    qty: newItem.quantity,
+                                    price: newItem.price,
+                                    category: newItem.category,
+                                    prepTime: newItem.prepTime,
+                                    status: "new"
+                                });
+                            }
+                        });
+
+                        // 3. Recalculate financial totals
+                        const nextSubtotal = itemsArray.reduce((sum, it) => sum + (parseFloat(it.price) * parseInt(it.qty || it.quantity || 1, 10)), 0);
+                        const taxRate = parseFloat(window.POS_GAPI.getSettings().tax_rate || 0.10);
+                        const nextTax = parseFloat((nextSubtotal * taxRate).toFixed(2));
+                        const nextTotal = parseFloat((nextSubtotal + nextTax).toFixed(2));
+
+                        // 4. Decide next overall order status: if any of the newly added items require cooking, set overall status back to preparing
+                        const needsNewPrep = orderItems.some(it => it.prepTime !== "Bypass Prep");
+                        let nextStatus = orderRow.Status;
+                        if (needsNewPrep) {
+                            nextStatus = "preparing";
+                        }
+
+                        // 5. Update row in Google Sheets
+                        await window.POS_GAPI.updateRow("Orders", 0, orderId, {
+                            Items: JSON.stringify(itemsArray),
+                            Subtotal: nextSubtotal,
+                            Tax: nextTax,
+                            Total: nextTotal,
+                            Status: nextStatus
+                        });
+
+                        showNotification("Add-on successfully sent to kitchen!");
+                        setOrderItems([]); // Clear local temporary add-on cart
+                        loadData();
+                    }
+                } catch(e) {
+                    showNotification("Failed to add to order: " + e.message, "error");
+                }
+                setLoading(false);
+            };
+
             const handleDeliverOrder = async (orderId) => {
                 try {
                     await window.POS_GAPI.Orders.update({ orderId, status: "served" });
@@ -772,7 +837,6 @@
                                 return it;
                             });
 
-                            // Check if all items inside this ticket are now ready/collected
                             const allReady = itemsArray.every(it => {
                                 return it.status === "ready" || it.prepTime === "Bypass Prep";
                             });
@@ -963,7 +1027,7 @@
                                     </div>
                                 </div>
                             ) : activeOrderForTable ? (
-                                // ── 2. Table is Occupied: Show active dishes & elapsed timers ──
+                                // ── 2. Table is Occupied: Show active dishes, elapsed timers, & any local addon carts ──
                                 <div>
                                     <div className="progress-box">
                                         <div className="progress-header">
@@ -1042,32 +1106,71 @@
                                         </div>
                                     </div>
 
-                                    <div className="order-summary" style={{ borderTop: "none", marginTop: 0 }}>
-                                        <div className="summary-row" style={{ fontWeight: "700", fontSize: "16px", color: "#1a1a2e" }}>
-                                            <span>Active Total:</span>
-                                            <span>{currency} {parseFloat(activeOrderForTable.Total).toFixed(2)}</span>
+                                    {/* DYNAMIC ADD-ON CART VIEW FOR OCCUPIED TABLES */}
+                                    {orderItems.length > 0 ? (
+                                        <div style={{ marginTop: '16px', borderTop: '2px dashed #cbd5e1', paddingTop: '16px' }}>
+                                            <h3 style={{ fontSize: '15px', color: '#1a1a2e', marginBottom: '12px' }}>🛒 New Add-on Cart</h3>
+                                            <div className="order-items" style={{ maxHeight: '180px' }}>
+                                                {orderItems.map(item => (
+                                                    <div key={item.id} className="order-item" style={{ background: '#f1f5f9' }}>
+                                                        <div className="order-item-info">
+                                                            <div className="order-item-name" style={{ fontSize: '13px' }}>{item.name}</div>
+                                                            <div className="order-item-price" style={{ fontSize: '12px' }}>
+                                                                {currency} {item.price.toFixed(2)} × {item.quantity} = {currency} {(item.price * item.quantity).toFixed(2)}
+                                                            </div>
+                                                        </div>
+                                                        <div className="order-item-qty">
+                                                            <button className="qty-btn" style={{ width: '22px', height: '22px', fontSize: '12px' }} onClick={() => updateQuantity(item.id, -1)}>−</button>
+                                                            <span className="qty-number" style={{ fontSize: '12px', minWidth: '18px' }}>{item.quantity}</span>
+                                                            <button className="qty-btn" style={{ width: '22px', height: '22px', fontSize: '12px' }} onClick={() => updateQuantity(item.id, 1)}>+</button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold', margin: '8px 0' }}>
+                                                <span>Subtotal of Add-ons:</span>
+                                                <span>{currency}{calculateTotal().toFixed(2)}</span>
+                                            </div>
+                                            <div className="action-buttons" style={{ marginTop: '12px' }}>
+                                                <button className="btn btn-primary" onClick={() => handleSendAddOnToKitchen(activeOrderForTable.OrderID)}>
+                                                    📤 Send Add-on to Kitchen
+                                                </button>
+                                                <button className="btn btn-danger" style={{ padding: '8px' }} onClick={() => setOrderItems([])}>
+                                                    🗑️ Cancel Add-ons
+                                                </button>
+                                            </div>
                                         </div>
-                                    </div>
+                                    ) : (
+                                        // Standard Checkout/Delivery Actions when local addon cart is empty
+                                        <>
+                                            <div className="order-summary" style={{ borderTop: "none", marginTop: 0 }}>
+                                                <div className="summary-row" style={{ fontWeight: "700", fontSize: "16px", color: "#1a1a2e" }}>
+                                                    <span>Active Total:</span>
+                                                    <span>{currency} {parseFloat(activeOrderForTable.Total).toFixed(2)}</span>
+                                                </div>
+                                            </div>
 
-                                    <div className="action-buttons">
-                                        {/* Deliver Option: Only available when order is ready */}
-                                        {activeOrderForTable.Status === "ready" && (
-                                            <button className="btn btn-success" onClick={() => handleDeliverOrder(activeOrderForTable.OrderID)}>
-                                                🚀 Deliver Order to Table
-                                            </button>
-                                        )}
+                                            <div className="action-buttons">
+                                                {/* Deliver Option: Only available when order is ready */}
+                                                {activeOrderForTable.Status === "ready" && (
+                                                    <button className="btn btn-success" onClick={() => handleDeliverOrder(activeOrderForTable.OrderID)}>
+                                                        🚀 Deliver Order to Table
+                                                    </button>
+                                                )}
 
-                                        {/* Payment Option: Visible after food is delivered, but before cleaning */}
-                                        {activeOrderForTable.Status === "served" && (
-                                            <button className="btn btn-secondary" onClick={() => handleProcessPayment(activeOrderForTable.OrderID)}>
-                                                💷 Checkout & Pay Bill
-                                            </button>
-                                        )}
+                                                {/* Payment Option: Visible after food is delivered, but before cleaning */}
+                                                {activeOrderForTable.Status === "served" && (
+                                                    <button className="btn btn-secondary" onClick={() => handleProcessPayment(activeOrderForTable.OrderID)}>
+                                                        💷 Checkout & Pay Bill
+                                                    </button>
+                                                )}
 
-                                        <button className="btn btn-ghost" onClick={() => setSelectedTable(null)}>
-                                            ← Back to Tables
-                                        </button>
-                                    </div>
+                                                <button className="btn btn-ghost" onClick={() => setSelectedTable(null)}>
+                                                    ← Back to Tables
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             ) : orderItems.length === 0 ? (
                                 <div className="empty-state">
@@ -1078,7 +1181,7 @@
                                     </div>
                                 </div>
                             ) : (
-                                // ── Table is available/building: Show cart ──
+                                // ── Table is available/building: Show standard cart ──
                                 <>
                                     <div className="order-items">
                                         {orderItems.map(item => (
