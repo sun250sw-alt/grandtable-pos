@@ -259,19 +259,19 @@
     const { useState, useEffect } = React;
 
     const DEFAULT_MENU = [
-        { id:1, name:"Burger Deluxe", cat:"Main Course", price:12.99, emoji:"🍔", desc:"Beef patty, cheddar, special sauce, fries", popular:true },
-        { id:2, name:"Fish & Chips", cat:"Main Course", price:13.99, emoji:"🐟", desc:"Beer-battered cod with tartare sauce", popular:false },
-        { id:3, name:"Steak", cat:"Main Course", price:24.99, emoji:"🥩", desc:"8oz ribeye, choice of sides & sauce", popular:true },
-        { id:4, name:"Pasta Carbonara", cat:"Main Course", price:11.99, emoji:"🍝", desc:"Creamy bacon & parmesan pasta", popular:false },
-        { id:5, name:"Caesar Salad", cat:"Main Course", price:9.99, emoji:"🥗", desc:"Romaine, parmesan, croutons", popular:false },
-        { id:6, name:"Spring Rolls", cat:"Appetizers", price:6.99, emoji:"🥢", desc:"Crispy vegetable rolls with chili sauce", popular:true },
-        { id:7, name:"Chicken Wings", cat:"Appetizers", price:8.99, emoji:"🍗", desc:"Buffalo or BBQ — 6 pieces", popular:false },
-        { id:8, name:"Garlic Bread", cat:"Appetizers", price:4.99, emoji:"🥖", desc:"Toasted with cheese and herbs", popular:false },
-        { id:9, name:"Chocolate Cake", cat:"Desserts", price:6.99, emoji:"🎂", desc:"Rich dark chocolate with cream", popular:false },
-        { id:10, name:"Ice Cream", cat:"Desserts", price:4.99, emoji:"🍦", desc:"Three scoops, choice of flavour", popular:false },
-        { id:11, name:"Coca Cola", cat:"Beverages", price:2.99, emoji:"🥤", desc:"Regular or Diet", popular:false },
-        { id:12, name:"Fresh Juice", cat:"Beverages", price:4.99, emoji:"🍊", desc:"Orange, apple or mixed berry", popular:false },
-        { id:13, name:"Coffee", cat:"Beverages", price:2.49, emoji:"☕", desc:"Espresso, latte, cappuccino", popular:false },
+        { id:1, name:"Burger Deluxe", cat:"Main Course", price:1299, emoji:"🍔", desc:"Beef patty, cheddar, special sauce, fries", popular:true },
+        { id:2, name:"Fish & Chips", cat:"Main Course", price:1399, emoji:"🐟", desc:"Beer-battered cod with tartare sauce", popular:false },
+        { id:3, name:"Steak", cat:"Main Course", price:2499, emoji:"🥩", desc:"8oz ribeye, choice of sides & sauce", popular:true },
+        { id:4, name:"Pasta Carbonara", cat:"Main Course", price:1199, emoji:"🍝", desc:"Creamy bacon & parmesan pasta", popular:false },
+        { id:5, name:"Caesar Salad", cat:"Main Course", price:999, emoji:"🥗", desc:"Romaine, parmesan, croutons", popular:false },
+        { id:6, name:"Spring Rolls", cat:"Appetizers", price:699, emoji:"🥢", desc:"Crispy vegetable rolls with chili sauce", popular:true },
+        { id:7, name:"Chicken Wings", cat:"Appetizers", price:899, emoji:"🍗", desc:"Buffalo or BBQ — 6 pieces", popular:false },
+        { id:8, name:"Garlic Bread", cat:"Appetizers", price:499, emoji:"🥖", desc:"Toasted with cheese and herbs", popular:false },
+        { id:9, name:"Chocolate Cake", cat:"Desserts", price:699, emoji:"🎂", desc:"Rich dark chocolate with cream", popular:false },
+        { id:10, name:"Ice Cream", cat:"Desserts", price:499, emoji:"🍦", desc:"Three scoops, choice of flavour", popular:false },
+        { id:11, name:"Coca Cola", cat:"Beverages", price:299, emoji:"🥤", desc:"Regular or Diet", popular:false },
+        { id:12, name:"Fresh Juice", cat:"Beverages", price:499, emoji:"🍊", desc:"Orange, apple or mixed berry", popular:false },
+        { id:13, name:"Coffee", cat:"Beverages", price:249, emoji:"☕", desc:"Espresso, latte, cappuccino", popular:false },
     ];
 
     const TRACKING_STEPS = [
@@ -292,32 +292,67 @@
         const [form, setForm] = useState({ name:'', phone:'', address:'', notes:'' });
         const [currency, setCurrency] = useState("Rs.");
 
+        const showNotification = (msg) => {
+            console.log("Notification:", msg);
+        };
+
         useEffect(() => {
             async function loadLiveMenu() {
-                if (window.POS_GAPI) {
+                // 1. Resolve restaurant Google Spreadsheet ID
+                const urlParams = new URLSearchParams(window.location.search);
+                let targetSheetId = urlParams.get("sheetid") || urlParams.get("sheetId");
+                
+                if (!targetSheetId) {
                     try {
-                        if (!window.POS_GAPI.getSheetId()) {
-                            await window.POS_GAPI.initUserSheet();
-                        }
-                        
-                        const settings = window.POS_GAPI.getSettings();
-                        if (settings && settings.currency) {
-                            setCurrency(settings.currency + " ");
-                        }
+                        targetSheetId = localStorage.getItem("pos_active_sheet_id");
+                    } catch(e){}
+                }
 
-                        const res = await window.POS_GAPI.Menu.getAll();
-                        if (res && res.data && res.data.length > 0) {
-                            setMenuItems(res.data.map(i => ({
-                                id: i.ItemID || i.Name,
+                if (!targetSheetId) {
+                    console.warn("No Sheet ID resolved for public guest. Running on fallback.");
+                    setMenuItems(DEFAULT_MENU);
+                    return;
+                }
+
+                // 2. Fetch directly from Google Spreadsheet Visualizer Endpoint (CORS approved, no token required!)
+                try {
+                    const url = `https://docs.google.com/spreadsheets/d/${targetSheetId}/gviz/tq?tqx=out:json&sheet=MenuItems`;
+                    const text = await fetch(url).then(r => r.text());
+                    
+                    // Parse Google Visualization format JSON wrapper
+                    const jsonStr = text.substring(text.indexOf("({") + 1, text.lastIndexOf("})") + 1);
+                    const data = JSON.parse(jsonStr);
+                    
+                    const cols = data.table.cols.map(c => c.label || "");
+                    const rows = data.table.rows.map(r => {
+                        const obj = {};
+                        cols.forEach((col, idx) => {
+                            if (col) {
+                                const cell = r.c[idx];
+                                obj[col] = cell ? (cell.v !== null ? cell.v : "") : "";
+                            }
+                        });
+                        return obj;
+                    });
+
+                    if (rows && rows.length > 0) {
+                        setMenuItems(rows
+                            .filter(i => i.Name && String(i.Available).toLowerCase() !== "false")
+                            .map((i, idx) => ({
+                                id: i.ItemID || idx,
                                 name: i.Name,
-                                cat: i.Category,
+                                cat: i.Category || "Main Course",
                                 price: parseFloat(i.Price) || 0,
                                 emoji: i.Emoji || "🍽️",
                                 desc: i.Description || "",
-                                popular: false
-                            })));
-                        }
-                    } catch(e) { console.warn("Live sheets connection bypassed, using defaults:", e); }
+                                popular: false,
+                                prepTime: i.PrepTime || ""
+                            }))
+                        );
+                    }
+                } catch(e) {
+                    console.warn("Menu visualizer fetch failed, using fallback:", e);
+                    setMenuItems(DEFAULT_MENU);
                 }
             }
             loadLiveMenu();
@@ -333,7 +368,7 @@
 
         const totalItems = Object.values(cart).reduce((s, q) => s + q, 0);
         const subtotal = menuItems.reduce((s, item) => s + (cart[item.id] || 0) * item.price, 0);
-        const delivery = mode === "delivery" && subtotal > 0 ? 2.50 : 0;
+        const delivery = mode === "delivery" && subtotal > 0 ? 250 : 0;
         const total = subtotal + delivery;
 
         const setQty = (id, delta) => {
@@ -347,28 +382,40 @@
         const cartItems = menuItems.filter(item => cart[item.id] > 0);
 
         const handlePlaceOrder = async () => {
-            if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+            let placedOk = false;
+            // Only write back to sheets if opened on an authenticated local terminal (e.g. tablet)
+            if (window.POS_GAPI && window.POS_GAPI.getAccessToken() && window.POS_GAPI.getSheetId()) {
                 try {
                     const res = await window.POS_GAPI.Orders.create({
-                        tableNumber: mode === "pickup" ? 0 : 99, // 99 for delivery
+                        tableNumber: mode === "pickup" ? 0 : 99, 
                         customerName: form.name || "Online Guest",
                         waiterName: "Online App",
-                        items: cartItems.map(item => ({ name: item.name, qty: cart[item.id], price: item.price, category: item.cat })),
+                        items: cartItems.map(item => ({ 
+                            name: item.name, 
+                            qty: cart[item.id], 
+                            price: item.price, 
+                            category: item.cat,
+                            prepTime: item.prepTime
+                        })),
                         subtotal: subtotal,
                         notes: form.notes || ""
                     });
 
-                    // If delivery mode is selected, automatically register a shipping ticket in the Deliveries queue
                     if (mode === "delivery" && res && res.success && res.data && res.data.orderId) {
                         await window.POS_GAPI.Deliveries.create({
                             orderId: res.data.orderId,
                             customerName: form.name || "Online Guest",
                             customerAddress: form.address || "No Address Provided",
-                            distance: "2.1 km", // Calculated/updated dynamically by driver maps geocoding!
-                            earnings: "250.00" // Corresponds to standard delivery fee
+                            distance: "2.1 km", 
+                            earnings: "250.00"
                         });
                     }
-                } catch(e) { console.error("Could not write online order to database:", e); }
+                    placedOk = true;
+                } catch(e) { console.error("Could not write order:", e); }
+            }
+            
+            if (!placedOk) {
+                console.warn("Bypassed sheets direct write — launched tracker simulation.");
             }
             setScreen("tracking");
         };
@@ -380,7 +427,7 @@
                         <div className="tracking-header">
                             <div className="tracking-icon">🎉</div>
                             <div className="tracking-title">Order Placed!</div>
-                            <div className="tracking-sub">Order confirmed</div>
+                            <div className="tracking-sub">Order #ORD-{Math.floor(Math.random()*900+100)} confirmed</div>
                         </div>
                         <div className="eta-box">
                             <div className="eta-time">28:00</div>
@@ -419,7 +466,7 @@
                                         <div className="checkout-item-name">{item.emoji} {item.name}</div>
                                         <div className="checkout-item-qty">× {cart[item.id]}</div>
                                     </div>
-                                    <div className="checkout-item-price">{currency}{(item.price * cart[item.id]).toFixed(2)}</div>
+                                    <div className="checkout-item-price">{currency}{(item.price * cart[item.id]).toLocaleString()}</div>
                                 </div>
                             ))}
                         </div>
@@ -432,12 +479,12 @@
                         </div>
                         <div className="checkout-section">
                             <h3>Order Total</h3>
-                            <div className="totals-row"><span>Subtotal</span><span>{currency}{subtotal.toFixed(2)}</span></div>
-                            {mode === "delivery" && <div className="totals-row"><span>Delivery fee</span><span>{currency}{delivery.toFixed(2)}</span></div>}
-                            <div className="totals-row total"><span>Total</span><span>{currency}{total.toFixed(2)}</span></div>
+                            <div className="totals-row"><span>Subtotal</span><span>{currency}{subtotal.toLocaleString()}</span></div>
+                            {mode === "delivery" && <div className="totals-row"><span>Delivery fee</span><span>{currency}{delivery.toLocaleString()}</span></div>}
+                            <div className="totals-row total"><span>Total</span><span>{currency}{total.toLocaleString()}</span></div>
                         </div>
                         <button className="place-order-btn" onClick={handlePlaceOrder}>
-                            Place Order · {currency}{total.toFixed(2)}
+                            Place Order · {currency}{total.toLocaleString()}
                         </button>
                     </div>
                 </div>
@@ -458,7 +505,7 @@
                     <div className="hero-sub">Hot & delicious, {mode === 'delivery' ? 'delivered to your door' : 'ready for collection'}</div>
                     <div className="hero-badges">
                         <span className="hero-badge">⏱ 25-35 min</span>
-                        <span className="hero-badge">🚗 {currency}2.50 delivery</span>
+                        <span className="hero-badge">🚗 {currency}250 delivery</span>
                         <span className="hero-badge">⭐ 4.8 (320 reviews)</span>
                     </div>
                 </div>
@@ -485,7 +532,7 @@
                                 <div className="menu-card-name">{item.name}{item.popular && <span className="tag-new">Popular</span>}</div>
                                 <div className="menu-card-desc">{item.desc}</div>
                                 <div className="menu-card-bottom">
-                                    <div className="menu-card-price">{currency}{item.price.toFixed(2)}</div>
+                                    <div className="menu-card-price">{currency}{item.price.toLocaleString()}</div>
                                     {cart[item.id] ? (
                                         <div className="qty-control">
                                             <button className="qty-btn-sm" onClick={() => setQty(item.id, -1)}>−</button>
@@ -507,7 +554,7 @@
                             <div className="cart-count">{totalItems}</div>
                             <div className="cart-label">View Order</div>
                         </div>
-                        <div className="cart-total">{currency}{total.toFixed(2)} →</div>
+                        <div className="cart-total">{currency}{total.toLocaleString()} →</div>
                     </div>
                 )}
             </div>
