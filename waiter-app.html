@@ -754,6 +754,44 @@
                 }
             };
 
+            // Direct checkout manual item collection update
+            const handleCollectBypassedItem = async (orderId, itemName) => {
+                try {
+                    if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
+                        const rows = await window.POS_GAPI.getRows("Orders");
+                        const orderRow = rows.find(r => r.OrderID === orderId);
+                        if (orderRow) {
+                            let itemsArray = [];
+                            try { itemsArray = JSON.parse(orderRow.Items); } catch(e){}
+                            
+                            itemsArray = itemsArray.map(it => {
+                                if (it.name === itemName || it.Name === itemName) {
+                                    it.status = "ready";
+                                    it.chef = currentServer + " (Waiter)";
+                                }
+                                return it;
+                            });
+
+                            // Check if all items inside this ticket are now ready/collected
+                            const allReady = itemsArray.every(it => {
+                                return it.status === "ready" || it.prepTime === "Bypass Prep";
+                            });
+
+                            await window.POS_GAPI.Orders.update({
+                                orderId: orderId,
+                                status: allReady ? "ready" : "preparing",
+                                items: itemsArray
+                            });
+                            
+                            showNotification(`Marked ${itemName} as collected!`);
+                            loadData();
+                        }
+                    }
+                } catch(e) {
+                    showNotification("Failed to collect item: " + e.message, "error");
+                }
+            };
+
             // Locate active order for currently highlighted table (if any)
             const activeOrderForTable = selectedTable 
                 ? liveOrders.find(o => 
@@ -952,17 +990,34 @@
                                         <div style={{ margin: "12px 0 6px" }}>
                                             <strong style={{ fontSize: "12px", textTransform: "uppercase", color: "#888" }}>Dishes Ordered:</strong>
                                         </div>
-                                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                                        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                                             {(() => {
                                                 let parsed = [];
                                                 try { parsed = JSON.parse(activeOrderForTable.Items); } catch(e){}
                                                 return parsed.map((item, idx) => {
+                                                    const isBypassed = item.prepTime === "Bypass Prep";
+                                                    const isCollected = item.status === "ready";
+                                                    
                                                     let itemStatusText = "⏳ Queued";
                                                     let statusColor = "#667eea";
+                                                    let actionButtonHtml = null;
                                                     
                                                     if (activeOrderForTable.Status === 'served') {
                                                         itemStatusText = "✓ Delivered";
                                                         statusColor = "#7e22ce";
+                                                    } else if (isBypassed) {
+                                                        if (isCollected) {
+                                                            itemStatusText = "📥 Collected";
+                                                            statusColor = "#10b981";
+                                                        } else {
+                                                            itemStatusText = "⏳ Waiting Collection";
+                                                            statusColor = "#f59e0b";
+                                                            actionButtonHtml = (
+                                                                <button className="btn btn-primary" style={{ padding: '4px 10px', fontSize: '11px', width: 'auto', marginTop: '2px' }} onClick={() => handleCollectBypassedItem(activeOrderForTable.OrderID, item.name)}>
+                                                                    📥 Collect
+                                                                </button>
+                                                            );
+                                                        }
                                                     } else if (item.status === "ready") {
                                                         itemStatusText = "✅ Ready";
                                                         statusColor = "#10b981";
@@ -972,11 +1027,14 @@
                                                     }
                                                     
                                                     return (
-                                                        <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "14px" }}>
-                                                            <span>{item.qty || item.quantity}× {item.name || item.Name}</span>
-                                                            <span style={{ fontWeight: "600", color: statusColor }}>
-                                                                {itemStatusText}
-                                                            </span>
+                                                        <div key={idx} style={{ display: "flex", flexDirection: "column", borderBottom: '1px solid #f3f4f6', paddingBottom: '6px' }}>
+                                                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "14px", alignItems: "center" }}>
+                                                                <span>{item.qty || item.quantity}× {item.name || item.Name}</span>
+                                                                <span style={{ fontWeight: "700", color: statusColor }}>
+                                                                    {itemStatusText}
+                                                                </span>
+                                                            </div>
+                                                            {actionButtonHtml && <div style={{ display: "flex", justifyContent: "flex-end" }}>{actionButtonHtml}</div>}
                                                         </div>
                                                     );
                                                 });
