@@ -1449,16 +1449,14 @@
       const loadRotaAndStaff = async () => {
         if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
         try {
-          // 1. Pull dynamic roster names directly from sheets database
           const staffRes = await window.POS_GAPI.Staff.getAll();
           if (staffRes && staffRes.data) {
               const activeNames = staffRes.data
-                .filter(s => s !== null && s !== undefined && s.Status === "active")
+                .filter(s => s !== null && s !== undefined && s.Name && s.Status === "active")
                 .map(s => s.Name);
               setStaffNames(activeNames);
           }
 
-          // 2. Pull dynamic shift schedules directly from sheets database
           const rotaRes = await window.POS_GAPI.getRows("Rota");
           if (rotaRes) {
               const map = {};
@@ -1494,10 +1492,11 @@
       }
 
       const weekDates = getWeekDates();
-      const weekLabel = `${weekDates[0].toLocaleDateString("en-GB",{day:"numeric",month:"short"})} – ${weekDates[6].toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}`;
+      const weekLabel = `${weekDates[0] && !isNaN(weekDates[0].getTime()) ? weekDates[0].toLocaleDateString("en-GB",{day:"numeric",month:"short"}) : ""} – ${weekDates[6] && !isNaN(weekDates[6].getTime()) ? weekDates[6].toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}) : ""}`;
 
       function cellKey(staff, date) {
-        return staff + "|" + date.toISOString().split("T")[0];
+        const parsedDateStr = (date && !isNaN(date.getTime())) ? date.toISOString().split("T")[0] : "undefined";
+        return staff + "|" + parsedDateStr;
       }
 
       function openCell(staff, date) {
@@ -1546,6 +1545,7 @@
       };
 
       function calcH(start, end) {
+        if (!start || !end || !start.includes(":") || !end.includes(":")) return 0;
         const [sh,sm] = start.split(":").map(Number);
         const [eh,em] = end.split(":").map(Number);
         return +((eh*60+em-sh*60-sm)/60).toFixed(1);
@@ -1574,13 +1574,13 @@
                   <tr>
                     <th style={{width:"120px"}}>Staff</th>
                     {weekDates.map((d,i) => {
-                      const str = d.toISOString().split("T")[0];
+                      const str = (d && !isNaN(d.getTime())) ? d.toISOString().split("T")[0] : "";
                       const isToday = str === todayStr;
                       return (
                         <th key={i} style={{ textAlign:"center", background: isToday?"#f0f0ff":"", minWidth:"90px" }}>
                           <div>{DAYS[i]}</div>
                           <div style={{ fontWeight:400, color:"#aaa", fontSize:"11px" }}>
-                            {d.toLocaleDateString("en-GB",{day:"numeric",month:"short"})}
+                            {d && !isNaN(d.getTime()) ? d.toLocaleDateString("en-GB",{day:"numeric",month:"short"}) : ""}
                           </div>
                         </th>
                       );
@@ -1605,7 +1605,7 @@
                                 ? <div style={{ background:"#eef0ff", borderRadius:"8px", padding:"6px 4px",
                                                 borderLeft:"3px solid #667eea", fontSize:"11px" }}>
                                     <div style={{ fontWeight:700, color:"#1a1a2e" }}>
-                                      {shift.start}–{shift.end}
+                                      {shift.start || "09:00"}–{shift.end || "17:00"}
                                     </div>
                                     <div style={{ color:"#667eea" }}>{calcH(shift.start,shift.end)}h</div>
                                   </div>
@@ -1630,27 +1630,27 @@
             <div className="modal-overlay">
               <div className="modal">
                 <h3>
-                  {editCell.staff} — {editCell.date.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"})}
+                  {editCell.staff} — {editCell.date && !isNaN(editCell.date.getTime()) ? editCell.date.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"}) : ""}
                 </h3>
                 <div className="form-grid">
                   <div className="form-group">
                     <label>Shift Start</label>
-                    <input type="time" value={form.start} onChange={e=>setForm({...form,start:e.target.value})}/>
+                    <input type="time" value={form.start || "09:00"} onChange={e=>setForm({...form,start:e.target.value})}/>
                   </div>
                   <div className="form-group">
                     <label>Shift End</label>
-                    <input type="time" value={form.end} onChange={e=>setForm({...form,end:e.target.value})}/>
+                    <input type="time" value={form.end || "17:00"} onChange={e=>setForm({...form,end:e.target.value})}/>
                   </div>
                   <div className="form-group" style={{gridColumn:"1/-1"}}>
                     <label>Role / Station</label>
-                    <select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}>
+                    <select value={form.role || "Waiter"} onChange={e=>setForm({...form,role:e.target.value})}>
                       <option>Waiter</option><option>Chef</option><option>Bar</option>
                       <option>Host</option><option>Manager</option><option>Kitchen</option>
                     </select>
                   </div>
                   <div className="form-group" style={{gridColumn:"1/-1"}}>
                     <label>Notes (optional)</label>
-                    <input value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})}
+                    <input value={form.notes || ""} onChange={e=>setForm({...form,notes:e.target.value})}
                            placeholder="e.g. Cover for Sarah, training shift"/>
                   </div>
                 </div>
@@ -1804,6 +1804,9 @@
             </div>
         );
     }
+
+    const ROTA_STAFF = ["John Doe","Sarah Lee","Mike Chen","Emma Brown","Tom Wilson"];
+    const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
     const NAV = [
         { icon: "📊", label: "Dashboard", section: "overview" },
@@ -1966,10 +1969,10 @@
         [0,1,2,3].map(function(i){ return '<div id="pd'+i+'" style="width:20px;height:20px;border-radius:50%;border:2px solid rgba(255,255,255,.2);background:transparent;transition:all .15s"></div>'; }).join('') +
       '</div>' +
       '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">' +
-        [1,2,3,4,5,6,7,8,9,'','0','⌫'].map(function(k){
+        [1,2,3,4,5,6,7,8,9,"","0","⌫"].map(function(k){
           return '<button data-k="'+k+'" style="padding:15px 0;border-radius:12px;border:1px solid rgba(255,255,255,.08);' +
             'background:rgba(255,255,255,.05);color:#fff;font-size:20px;font-weight:600;cursor:pointer;' +
-            (k===''?'opacity:0;pointer-events:none;':'') + '" ' +
+            (k===""?"opacity:0;pointer-events:none;":"") + '" ' +
             'onmousedown="this.style.background=\'rgba(243,156,18,.25)\'" ' +
             'onmouseup="this.style.background=\'rgba(255,255,255,.05)\'">' + k + '</button>';
         }).join('') +
