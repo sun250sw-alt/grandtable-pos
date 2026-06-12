@@ -349,14 +349,25 @@
         const handlePlaceOrder = async () => {
             if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
                 try {
-                    await window.POS_GAPI.Orders.create({
-                        tableNumber: mode === "pickup" ? 0 : 99, 
+                    const res = await window.POS_GAPI.Orders.create({
+                        tableNumber: mode === "pickup" ? 0 : 99, // 99 for delivery
                         customerName: form.name || "Online Guest",
                         waiterName: "Online App",
-                        items: cartItems.map(item => ({ name: item.name, qty: cart[item.id], price: item.price })),
+                        items: cartItems.map(item => ({ name: item.name, qty: cart[item.id], price: item.price, category: item.cat })),
                         subtotal: subtotal,
                         notes: form.notes || ""
                     });
+
+                    // If delivery mode is selected, automatically register a shipping ticket in the Deliveries queue
+                    if (mode === "delivery" && res && res.success && res.data && res.data.orderId) {
+                        await window.POS_GAPI.Deliveries.create({
+                            orderId: res.data.orderId,
+                            customerName: form.name || "Online Guest",
+                            customerAddress: form.address || "No Address Provided",
+                            distance: "2.1 km", // Calculated/updated dynamically by driver maps geocoding!
+                            earnings: "250.00" // Corresponds to standard delivery fee
+                        });
+                    }
                 } catch(e) { console.error("Could not write online order to database:", e); }
             }
             setScreen("tracking");
@@ -369,7 +380,7 @@
                         <div className="tracking-header">
                             <div className="tracking-icon">🎉</div>
                             <div className="tracking-title">Order Placed!</div>
-                            <div className="tracking-sub">Order #ORD-{Math.floor(Math.random()*900+100)} confirmed</div>
+                            <div className="tracking-sub">Order confirmed</div>
                         </div>
                         <div className="eta-box">
                             <div className="eta-time">28:00</div>
