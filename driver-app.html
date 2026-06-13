@@ -112,22 +112,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .btn-delivered{background:#27ae60;color:#fff;}
 .btn-call{background:#fee2e2;color:#dc2626;}
 
-/* NEW ORDER BANNER */
-.nb-wrap{padding:12px 12px 0;}
-.new-order-banner{background:linear-gradient(135deg,#27ae60,#1e8449);
-  border-radius:14px;padding:18px;color:#fff;
-  box-shadow:0 4px 20px rgba(39,174,96,.35);
-  animation:popin .4s cubic-bezier(.34,1.56,.64,1);}
-@keyframes popin{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
-.nb-tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;opacity:.8;margin-bottom:5px;}
-.nb-title{font-size:20px;font-weight:900;margin-bottom:3px;}
-.nb-detail{font-size:13px;opacity:.8;margin-bottom:14px;}
-.nb-btns{display:flex;gap:8px;}
-.nb-accept{flex:1;padding:13px;background:#fff;color:#27ae60;
-  border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;}
-.nb-decline{padding:13px 18px;background:rgba(255,255,255,.15);
-  color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;}
-
 /* EARNINGS */
 .earn-wrap{padding:12px;}
 .earn-hero{background:linear-gradient(135deg,#27ae60,#1e8449);
@@ -220,24 +204,15 @@ var APP = {
   tab      : "orders",
   orders   : [],
   history  : [],
-  earn     : { today:240.00, week:1420.00, dels:1, km:12.4 },
+  earn     : { today:0.00, week:1420.00, dels:0, km:0.0 },
   gps      : null,     
   map      : null,     
   dirR     : null,     
   driverM  : null,     
   mapReady : false,
-  newBanner: false,
 };
 
-var DEMO_ORDERS = [
-  { id:"ORD-082", deliveryId:"DEL-DEMO-82", time:"12:34 PM", status:"pickup",
-    rest:{ name:"The Grand Table", addr:"15 Galle Road, Colombo", lat:6.9271, lng:79.8612 },
-    cust:{ name:"Mr. James",       addr:"42 Duplication Rd, Colombo", phone:"+94 77 123 4567", lat:6.9012, lng:79.8562 },
-    items:["Burger Deluxe ×2","Coca Cola ×2"], val:310.00 },
-];
-var DEMO_HIST = [
-  { id:"ORD-076", addr:"12 Park Avenue",        time:"11:52 AM", earn:240.00 },
-];
+var DEFAULT_REST_ADDR = "15 Galle Road, Colombo";
 
 // ── GPS ───────────────────────────────────────────────────────
 function startGPS() {
@@ -284,14 +259,14 @@ function sendLocationToSheet() {
 function hasMapsKey() {
   return typeof POS_CONFIG !== "undefined" &&
          POS_CONFIG.MAPS_API_KEY &&
-         POS_CONFIG.MAPS_API_KEY !== "YOUR_MAPS_API_KEY";
+         POS_CONFIG.MAPS_API_KEY !== "";
 }
 
 function loadMapsAPI() {
   if (!hasMapsKey()) return;
   var s = document.createElement("script");
   s.src = "https://maps.googleapis.com/maps/api/js?key=" +
-          POS_CONFIG.MAPS_API_KEY + "&libraries=geometry&callback=mapsReady";
+          POS_CONFIG.MAPS_API_KEY + "&libraries=geometry,places&callback=mapsReady";
   s.async = true; s.defer = true;
   document.head.appendChild(s);
 }
@@ -322,7 +297,7 @@ window.mapsReady = function() {
   if (loading) loading.remove();
 
   if (APP.gps) placeDriverMarker();
-  if (APP.orders.length) drawRoute(APP.orders[0]);
+  if (APP.orders.length) geocodeAndDrawRoute(APP.orders[0]);
 };
 
 function placeDriverMarker() {
@@ -342,6 +317,21 @@ function placeDriverMarker() {
 function updateDriverMarker() {
   if (!APP.mapReady) return;
   placeDriverMarker();
+}
+
+// Convert plain-text shipping address to GPS Coordinates & plot active route
+function geocodeAndDrawRoute(order) {
+  if (!APP.mapReady || !order) return;
+  
+  var geocoder = new google.maps.Geocoder();
+  geocoder.geocode({ address: order.cust.addr }, function(results, status) {
+    if (status === "OK" && results[0]) {
+      var location = results[0].geometry.location;
+      order.cust.lat = location.lat();
+      order.cust.lng = location.lng();
+    }
+    drawRoute(order);
+  });
 }
 
 var _extraMarkers = [];
@@ -420,7 +410,7 @@ function openGoogleMaps(addr) {
 function showRouteOnMap(id) {
   var order = APP.orders.find(function(o){ return o.id===id; });
   if (order && APP.mapReady) {
-    drawRoute(order);
+    geocodeAndDrawRoute(order);
     document.getElementById("content").scrollTop = 0;
   }
 }
@@ -434,7 +424,7 @@ function setTab(tab) {
   });
   render();
   if (tab === "orders" && APP.mapReady && APP.orders.length) {
-    setTimeout(function(){ drawRoute(APP.orders[0]); }, 100);
+    setTimeout(function(){ geocodeAndDrawRoute(APP.orders[0]); }, 100);
   }
 }
 
@@ -471,21 +461,11 @@ function renderOrders() {
     : '<div id="map-container"><div class="map-no-key"><div style="font-size:32px">🗺️</div>' +
       '<div>Add <strong>MAPS_API_KEY</strong> to pos-config.js<br>to enable live route tracking</div></div></div>';
 
-  var bannerHtml = APP.newBanner
-    ? '<div class="nb-wrap"><div class="new-order-banner">' +
-      '<div class="nb-tag">🔔 New Order Request</div>' +
-      '<div class="nb-title">ORD-091 · 2.1 km away</div>' +
-      '<div class="nb-detail">3 items · Est. Rs.240.00 · ~18 min</div>' +
-      '<div class="nb-btns">' +
-      '<button class="nb-accept" onclick="acceptOrder()">✅ Accept</button>' +
-      '<button class="nb-decline" onclick="dismissBanner()">Decline</button>' +
-      '</div></div></div>' : '';
-
   var cardsHtml = APP.orders.length === 0
     ? '<div class="center-state"><div class="cs-icon">🎉</div><div class="cs-title">All Delivered!</div><div class="cs-sub">Waiting for new orders…</div></div>'
     : APP.orders.map(orderCardHtml).join("");
 
-  return mapHtml + bannerHtml + '<div class="orders-wrap">' + cardsHtml + '</div>';
+  return mapHtml + '<div class="orders-wrap">' + cardsHtml + '</div>';
 }
 
 function orderCardHtml(o) {
@@ -535,55 +515,133 @@ async function loadLiveDeliveries() {
   if (!api || !api.getSheetId || !api.getSheetId()) return;
 
   try {
-    const res = await api.Drivers.getOrders(APP.session.email);
-    if (res && res.data && res.data.length > 0) {
-      APP.orders = res.data.map(function(d) {
-        return {
-          id: d.OrderID || d.DeliveryID,
-          deliveryId: d.DeliveryID,
-          time: d.PickupTime ? new Date(d.PickupTime).toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"}) : "Just now",
-          status: d.Status === "pending" || d.Status === "pickup" ? "pickup" : "transit",
-          rest: { name: POS_CONFIG.RESTAURANT_NAME, addr: "15 Galle Road, Colombo", lat: 6.9271, lng: 79.8612 },
-          cust: { name: d.CustomerName || "Customer", addr: d.CustomerAddress, phone: "+94 77 123 4567", lat: 6.9012, lng: 79.8562 },
-          items: ["Food Package"],
-          val: parseFloat(d.Earnings) || 240.00
-        };
-      });
-      render();
-    }
-  } catch(e) {
-    console.error("Live deliveries sync fail:", e);
-  }
-}
+    // 1. Fetch live Deliveries, Orders, and Settings from Drive
+    const [delRows, ordRows, setRows] = await Promise.all([
+      api.getRows("Deliveries"),
+      api.getRows("Orders"),
+      api.getRows("Settings")
+    ]);
 
-function updateStatus(deliveryId, status) {
-  var api = window.POS_GAPI || window.POS_API;
-  if (status === "delivered") {
-    var matchOrder = APP.orders.find(function(o){ return o.deliveryId === deliveryId; });
-    APP.orders = APP.orders.filter(function(o){ return o.deliveryId !== deliveryId; });
-    APP.earn.today += 240.00;
-    APP.earn.dels++;
-    
-    if (matchOrder) {
-      APP.history.unshift({ id: matchOrder.id, addr: matchOrder.cust.addr,
-        time: new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}), earn: 240.00 });
-    } else {
-      APP.history.unshift({ id: deliveryId, addr:"Delivered successfully",
-        time: new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}), earn: 240.00 });
-    }
+    // 2. Resolve Restaurant address config
+    var restName = POS_CONFIG.RESTAURANT_NAME;
+    var restAddr = DEFAULT_REST_ADDR;
+    var setRestName = setRows.find(s => s.Key === "restaurant_name");
+    var setRestAddr = setRows.find(s => s.Key === "restaurant_address");
+    if (setRestName) restName = setRestName.Value;
+    if (setRestAddr) restAddr = setRestAddr.Value;
+
+    // 3. Filter Deliveries assigned to this logged-in driver that are still active
+    const driverEmail = APP.session.email.toLowerCase();
+    const activeDels = delRows.filter(function(d) {
+      return d.DriverEmail && d.DriverEmail.toLowerCase() === driverEmail &&
+             d.Status !== "delivered" && d.Status !== "cancelled";
+    });
+
+    const historicalDels = delRows.filter(function(d) {
+      return d.DriverEmail && d.DriverEmail.toLowerCase() === driverEmail &&
+             d.Status === "delivered";
+    });
+
+    // 4. Update local Earnings and delivery stats dynamically
+    APP.earn.dels = historicalDels.length;
+    APP.earn.today = historicalDels.reduce((sum, d) => sum + (parseFloat(d.Earnings) || 0), 0);
     
     var earnEl = document.getElementById("st-earn");
     var delEl = document.getElementById("st-del");
-    if (earnEl) earnEl.textContent = "Rs." + APP.earn.today.toFixed(2);
+    if (earnEl) earnEl.textContent = "Rs. " + APP.earn.today.toFixed(0);
     if (delEl) delEl.textContent = APP.earn.dels;
 
-    if (api && api.Deliveries) api.Deliveries.update({ deliveryId: deliveryId, status: 'delivered' }).catch(function(){});
-  } else {
-    APP.orders = APP.orders.map(function(o){ return o.deliveryId===deliveryId ? Object.assign({},o,{status:status}) : o; });
-    if (api && api.Deliveries) api.Deliveries.update({ deliveryId: deliveryId, status: status }).catch(function(){});
+    // Map historical ledger
+    APP.history = historicalDels.map(function(d) {
+        return {
+            id: d.OrderID || d.DeliveryID,
+            addr: d.CustomerAddress,
+            time: d.DeliveredTime ? new Date(d.DeliveredTime).toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"}) : "Complete",
+            earn: parseFloat(d.Earnings) || 250.00
+        };
+    });
+
+    // 5. Build active delivery array
+    APP.orders = activeDels.map(function(d) {
+      const matchOrder = ordRows.find(function(o) { return o.OrderID === d.OrderID; });
+      let itemsList = ["Food Package"];
+      let orderVal = 250.00;
+      let orderNotes = "";
+      
+      if (matchOrder) {
+        try {
+          itemsList = JSON.parse(matchOrder.Items).map(function(it){ return (it.qty || it.quantity) + "x " + (it.name || it.Name); });
+          orderVal = parseFloat(matchOrder.Total) || 250.00;
+          orderNotes = matchOrder.Notes || "";
+        } catch(e){}
+      }
+
+      return {
+        id: d.OrderID,
+        deliveryId: d.DeliveryID,
+        time: d.PickupTime ? new Date(d.PickupTime).toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"}) : "Just now",
+        status: d.Status === "pending" || d.Status === "pickup" ? "pickup" : "transit",
+        rest: { name: restName, addr: restAddr, lat: 6.9271, lng: 79.8612 },
+        cust: { 
+          name: d.CustomerName || "Customer", 
+          addr: d.CustomerAddress, 
+          phone: "+94 77 123 4567",
+          lat: 6.9012, lng: 79.8562 
+        },
+        items: itemsList,
+        val: orderVal
+      };
+    });
+    
+    render();
+    if (APP.orders.length && APP.mapReady) {
+        geocodeAndDrawRoute(APP.orders[0]);
+    }
+  } catch(e) {
+    console.error("Live deliveries joining error:", e);
   }
-  render();
-  if (APP.mapReady && APP.orders.length) setTimeout(function(){ drawRoute(APP.orders[0]); }, 100);
+}
+
+async function updateStatus(deliveryId, status) {
+  var api = window.POS_GAPI || window.POS_API;
+  if (!api || !api.getSheetId()) return;
+
+  try {
+    if (status === "delivered") {
+      // 1. Mark delivery row as delivered in Sheets
+      await api.updateRow("Deliveries", 0, deliveryId, {
+         Status: "delivered",
+         DeliveredTime: new Date().toISOString(),
+         Distance: APP.earn.km + " km",
+         Earnings: "250.00" // Corresponds to delivery fee payout
+      });
+
+      // 2. Locate active order ID to close the main order row
+      var matchDel = APP.orders.find(function(o){ return o.deliveryId === deliveryId; });
+      if (matchDel && matchDel.id) {
+          await api.updateRow("Orders", 0, matchDel.id, {
+             Status: "closed"
+          });
+      }
+
+      showNotification("Delivery complete! Payout recorded.");
+    } else {
+      // Mark as picked up (In Transit)
+      await api.updateRow("Deliveries", 0, deliveryId, {
+         Status: status,
+         PickupTime: new Date().toISOString()
+      });
+      showNotification("Pickup confirmed. Start driving!");
+    }
+    
+    await loadLiveDeliveries();
+  } catch(err) {
+      console.error("Failed to update status on sheet:", err);
+  }
+}
+
+function showNotification(msg) {
+    console.log("Driver notification:", msg);
 }
 
 // ── EARNINGS ─────────────────────────────────────────────────
@@ -629,35 +687,6 @@ function renderHistory() {
     }).join("") + '</div>';
 }
 
-// ── NEW ORDER BANNER ──────────────────────────────────────────
-function showNewOrderBanner() {
-  if (!APP.online || !APP.session) return;
-  APP.newBanner = true;
-  render();
-  if (APP.mapReady && APP.orders.length) setTimeout(function(){ drawRoute(APP.orders[0]); }, 100);
-}
-
-function dismissBanner() { APP.newBanner = false; render(); }
-
-function acceptOrder() {
-  APP.newBanner = false;
-  var newOrder = {
-    id:"ORD-091",
-    deliveryId: "DEL-DEMO-91",
-    time: new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}),
-    status:"pickup",
-    rest:{ name:"The Grand Table", addr:"15 Galle Road, Colombo", lat:6.9271, lng:79.8612 },
-    cust:{ name:"Mrs. Patel", addr:"99 Galle Road, Colombo", phone:"+94 77 987 6543", lat:6.9100, lng:79.8550 },
-    items:["Pasta Carbonara ×2","Garlic Bread ×1"], val:280.00
-  };
-  APP.orders.unshift(newOrder);
-  render();
-  if (APP.mapReady) setTimeout(function(){ drawRoute(newOrder); }, 150);
-}
-
-var styleEl = document.createElement("style");
-styleEl.textContent = "@keyframes spin{to{transform:rotate(360deg)}}";
-document.head.appendChild(styleEl);
 </script>
 <script>
 (function() {
@@ -669,8 +698,6 @@ document.head.appendChild(styleEl);
     POS_AUTH.init("driver-app", {
       onReady: function(session) {
         APP.session = session;
-        APP.orders  = DEMO_ORDERS;
-        APP.history = DEMO_HIST;
 
         var root = document.getElementById("app");
         if (root) root.style.display = "flex";
