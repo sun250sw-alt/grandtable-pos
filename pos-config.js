@@ -13,7 +13,7 @@ const POS_CONFIG = {
   TAX_RATE         : 0.10,
   DELIVERY_FEE     : 250,
   POLL_MS          : 5000,
-  MAPS_API_KEY     : "",   // optional — for driver GPS
+  MAPS_API_KEY     : "AIzaSyC8E4xFMHnAZi1TZFM5pW51caa746de3ZQ",   // optional — for driver GPS
 
   // Auth mode per app
   ACCESS: {
