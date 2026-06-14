@@ -213,6 +213,8 @@ var APP = {
 };
 
 var DEFAULT_REST_ADDR = "15 Galle Road, Colombo";
+var DEFAULT_REST_LAT = 6.927100;
+var DEFAULT_REST_LNG = 79.861200;
 
 // ── GPS ───────────────────────────────────────────────────────
 function startGPS() {
@@ -275,7 +277,7 @@ window.mapsReady = function() {
   var el = document.getElementById("gmap");
   if (!el) return;
 
-  var center = APP.gps ? { lat: APP.gps.lat, lng: APP.gps.lng } : { lat:6.9271, lng:79.8612 };
+  var center = APP.gps ? { lat: APP.gps.lat, lng: APP.gps.lng } : { lat: DEFAULT_REST_LAT, lng: DEFAULT_REST_LNG };
 
   APP.map = new google.maps.Map(el, {
     zoom: 14, center: center, mapTypeId: "roadmap",
@@ -307,7 +309,7 @@ function placeDriverMarker() {
     APP.driverM.setPosition(pos);
   } else {
     APP.driverM = new google.maps.Marker({
-      position: pos, map: APP.map, title: "You", zIndex: 10,
+      position: pos, map: APP.map, title: "Driver Position", zIndex: 10,
       icon: { path: google.maps.SymbolPath.CIRCLE, scale: 10,
               fillColor:"#4285F4", fillOpacity:1, strokeColor:"#fff", strokeWeight:3 }
     });
@@ -319,10 +321,26 @@ function updateDriverMarker() {
   placeDriverMarker();
 }
 
-// Convert plain-text shipping address to GPS Coordinates & plot active route
+// Coordinate extraction parser (if customer used the GPS Auto-detection finder button)
 function geocodeAndDrawRoute(order) {
   if (!APP.mapReady || !order) return;
   
+  // Clean GPS Coordinates parsing (E.g. "GPS: 6.927100, 79.861200")
+  if (String(order.cust.addr).startsWith("GPS:")) {
+    const rawCoords = String(order.cust.addr).replace("GPS:", "").split(",");
+    if (rawCoords.length === 2) {
+      const parsedLat = parseFloat(rawCoords[0].trim());
+      const parsedLng = parseFloat(rawCoords[1].trim());
+      if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+         order.cust.lat = parsedLat;
+         order.cust.lng = parsedLng;
+         drawRoute(order);
+         return;
+      }
+    }
+  }
+
+  // Fallback to text Address Geocoding
   var geocoder = new google.maps.Geocoder();
   geocoder.geocode({ address: order.cust.addr }, function(results, status) {
     if (status === "OK" && results[0]) {
@@ -341,16 +359,23 @@ function drawRoute(order) {
   _extraMarkers.forEach(function(m){ m.setMap(null); });
   _extraMarkers = [];
 
+  // Plot 1: Driver Location
   var driverPos = APP.gps
     ? { lat: APP.gps.lat, lng: APP.gps.lng }
     : { lat: order.rest.lat, lng: order.rest.lng };
 
+  // Plot 2: Restaurant Location
+  var restPos = { lat: order.rest.lat, lng: order.rest.lng };
+
+  // Plot 3: Customer Location
+  var custPos = { lat: order.cust.lat, lng: order.cust.lng };
+
   var origin      = driverPos;
-  var destination = { lat: order.cust.lat, lng: order.cust.lng };
+  var destination = custPos;
   var waypoints   = [];
 
   if (order.status === "pickup") {
-    waypoints = [{ location:{ lat:order.rest.lat, lng:order.rest.lng }, stopover:true }];
+    waypoints = [{ location: restPos, stopover:true }];
   }
 
   new google.maps.DirectionsService().route({
@@ -371,8 +396,9 @@ function drawRoute(order) {
     var kmEl = document.getElementById("st-km");
     if (kmEl) kmEl.textContent = APP.earn.km + " km";
 
+    // Restaurant pin (Red marker with 'R')
     _extraMarkers.push(new google.maps.Marker({
-      position: { lat:order.rest.lat, lng:order.rest.lng },
+      position: restPos,
       map: APP.map, title: order.rest.name, zIndex:5,
       icon: {
         path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z",
@@ -382,8 +408,9 @@ function drawRoute(order) {
       label:{ text:"R", color:"#fff", fontSize:"11px", fontWeight:"bold" }
     }));
 
+    // Customer pin (Green marker with 'C')
     _extraMarkers.push(new google.maps.Marker({
-      position: destination,
+      position: custPos,
       map: APP.map, title: order.cust.name, zIndex:5,
       icon: {
         path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z",
@@ -515,22 +542,30 @@ async function loadLiveDeliveries() {
   if (!api || !api.getSheetId || !api.getSheetId()) return;
 
   try {
-    // 1. Fetch live Deliveries, Orders, and Settings from Drive
+    // 1. Fetch live Deliveries, Orders, and Settings from Sheets
     const [delRows, ordRows, setRows] = await Promise.all([
       api.getRows("Deliveries"),
       api.getRows("Orders"),
       api.getRows("Settings")
     ]);
 
-    // 2. Resolve Restaurant address config
+    // 2. Resolve dynamic Restaurant address and GPS coordinates
     var restName = POS_CONFIG.RESTAURANT_NAME;
     var restAddr = DEFAULT_REST_ADDR;
+    var restLat  = DEFAULT_REST_LAT;
+    var restLng  = DEFAULT_REST_LNG;
+
     var setRestName = setRows.find(s => s.Key === "restaurant_name");
     var setRestAddr = setRows.find(s => s.Key === "restaurant_address");
+    var setRestLat  = setRows.find(s => s.Key === "restaurant_lat");
+    var setRestLng  = setRows.find(s => s.Key === "restaurant_lng");
+
     if (setRestName) restName = setRestName.Value;
     if (setRestAddr) restAddr = setRestAddr.Value;
+    if (setRestLat && parseFloat(setRestLat.Value)) restLat = parseFloat(setRestLat.Value);
+    if (setRestLng && parseFloat(setRestLng.Value)) restLng = parseFloat(setRestLng.Value);
 
-    // 3. Filter Deliveries assigned to this logged-in driver that are still active
+    // 3. Filter Deliveries assigned to this driver that are active
     const driverEmail = APP.session.email.toLowerCase();
     const activeDels = delRows.filter(function(d) {
       return d.DriverEmail && d.DriverEmail.toLowerCase() === driverEmail &&
@@ -561,18 +596,22 @@ async function loadLiveDeliveries() {
         };
     });
 
-    // 5. Build active delivery array
+    // 5. Build active delivery array with Joined Order details
     APP.orders = activeDels.map(function(d) {
       const matchOrder = ordRows.find(function(o) { return o.OrderID === d.OrderID; });
       let itemsList = ["Food Package"];
       let orderVal = 250.00;
-      let orderNotes = "";
+      let orderPhone = "+94 77 123 4567";
       
       if (matchOrder) {
         try {
           itemsList = JSON.parse(matchOrder.Items).map(function(it){ return (it.qty || it.quantity) + "x " + (it.name || it.Name); });
           orderVal = parseFloat(matchOrder.Total) || 250.00;
-          orderNotes = matchOrder.Notes || "";
+          
+          // Fallback to customer's phone number from sheet record
+          if (matchOrder.CustomerPhone || matchOrder.Phone) {
+              orderPhone = matchOrder.CustomerPhone || matchOrder.Phone;
+          }
         } catch(e){}
       }
 
@@ -581,11 +620,11 @@ async function loadLiveDeliveries() {
         deliveryId: d.DeliveryID,
         time: d.PickupTime ? new Date(d.PickupTime).toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"}) : "Just now",
         status: d.Status === "pending" || d.Status === "pickup" ? "pickup" : "transit",
-        rest: { name: restName, addr: restAddr, lat: 6.9271, lng: 79.8612 },
+        rest: { name: restName, addr: restAddr, lat: restLat, lng: restLng },
         cust: { 
           name: d.CustomerName || "Customer", 
           addr: d.CustomerAddress, 
-          phone: "+94 77 123 4567",
+          phone: orderPhone,
           lat: 6.9012, lng: 79.8562 
         },
         items: itemsList,
@@ -613,7 +652,7 @@ async function updateStatus(deliveryId, status) {
          Status: "delivered",
          DeliveredTime: new Date().toISOString(),
          Distance: APP.earn.km + " km",
-         Earnings: "250.00" // Corresponds to delivery fee payout
+         Earnings: "250.00" 
       });
 
       // 2. Locate active order ID to close the main order row
@@ -642,49 +681,6 @@ async function updateStatus(deliveryId, status) {
 
 function showNotification(msg) {
     console.log("Driver notification:", msg);
-}
-
-// ── EARNINGS ─────────────────────────────────────────────────
-function renderEarnings() {
-  var e = APP.earn;
-  var days = [
-    { d:"Mon", v:520.00 }, { d:"Tue", v:680.00 }, { d:"Wed", v:e.today },
-    { d:"Thu", v:null },  { d:"Fri", v:null },   { d:"Sat", v:null }
-  ];
-  return '<div class="earn-wrap">' +
-    '<div class="earn-hero">' +
-      '<div class="earn-big">Rs.' + e.today.toFixed(2) + '</div>' +
-      '<div class="earn-sub">Today · ' + e.dels + ' deliveries</div>' +
-      '<div class="earn-grid">' +
-        '<div class="earn-box"><div class="earn-box-val">Rs.' + (e.today*.84).toFixed(2) + '</div><div class="earn-box-lbl">Base Pay</div></div>' +
-        '<div class="earn-box"><div class="earn-box-val">Rs.' + (e.today*.16).toFixed(2) + '</div><div class="earn-box-lbl">Tips</div></div>' +
-        '<div class="earn-box"><div class="earn-box-val">' + e.dels + '</div><div class="earn-box-lbl">Deliveries</div></div>' +
-        '<div class="earn-box"><div class="earn-box-val">' + e.km + ' km</div><div class="earn-box-lbl">Distance</div></div>' +
-      '</div>' +
-    '</div>' +
-    '<div class="earn-card"><div class="earn-card-title">📅 This Week</div>' +
-    days.map(function(d){
-      return '<div class="earn-row"><div class="er-day">' + d.d + '</div>' +
-             '<div class="er-val">' + (d.v!=null ? "Rs."+d.v.toFixed(2) : "—") + '</div></div>';
-    }).join("") +
-    '<div class="earn-row" style="border-top:2px solid #eee;margin-top:4px;">' +
-      '<div class="er-day" style="font-weight:800;font-size:15px">Week Total</div>' +
-      '<div class="er-val" style="font-size:18px">Rs.' + e.week.toFixed(2) + '</div>' +
-    '</div></div></div>';
-}
-
-// ── HISTORY ───────────────────────────────────────────────────
-function renderHistory() {
-  if (!APP.history.length) return '<div class="center-state"><div class="cs-icon">🕐</div><div class="cs-title">No deliveries yet</div></div>';
-  return '<div class="hist-wrap">' +
-    APP.history.map(function(h){
-      return '<div class="hist-item">' +
-        '<div><div class="hi-id">' + h.id + ' · ✅ Delivered</div>' +
-        '<div class="hi-addr">📍 ' + h.addr + '</div>' +
-        '<div class="hi-time">🕐 ' + h.time + '</div></div>' +
-        '<div class="hi-earn">+Rs.' + h.earn.toFixed(2) + '</div>' +
-        '</div>';
-    }).join("") + '</div>';
 }
 
 </script>
