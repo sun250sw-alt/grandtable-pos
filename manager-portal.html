@@ -241,7 +241,6 @@
 <script type="text/babel">
     const { useState, useEffect } = React;
 
-    // Placed at the top to avoid TDZ compile errors
     const RECIPE_DATA = {
       "Burger Deluxe": {
         prepTime:"5 min", cookTime:"12 min", difficulty:"Easy",
@@ -1728,7 +1727,7 @@
     }
 
     function SettingsPage({ toast }) {
-        const [form, setForm] = useState({ name: "", currency: "LKR", tax: "10", delivery: "250", pin: "1234" });
+        const [form, setForm] = useState({ name: "", currency: "LKR", tax: "10", delivery: "250", pin: "1234", address: "", lat: "", lng: "" });
         const [saving, setSaving] = useState(false);
 
         const loadSettings = async () => {
@@ -1740,7 +1739,10 @@
                     currency: settings.currency || "LKR",
                     tax: String((parseFloat(settings.tax_rate) || 0.10) * 100),
                     delivery: String(settings.delivery_fee || "250"),
-                    pin: settings.admin_pin || "1234"
+                    pin: settings.admin_pin || "1234",
+                    address: settings.restaurant_address || "",
+                    lat: settings.restaurant_lat || "",
+                    lng: settings.restaurant_lng || ""
                 });
             } catch(e) { console.error("Load settings page error:", e); }
         };
@@ -1748,6 +1750,28 @@
         useEffect(() => {
             loadSettings();
         }, []);
+
+        const handleDetectLocation = () => {
+            if (!navigator.geolocation) {
+                alert("Geolocation is not supported by your browser.");
+                return;
+            }
+            toast("📍 Querying GPS coordinates...");
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    setForm(prev => ({
+                        ...prev,
+                        lat: pos.coords.latitude.toFixed(6),
+                        lng: pos.coords.longitude.toFixed(6)
+                    }));
+                    toast("✅ Shop coordinates locked successfully!");
+                },
+                (err) => {
+                    alert("GPS Access Denied. Please input coordinates manually.");
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        };
 
         const handleSave = async () => {
             if (!form.name || !form.pin) { alert("Restaurant Name and PIN are required"); return; }
@@ -1761,7 +1785,10 @@
                         currency: form.currency,
                         tax_rate: String(parseFloat(form.tax) / 100),
                         delivery_fee: form.delivery,
-                        admin_pin: form.pin
+                        admin_pin: form.pin,
+                        restaurant_address: form.address,
+                        restaurant_lat: form.lat,
+                        restaurant_lng: form.lng
                     });
                     toast("⚙️ Settings updated successfully!");
                 }
@@ -1778,6 +1805,22 @@
                     <div className="form-group" style={{ gridColumn: "1/-1" }}>
                         <label>Restaurant Name</label>
                         <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. The Grand Table" />
+                    </div>
+                    <div className="form-group" style={{ gridColumn: "1/-1" }}>
+                        <label>Restaurant Street Address (e.g., used for Delivery origins)</label>
+                        <input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="e.g. 15 Galle Road, Colombo" />
+                    </div>
+                    <div className="form-group" style={{ gridColumn: "1/-1", display: "flex", gap: "10px", alignItems: "flex-end" }}>
+                        <div style={{ flex: 1 }}>
+                            <label>GPS Coordinates (Latitude, Longitude)</label>
+                            <div style={{ display: "flex", gap: "8px" }}>
+                                <input value={form.lat} onChange={e => setForm({ ...form, lat: e.target.value })} placeholder="e.g. 6.927100" />
+                                <input value={form.lng} onChange={e => setForm({ ...form, lng: e.target.value })} placeholder="e.g. 79.861200" />
+                            </div>
+                        </div>
+                        <button className="btn btn-ghost" type="button" onClick={handleDetectLocation} style={{ height: "42px" }}>
+                            📌 Detect GPS Location
+                        </button>
                     </div>
                     <div className="form-group">
                         <label>Currency Symbol / Code</label>
