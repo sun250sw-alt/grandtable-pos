@@ -18,7 +18,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   padding:14px 24px;display:flex;justify-content:space-between;
   align-items:center;box-shadow:0 4px 12px rgba(0,0,0,.4);}
 .header h1{font-size:22px;font-weight:700;color:black;}
-.header-right{display:flex;gap:14px;align-items:center;font-size:13px;}
+.header-right{display:flex;gap:10px;align-items:center;font-size:13px;}
 .queue-count{background:rgba(0,0,0,.2);padding:5px 14px;
   border-radius:10px;font-weight:700;color:black;}
 
@@ -281,6 +281,91 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .ing-row:last-child{border-bottom:none;}
 .ing-name{color:#c9d1d9;flex:1;}
 .ing-amt{color:#f39c12;font-weight:700;font-size:12px;text-align:right;white-space:nowrap;}
+
+/* CHEF HISTORY MODAL */
+.history-modal-overlay {
+  position:fixed;
+  top:0; left:0; right:0; bottom:0;
+  background:rgba(0,0,0,0.75);
+  backdrop-filter:blur(4px);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  z-index:9999;
+  padding:20px;
+}
+.history-modal-card {
+  background:#161b22;
+  border:1px solid #30363d;
+  border-radius:16px;
+  max-width:760px;
+  width:100%;
+  max-height:85vh;
+  display:flex;
+  flex-direction:column;
+  box-shadow:0 20px 60px rgba(0,0,0,0.8);
+  overflow:hidden;
+}
+.hm-header {
+  padding:18px 24px;
+  background:#21262d;
+  border-bottom:1px solid #30363d;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+.hm-title { font-size:18px; font-weight:800; color:white; display:flex; align-items:center; gap:8px; }
+.hm-close { background:transparent; border:none; color:#8b949e; font-size:22px; cursor:pointer; padding:0 6px; }
+.hm-close:hover { color:white; }
+.hm-stats {
+  display:flex;
+  gap:14px;
+  padding:14px 24px;
+  background:#111827;
+  border-bottom:1px solid #30363d;
+  font-size:12px;
+}
+.hm-stat-box {
+  background:#1f2937;
+  padding:8px 16px;
+  border-radius:8px;
+  border:1px solid #374151;
+}
+.hm-stat-val { font-size:18px; font-weight:900; color:#f39c12; }
+.hm-stat-lbl { color:#9ca3af; font-size:10px; text-transform:uppercase; font-weight:700; margin-top:2px; }
+.hm-body {
+  padding:16px 24px;
+  overflow-y:auto;
+  flex:1;
+}
+.hm-table {
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+  text-align:left;
+}
+.hm-table th {
+  padding:10px 12px;
+  color:#8b949e;
+  font-size:11px;
+  text-transform:uppercase;
+  border-bottom:1px solid #30363d;
+  font-weight:700;
+}
+.hm-table td {
+  padding:12px;
+  border-bottom:1px solid #21262d;
+  color:#e6edf3;
+}
+.hm-table tr:hover { background:rgba(255,255,255,0.02); }
+.status-badge {
+  padding:3px 8px;
+  border-radius:6px;
+  font-size:11px;
+  font-weight:700;
+}
+.sb-ready { background:rgba(39,174,96,0.2); color:#2ecc71; border:1px solid rgba(39,174,96,0.3); }
+.sb-prep  { background:rgba(243,156,18,0.2); color:#f39c12; border:1px solid rgba(243,156,18,0.3); }
 </style>
 </head>
 <body>
@@ -301,10 +386,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
          <h1>👨‍🍳 Kitchen Prep Display</h1>
       </div>
       <div class="header-right">
-        <button onclick="doSignOutChef()" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:white; padding:4px 12px; border-radius:8px; font-size:11px; cursor:pointer; margin-right:8px;">↩ Switch Station</button>
-        <span id="chef-badge" style="font-weight:700; color:black; background:white; padding:4px 12px; border-radius:8px; margin-right:8px;">Chef: —</span>
+        <!-- CHEF HISTORY BUTTON -->
+        <button onclick="openChefHistory()" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.25); color:white; padding:5px 12px; border-radius:8px; font-size:11px; cursor:pointer; font-weight:700; display:flex; align-items:center; gap:6px;">📋 My History</button>
+        <button onclick="doSignOutChef()" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:white; padding:5px 12px; border-radius:8px; font-size:11px; cursor:pointer;">↩ Switch Station</button>
+        <span id="chef-badge" style="font-weight:700; color:black; background:white; padding:5px 12px; border-radius:8px;">Chef: —</span>
         <div class="queue-count" id="queue-count">0 dishes</div>
-        <div id="user-badge" style="display:flex;align-items:center;gap:6px;"></div>
         <span id="hdr-time" style="opacity:.7"></span>
       </div>
     </div>
@@ -329,6 +415,29 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
           <p style="font-size:14px;margin-top:6px">Tap any dish to see step-by-step recipe</p>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- CHEF HISTORY POPUP MODAL -->
+<div id="history-modal" class="history-modal-overlay" onclick="if(event.target===this) closeChefHistory();">
+  <div class="history-modal-card">
+    <div class="hm-header">
+      <div class="hm-title" id="hm-modal-title">👨‍🍳 Cooking History</div>
+      <button class="hm-close" onclick="closeChefHistory()">✕</button>
+    </div>
+    <div class="hm-stats" id="hm-stats-bar">
+      <div class="hm-stat-box">
+        <div class="hm-stat-val" id="hm-total-dishes">0</div>
+        <div class="hm-stat-lbl">Dishes Prepared</div>
+      </div>
+      <div class="hm-stat-box">
+        <div class="hm-stat-val" id="hm-total-orders">0</div>
+        <div class="hm-stat-lbl">Orders Handled</div>
+      </div>
+    </div>
+    <div class="hm-body" id="hm-list-container">
+      <div style="text-align:center; padding:40px; color:#8b949e;">Loading history records…</div>
     </div>
   </div>
 </div>
@@ -565,6 +674,95 @@ function selectChef(name) {
   loadQueue();
   var pollMs = (window.POS_CONFIG && window.POS_CONFIG.POLL_MS) || 4000;
   STATE.queueIntervalId = setInterval(loadQueue, pollMs);
+}
+
+// ── CHEF HISTORY DIALOG & CONTROLLER ──
+function openChefHistory() {
+  if (!STATE.currentChef) return;
+  var modal = document.getElementById("history-modal");
+  var title = document.getElementById("hm-modal-title");
+  var container = document.getElementById("hm-list-container");
+  
+  title.innerHTML = "👨‍🍳 " + STATE.currentChef + "'s Cooking History";
+  container.innerHTML = '<div style="text-align:center; padding:40px; color:#8b949e;">Loading history records from Google Sheets…</div>';
+  modal.style.display = "flex";
+
+  var api = getPosApi();
+  if (!api || !api.Orders || typeof api.Orders.getAll !== "function") {
+    container.innerHTML = '<div style="text-align:center; padding:40px; color:#8b949e;">Database not connected.</div>';
+    return;
+  }
+
+  api.Orders.getAll().then(function(res) {
+    var orders = (res && res.data) ? res.data : [];
+    var chefHistory = [];
+    var orderSet = new Set();
+    var currentChefNorm = STATE.currentChef.trim().toLowerCase();
+
+    orders.forEach(function(order) {
+      var rawItems = order.Items || order.items || order.OrderItems || [];
+      var orderItems = safeParseItems(rawItems);
+      var orderId = order.OrderID || order.OrderId || order.orderId || order.id || "ORD";
+      var tableNo = order.TableNumber || order.Table || order.TableNo || order.table || "—";
+      var timeStr = order.OrderTime || order.orderTime || order.CreatedAt || "";
+
+      orderItems.forEach(function(item) {
+        var itChef = (item.chef || "").trim().toLowerCase();
+        if (itChef === currentChefNorm) {
+          orderSet.add(orderId);
+          chefHistory.push({
+            orderId  : orderId,
+            table    : tableNo,
+            dish     : item.name || item.Name || item.dish || item.Dish || "Item",
+            qty      : parseInt(item.quantity || item.qty || 1, 10),
+            status   : (item.status || order.Status || "ready").toLowerCase(),
+            time     : timeStr
+          });
+        }
+      });
+    });
+
+    document.getElementById("hm-total-dishes").textContent = chefHistory.reduce(function(acc, h){ return acc + h.qty; }, 0);
+    document.getElementById("hm-total-orders").textContent = orderSet.size;
+
+    if (!chefHistory.length) {
+      container.innerHTML = '<div style="text-align:center; padding:40px; color:#8b949e;"><div style="font-size:32px;margin-bottom:8px">📋</div><div>No dishes recorded for <strong>' + STATE.currentChef + '</strong> yet.</div><div style="font-size:12px;margin-top:6px">Completed orders will appear here automatically.</div></div>';
+      return;
+    }
+
+    // Sort newest first
+    chefHistory.reverse();
+
+    var rowsHtml = chefHistory.map(function(h) {
+      var dateDisp = "—";
+      if (h.time) {
+        try {
+          var d = new Date(h.time);
+          dateDisp = d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) + ' · ' + d.toLocaleDateString([], {month:'short', day:'numeric'});
+        } catch(e) { dateDisp = h.time; }
+      }
+
+      var badgeCls = (h.status === "ready" || h.status === "completed" || h.status === "closed") ? "sb-ready" : "sb-prep";
+      var statusText = (h.status === "ready" || h.status === "completed" || h.status === "closed") ? "✓ Ready" : "🔥 Preparing";
+
+      return '<tr>' +
+        '<td style="font-weight:700;">' + h.orderId + '</td>' +
+        '<td>Table ' + h.table + '</td>' +
+        '<td style="color:#f39c12; font-weight:700;">' + (h.qty > 1 ? h.qty + '× ' : '') + h.dish + '</td>' +
+        '<td><span class="status-badge ' + badgeCls + '">' + statusText + '</span></td>' +
+        '<td style="color:#8b949e; font-size:12px;">' + dateDisp + '</td>' +
+      '</tr>';
+    }).join("");
+
+    container.innerHTML = '<table class="hm-table"><thead><tr><th>Order ID</th><th>Table</th><th>Dish</th><th>Status</th><th>Time</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>';
+  }).catch(function(err) {
+    console.error("Chef history error:", err);
+    container.innerHTML = '<div style="text-align:center; padding:40px; color:#e74c3c;">Failed to load history from database.</div>';
+  });
+}
+
+function closeChefHistory() {
+  document.getElementById("history-modal").style.display = "none";
 }
 
 // ── SYNC ORDERS FROM GOOGLE SHEETS ──
@@ -1058,7 +1256,6 @@ function renderRecipe() {
 
   if (!panel || !item) return;
 
-  // Real no-recipe state from Google Sheet
   if (!r || !r.steps || !r.steps.length) {
     panel.innerHTML =
       '<div class="no-selection">' +
@@ -1254,10 +1451,6 @@ function undoStep(i) {
     tickClock();
     setInterval(tickClock, 1000);
     loadChefSelection();
-
-    if (typeof POS_AUTH !== "undefined" && typeof POS_AUTH.renderUtilBar === "function") {
-      POS_AUTH.renderUtilBar("user-badge", "kitchen-prep-display");
-    }
   }
 
   if (typeof POS_AUTH !== "undefined") {
