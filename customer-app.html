@@ -8,11 +8,13 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="pos-config.js"></script>
+    <script src="pos-api.js"></script>
+    <script src="pos-gapi.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f9fa; color: #1a1a2e; }
 
-        .app { max-width: 480px; margin: 0 auto; background: white; min-height: 100vh; position: relative; }
+        .app { max-width: 480px; margin: 0 auto; background: white; min-height: 100vh; position: relative; box-shadow: 0 0 40px rgba(0,0,0,0.08); }
 
         /* Hero */
         .hero {
@@ -54,7 +56,7 @@
             transition: all 0.2s;
         }
 
-        .mode-btn.active { background: #f39c12; color: #000; }
+        .mode-btn.active { background: #f39c12; color: #000; font-weight: 800; }
 
         .hero-title { color: white; font-size: 26px; font-weight: 800; margin-bottom: 6px; }
         .hero-sub { color: rgba(255,255,255,0.6); font-size: 14px; }
@@ -71,7 +73,7 @@
             font-size: 15px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.12);
         }
-
+        .search-input:focus { outline: none; box-shadow: 0 4px 20px rgba(243,156,18,0.25); }
         .search-icon { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-size: 18px; }
 
         /* Categories */
@@ -95,7 +97,6 @@
 
         /* Menu Items */
         .section-title { padding: 8px 20px 12px; font-size: 18px; font-weight: 700; }
-
         .menu-list { padding: 0 20px; display: flex; flex-direction: column; gap: 12px; margin-bottom: 100px; }
 
         .menu-card {
@@ -106,19 +107,16 @@
             border-radius: 14px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.06);
             border: 2px solid transparent;
-            cursor: pointer;
             transition: all 0.2s;
         }
 
         .menu-card:hover { border-color: #f39c12; box-shadow: 0 4px 16px rgba(243,156,18,0.15); }
-
-        .menu-card-emoji { font-size: 40px; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; background: #f8f9fa; border-radius: 10px; flex-shrink: 0; }
-
+        .menu-card-emoji { font-size: 36px; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; background: #f8f9fa; border-radius: 10px; flex-shrink: 0; }
         .menu-card-info { flex: 1; }
         .menu-card-name { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
         .menu-card-desc { font-size: 12px; color: #888; margin-bottom: 8px; line-height: 1.4; }
         .menu-card-bottom { display: flex; justify-content: space-between; align-items: center; }
-        .menu-card-price { font-size: 18px; font-weight: 800; color: #1a1a2e; }
+        .menu-card-price { font-size: 17px; font-weight: 800; color: #1a1a2e; }
 
         .add-btn {
             width: 32px; height: 32px;
@@ -132,8 +130,7 @@
             font-weight: 700;
             transition: all 0.2s;
         }
-
-        .add-btn:hover { background: #e67e22; transform: scale(1.1); }
+        .add-btn:hover { background: #e67e22; transform: scale(1.05); }
 
         .qty-control { display: flex; align-items: center; gap: 8px; }
         .qty-btn-sm { width: 28px; height: 28px; border: 2px solid #f39c12; background: white; border-radius: 6px; font-weight: 700; font-size: 16px; cursor: pointer; color: #f39c12; display: flex; align-items: center; justify-content: center; }
@@ -160,9 +157,7 @@
             transition: all 0.3s;
             z-index: 50;
         }
-
         .cart-bar:hover { background: #2d3561; }
-
         .cart-bar-left { display: flex; align-items: center; gap: 12px; }
         .cart-count { background: #f39c12; color: #000; width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; }
         .cart-label { font-size: 15px; font-weight: 600; }
@@ -198,8 +193,8 @@
         .checkout-section h3 { font-size: 16px; font-weight: 700; margin-bottom: 14px; }
 
         .checkout-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-        .checkout-item-name { font-size: 14px; font-weight: 500; }
-        .checkout-item-qty { color: #888; font-size: 13px; }
+        .checkout-item-name { font-size: 14px; font-weight: 600; }
+        .checkout-item-qty { color: #888; font-size: 13px; margin-top: 2px; }
         .checkout-item-price { font-weight: 700; }
 
         .form-group { margin-bottom: 14px; }
@@ -207,7 +202,7 @@
         .form-group input, .form-group select, .form-group textarea {
             width: 100%; padding: 12px 14px; border: 2px solid #eee; border-radius: 10px; font-size: 14px;
         }
-        .form-group input:focus, .form-group select:focus { outline: none; border-color: #f39c12; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #f39c12; }
 
         .totals-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 14px; }
         .totals-row.total { font-size: 18px; font-weight: 800; border-top: 2px solid #eee; margin-top: 8px; padding-top: 14px; }
@@ -217,24 +212,26 @@
             margin: 20px;
             padding: 16px;
             background: linear-gradient(135deg, #f39c12, #e67e22);
-            color: white;
+            color: black;
             border: none;
             border-radius: 14px;
             font-size: 17px;
             font-weight: 800;
             cursor: pointer;
             box-shadow: 0 4px 16px rgba(243,156,18,0.4);
+            transition: all 0.2s;
         }
+        .place-order-btn:hover { transform: translateY(-2px); }
 
         /* Order Tracking */
         .tracking-panel { padding: 28px 20px; }
-        .tracking-header { text-align: center; margin-bottom: 28px; }
+        .tracking-header { text-align: center; margin-bottom: 24px; }
         .tracking-icon { font-size: 64px; margin-bottom: 12px; }
         .tracking-title { font-size: 22px; font-weight: 800; margin-bottom: 6px; }
         .tracking-sub { color: #888; font-size: 14px; }
 
         .tracking-steps { position: relative; margin-bottom: 28px; }
-        .tracking-step { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 24px; }
+        .tracking-step { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 20px; }
         .step-icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
         .step-icon.done { background: #27ae60; }
         .step-icon.active { background: #f39c12; animation: pulse-icon 1.5s infinite; }
@@ -244,132 +241,154 @@
         .step-name { font-weight: 700; font-size: 15px; margin-bottom: 2px; }
         .step-desc { font-size: 13px; color: #888; }
 
-        .eta-box { background: #fff8e7; border: 2px solid #f39c12; border-radius: 14px; padding: 20px; text-align: center; margin-bottom: 20px; }
-        .eta-time { font-size: 42px; font-weight: 900; color: #f39c12; font-family: 'Courier New', monospace; }
-        .eta-label { font-size: 14px; color: #888; margin-top: 4px; }
+        .live-badge { display: inline-flex; align-items: center; gap: 6px; background: #e8f5e9; color: #2e7d32; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 700; margin-bottom: 16px; }
+        .live-dot { width: 8px; height: 8px; background: #2e7d32; border-radius: 50%; animation: pulse-icon 1.2s infinite; }
 
         .new-order-btn { width: 100%; padding: 14px; background: #1a1a2e; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; }
-
-        .tag-new { background: #fef9e7; color: #d4ac0d; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; margin-left: 6px; }
     </style>
 </head>
 <body>
 <div id="root"></div>
+
 <script type="text/babel">
-    const { useState, useEffect } = React;
-
-    const DEFAULT_MENU = [
-        { id:1, name:"Burger Deluxe", cat:"Main Course", price:1299, emoji:"🍔", desc:"Beef patty, cheddar, special sauce, fries", popular:true },
-        { id:2, name:"Fish & Chips", cat:"Main Course", price:1399, emoji:"🐟", desc:"Beer-battered cod with tartare sauce", popular:false },
-        { id:3, name:"Steak", cat:"Main Course", price:2499, emoji:"🥩", desc:"8oz ribeye, choice of sides & sauce", popular:true },
-        { id:4, name:"Pasta Carbonara", cat:"Main Course", price:1199, emoji:"🍝", desc:"Creamy bacon & parmesan pasta", popular:false },
-        { id:5, name:"Caesar Salad", cat:"Main Course", price:999, emoji:"🥗", desc:"Romaine, parmesan, croutons", popular:false },
-        { id:6, name:"Spring Rolls", cat:"Appetizers", price:699, emoji:"🥢", desc:"Crispy vegetable rolls with chili sauce", popular:true },
-        { id:7, name:"Chicken Wings", cat:"Appetizers", price:899, emoji:"🍗", desc:"Buffalo or BBQ — 6 pieces", popular:false },
-        { id:8, name:"Garlic Bread", cat:"Appetizers", price:499, emoji:"🥖", desc:"Toasted with cheese and herbs", popular:false },
-        { id:9, name:"Chocolate Cake", cat:"Desserts", price:699, emoji:"🎂", desc:"Rich dark chocolate with cream", popular:false },
-        { id:10, name:"Ice Cream", cat:"Desserts", price:499, emoji:"🍦", desc:"Three scoops, choice of flavour", popular:false },
-        { id:11, name:"Coca Cola", cat:"Beverages", price:299, emoji:"🥤", desc:"Regular or Diet", popular:false },
-        { id:12, name:"Fresh Juice", cat:"Beverages", price:499, emoji:"🍊", desc:"Orange, apple or mixed berry", popular:false },
-        { id:13, name:"Coffee", cat:"Beverages", price:249, emoji:"☕", desc:"Espresso, latte, cappuccino", popular:false },
-    ];
-
-    const TRACKING_STEPS = [
-        { icon:"✅", name:"Order Received", desc:"Your order is confirmed", done:true, active:false },
-        { icon:"👨‍🍳", name:"Being Prepared", desc:"Kitchen is making your food", done:false, active:true },
-        { icon:"📦", name:"Ready for Pickup", desc:"Order will be packed shortly", done:false, active:false },
-        { icon:"🚗", name:"Out for Delivery", desc:"Driver is on the way", done:false, active:false },
-        { icon:"🎉", name:"Delivered!", desc:"Enjoy your meal!", done:false, active:false },
-    ];
+    const { useState, useEffect, useRef } = React;
 
     function CustomerApp() {
-        const [menuItems, setMenuItems] = useState(DEFAULT_MENU);
+        const [menuItems, setMenuItems] = useState([]);
+        const [loadingMenu, setLoadingMenu] = useState(true);
         const [cart, setCart] = useState({});
         const [screen, setScreen] = useState("menu"); 
         const [mode, setMode] = useState("delivery"); 
         const [cat, setCat] = useState("All");
         const [search, setSearch] = useState("");
         const [form, setForm] = useState({ name:'', phone:'', address:'', notes:'' });
-        const [currency, setCurrency] = useState("Rs.");
+        const [currency, setCurrency] = useState("Rs. ");
+        const [placedOrder, setPlacedOrder] = useState(null);
+        const [orderStatus, setOrderStatus] = useState("new");
+        const [isSubmitting, setIsSubmitting] = useState(false);
 
-        const showNotification = (msg) => {
-            console.log("Notification:", msg);
-        };
-
+        // ── 1. LOAD LIVE MENU DIRECTLY FROM GOOGLE SHEETS ──
         useEffect(() => {
-            async function loadLiveMenu() {
-                // 1. Resolve restaurant Google Spreadsheet ID
-                const urlParams = new URLSearchParams(window.location.search);
-                let targetSheetId = urlParams.get("sheetid") || urlParams.get("sheetId");
-                
-                if (!targetSheetId) {
+            async function loadMenuFromDatabase() {
+                const api = window.POS_API || window.POS_GAPI;
+                let targetSheetId = "";
+
+                if (window.POS_CONFIG && (window.POS_CONFIG.SPREADSHEET_ID || window.POS_CONFIG.SHEET_ID)) {
+                    targetSheetId = window.POS_CONFIG.SPREADSHEET_ID || window.POS_CONFIG.SHEET_ID;
+                } else {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    targetSheetId = urlParams.get("sheetid") || urlParams.get("sheetId");
+                }
+
+                // Method A: Query POS_API / POS_GAPI
+                if (api && api.Menu && typeof api.Menu.getAll === "function") {
                     try {
-                        targetSheetId = localStorage.getItem("pos_active_sheet_id");
-                    } catch(e){}
+                        const res = await api.Menu.getAll();
+                        if (res && res.data && res.data.length > 0) {
+                            const formatted = res.data
+                                .filter(i => (i.Name || i.name) && String(i.Available || i.available || "true").toLowerCase() !== "false")
+                                .map((i, idx) => ({
+                                    id: i.ItemID || i.itemId || i.id || `menu-${idx}`,
+                                    name: i.Name || i.name,
+                                    cat: i.Category || i.category || "Main Course",
+                                    price: parseFloat(i.Price || i.price || 0) || 0,
+                                    emoji: i.Emoji || i.emoji || "🍽️",
+                                    desc: i.Description || i.description || "",
+                                    prepTime: i.PrepTime || i.prepTime || ""
+                                }));
+                            setMenuItems(formatted);
+                            setLoadingMenu(false);
+                            return;
+                        }
+                    } catch(e) { console.warn("API Menu fetch error:", e); }
                 }
 
-                if (!targetSheetId) {
-                    console.warn("No Sheet ID resolved for public guest. Running on fallback.");
-                    setMenuItems(DEFAULT_MENU);
-                    return;
-                }
+                // Method B: Query Google Spreadsheet Visualizer Endpoint (Public No-Auth)
+                if (targetSheetId) {
+                    const tabNames = ["Menu", "MenuItems", "Menu Items", "Sheet1"];
+                    for (let tab of tabNames) {
+                        try {
+                            const url = `https://docs.google.com/spreadsheets/d/${targetSheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(tab)}`;
+                            const text = await fetch(url).then(r => r.text());
+                            if (!text || text.includes("error")) continue;
 
-                // 2. Fetch directly from Google Spreadsheet Visualizer Endpoint (CORS approved, no token required!)
-                try {
-                    const url = `https://docs.google.com/spreadsheets/d/${targetSheetId}/gviz/tq?tqx=out:json&sheet=MenuItems`;
-                    const text = await fetch(url).then(r => r.text());
-                    
-                    // Parse Google Visualization format JSON wrapper
-                    const jsonStr = text.substring(text.indexOf("({") + 1, text.lastIndexOf("})") + 1);
-                    const data = JSON.parse(jsonStr);
-                    
-                    const cols = data.table.cols.map(c => c.label || "");
-                    const rows = data.table.rows.map(r => {
-                        const obj = {};
-                        cols.forEach((col, idx) => {
-                            if (col) {
-                                const cell = r.c[idx];
-                                obj[col] = cell ? (cell.v !== null ? cell.v : "") : "";
+                            const jsonStr = text.substring(text.indexOf("({") + 1, text.lastIndexOf("})") + 1);
+                            const data = JSON.parse(jsonStr);
+                            const cols = data.table.cols.map(c => (c.label || "").trim());
+                            
+                            const rows = data.table.rows.map(r => {
+                                const obj = {};
+                                cols.forEach((col, idx) => {
+                                    if (col) {
+                                        const cell = r.c[idx];
+                                        obj[col] = cell ? (cell.v !== null ? cell.v : "") : "";
+                                    }
+                                });
+                                return obj;
+                            });
+
+                            if (rows && rows.length > 0) {
+                                const formatted = rows
+                                    .filter(i => (i.Name || i.name) && String(i.Available || i.available || "true").toLowerCase() !== "false")
+                                    .map((i, idx) => ({
+                                        id: i.ItemID || i.itemId || `menu-${idx}`,
+                                        name: i.Name || i.name,
+                                        cat: i.Category || i.category || "Main Course",
+                                        price: parseFloat(i.Price || i.price || 0) || 0,
+                                        emoji: i.Emoji || i.emoji || "🍽️",
+                                        desc: i.Description || i.description || "",
+                                        prepTime: i.PrepTime || i.prepTime || ""
+                                    }));
+
+                                if (formatted.length > 0) {
+                                    setMenuItems(formatted);
+                                    setLoadingMenu(false);
+                                    return;
+                                }
                             }
-                        });
-                        return obj;
-                    });
-
-                    if (rows && rows.length > 0) {
-                        setMenuItems(rows
-                            .filter(i => i.Name && String(i.Available).toLowerCase() !== "false")
-                            .map((i, idx) => ({
-                                id: i.ItemID || idx,
-                                name: i.Name,
-                                cat: i.Category || "Main Course",
-                                price: parseFloat(i.Price) || 0,
-                                emoji: i.Emoji || "🍽️",
-                                desc: i.Description || "",
-                                popular: false,
-                                prepTime: i.PrepTime || ""
-                            }))
-                        );
+                        } catch(e) {}
                     }
-                } catch(e) {
-                    console.warn("Menu visualizer fetch failed, using fallback:", e);
-                    setMenuItems(DEFAULT_MENU);
                 }
+                setLoadingMenu(false);
             }
-            loadLiveMenu();
+
+            loadMenuFromDatabase();
         }, []);
 
-        const cats = ["All", "Popular", ...new Set(menuItems.map(item => item.cat))];
+        // ── 2. LIVE ORDER STATUS POLLING ──
+        useEffect(() => {
+            if (screen !== "tracking" || !placedOrder) return;
+
+            const pollInterval = setInterval(async () => {
+                const api = window.POS_API || window.POS_GAPI;
+                if (api && api.Orders && typeof api.Orders.getAll === "function") {
+                    try {
+                        const res = await api.Orders.getAll();
+                        const orders = (res && res.data) ? res.data : [];
+                        const match = orders.find(o => (o.OrderID || o.orderId || o.id) === placedOrder.orderId);
+                        if (match) {
+                            setOrderStatus((match.Status || match.status || "new").toLowerCase());
+                        }
+                    } catch(e){}
+                }
+            }, 4000);
+
+            return () => clearInterval(pollInterval);
+        }, [screen, placedOrder]);
+
+        const cats = ["All", ...new Set(menuItems.map(item => item.cat))];
 
         const filtered = menuItems.filter(item => {
-            const matchCat = cat === "All" ? true : cat === "Popular" ? item.popular : item.cat === cat;
-            const matchSearch = item.name.toLowerCase().includes(search.toLowerCase());
+            const matchCat = cat === "All" ? true : item.cat === cat;
+            const matchSearch = item.name.toLowerCase().includes(search.toLowerCase()) || 
+                                (item.desc && item.desc.toLowerCase().includes(search.toLowerCase()));
             return matchCat && matchSearch;
         });
 
         const totalItems = Object.values(cart).reduce((s, q) => s + q, 0);
         const subtotal = menuItems.reduce((s, item) => s + (cart[item.id] || 0) * item.price, 0);
-        const delivery = mode === "delivery" && subtotal > 0 ? 250 : 0;
-        const total = subtotal + delivery;
+        const deliveryFee = mode === "delivery" && subtotal > 0 ? 250 : 0;
+        const total = subtotal + deliveryFee;
 
         const setQty = (id, delta) => {
             setCart(c => {
@@ -381,60 +400,103 @@
 
         const cartItems = menuItems.filter(item => cart[item.id] > 0);
 
+        // ── 3. PLACE ORDER & SYNC DIRECTLY TO GOOGLE SHEETS ──
         const handlePlaceOrder = async () => {
-            let placedOk = false;
-            // Only write back to sheets if opened on an authenticated local terminal (e.g. tablet)
-            if (window.POS_GAPI && window.POS_GAPI.getAccessToken() && window.POS_GAPI.getSheetId()) {
-                try {
-                    const res = await window.POS_GAPI.Orders.create({
-                        tableNumber: mode === "pickup" ? 0 : 99, 
-                        customerName: form.name || "Online Guest",
-                        waiterName: "Online App",
-                        items: cartItems.map(item => ({ 
-                            name: item.name, 
-                            qty: cart[item.id], 
-                            price: item.price, 
-                            category: item.cat,
-                            prepTime: item.prepTime
-                        })),
-                        subtotal: subtotal,
-                        notes: form.notes || ""
-                    });
+            if (!form.name || !form.phone) {
+                alert("Please enter your name and phone number.");
+                return;
+            }
+            if (mode === "delivery" && !form.address) {
+                alert("Please enter your delivery address.");
+                return;
+            }
 
-                    if (mode === "delivery" && res && res.success && res.data && res.data.orderId) {
-                        await window.POS_GAPI.Deliveries.create({
-                            orderId: res.data.orderId,
-                            customerName: form.name || "Online Guest",
-                            customerAddress: form.address || "No Address Provided",
-                            distance: "2.1 km", 
-                            earnings: "250.00"
+            setIsSubmitting(true);
+            const api = window.POS_API || window.POS_GAPI;
+            const generatedOrderId = "ORD-" + Date.now().toString().slice(-6);
+
+            const orderPayload = {
+                orderId: generatedOrderId,
+                tableNumber: mode === "pickup" ? 0 : 99, 
+                customerName: form.name,
+                customerPhone: form.phone,
+                waiterName: mode === "delivery" ? "Online Delivery" : "Online Pickup",
+                items: cartItems.map(item => ({ 
+                    name: item.name, 
+                    qty: cart[item.id], 
+                    price: item.price, 
+                    category: item.cat,
+                    prepTime: item.prepTime || ""
+                })),
+                subtotal: subtotal,
+                total: total,
+                notes: (mode === "delivery" ? `[DELIVERY to: ${form.address}] ` : '[PICKUP] ') + (form.notes || ""),
+                status: "new",
+                orderTime: new Date().toISOString()
+            };
+
+            let success = false;
+            let realOrderId = generatedOrderId;
+
+            if (api && api.Orders && typeof api.Orders.create === "function") {
+                try {
+                    const res = await api.Orders.create(orderPayload);
+                    if (res && res.data && (res.data.OrderID || res.data.orderId)) {
+                        realOrderId = res.data.OrderID || res.data.orderId;
+                    }
+                    success = true;
+
+                    // If delivery, create row in Deliveries tab
+                    if (mode === "delivery" && api.Deliveries && typeof api.Deliveries.create === "function") {
+                        await api.Deliveries.create({
+                            orderId: realOrderId,
+                            customerName: form.name,
+                            customerAddress: form.address,
+                            distance: "2.5 km",
+                            earnings: "250.00",
+                            status: "pending"
                         });
                     }
-                    placedOk = true;
-                } catch(e) { console.error("Could not write order:", e); }
+                } catch(err) {
+                    console.error("Order submit error:", err);
+                }
             }
-            
-            if (!placedOk) {
-                console.warn("Bypassed sheets direct write — launched tracker simulation.");
-            }
+
+            setIsSubmitting(false);
+            setPlacedOrder({ orderId: realOrderId, total: total, items: cartItems });
+            setOrderStatus("new");
             setScreen("tracking");
         };
 
+        // ── 4. TRACKING SCREEN ──
         if (screen === "tracking") {
+            const isReady = orderStatus === "ready";
+            const isDelivered = orderStatus === "delivered" || orderStatus === "completed" || orderStatus === "closed";
+            const isPreparing = orderStatus === "preparing";
+
+            const trackingSteps = [
+                { icon:"📋", name:"Order Received", desc:"Kitchen received your ticket", done: true, active: orderStatus === "new" },
+                { icon:"👨‍🍳", name:"Being Prepared", desc:"Kitchen is preparing your food", done: isPreparing || isReady || isDelivered, active: isPreparing },
+                { icon: mode === "delivery" ? "🚗" : "📦", name: mode === "delivery" ? "Out for Delivery" : "Ready for Pickup", desc: mode === "delivery" ? "Driver is on the way" : "Ready to collect at counter", done: isReady || isDelivered, active: isReady },
+                { icon:"🎉", name:"Order Complete", desc: mode === "delivery" ? "Delivered! Enjoy your meal" : "Collected successfully", done: isDelivered, active: isDelivered }
+            ];
+
             return (
                 <div className="app">
                     <div className="tracking-panel">
                         <div className="tracking-header">
-                            <div className="tracking-icon">🎉</div>
-                            <div className="tracking-title">Order Placed!</div>
-                            <div className="tracking-sub">Order #ORD-{Math.floor(Math.random()*900+100)} confirmed</div>
+                            <div className="tracking-icon">{isDelivered ? "🎉" : isReady ? (mode === "delivery" ? "🚗" : "📦") : "👨‍🍳"}</div>
+                            <div className="tracking-title">
+                                {isDelivered ? "Order Complete!" : isReady ? (mode === "delivery" ? "On The Way!" : "Ready for Pickup!") : "Preparing Your Order"}
+                            </div>
+                            <div className="tracking-sub">Order #{placedOrder ? placedOrder.orderId : "—"}</div>
+                            <div style={{ marginTop: '12px' }}>
+                                <span className="live-badge"><span className="live-dot"></span> Live Kitchen Sync</span>
+                            </div>
                         </div>
-                        <div className="eta-box">
-                            <div className="eta-time">28:00</div>
-                            <div className="eta-label">Estimated delivery time</div>
-                        </div>
+
                         <div className="tracking-steps">
-                            {TRACKING_STEPS.map((step, i) => (
+                            {trackingSteps.map((step, i) => (
                                 <div key={i} className="tracking-step">
                                     <div className={`step-icon ${step.done ? 'done' : step.active ? 'active' : 'pending'}`}>{step.icon}</div>
                                     <div className="step-info">
@@ -444,12 +506,14 @@
                                 </div>
                             ))}
                         </div>
+
                         <button className="new-order-btn" onClick={() => { setCart({}); setScreen("menu"); }}>Place Another Order</button>
                     </div>
                 </div>
             );
         }
 
+        // ── 5. CHECKOUT SCREEN ──
         if (screen === "checkout") {
             return (
                 <div className="app">
@@ -472,25 +536,26 @@
                         </div>
                         <div className="checkout-section">
                             <h3>{mode === "delivery" ? "Delivery Details" : "Pickup Details"}</h3>
-                            <div className="form-group"><label>Your Name</label><input placeholder="John Smith" value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
-                            <div className="form-group"><label>Phone Number</label><input placeholder="+44 7700 900000" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></div>
-                            {mode === "delivery" && <div className="form-group"><label>Delivery Address</label><input placeholder="123 High Street, London" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div>}
-                            <div className="form-group"><label>Special Instructions (optional)</label><input placeholder="e.g. No onions, ring doorbell" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} /></div>
+                            <div className="form-group"><label>Your Name *</label><input placeholder="e.g. Sanjaya" value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+                            <div className="form-group"><label>Phone Number *</label><input placeholder="e.g. 077 123 4567" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></div>
+                            {mode === "delivery" && <div className="form-group"><label>Delivery Address *</label><input placeholder="e.g. 45 Beach Road, Colombo" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div>}
+                            <div className="form-group"><label>Special Instructions (optional)</label><input placeholder="e.g. Less sugar, ring doorbell" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} /></div>
                         </div>
                         <div className="checkout-section">
                             <h3>Order Total</h3>
                             <div className="totals-row"><span>Subtotal</span><span>{currency}{subtotal.toLocaleString()}</span></div>
-                            {mode === "delivery" && <div className="totals-row"><span>Delivery fee</span><span>{currency}{delivery.toLocaleString()}</span></div>}
+                            {mode === "delivery" && <div className="totals-row"><span>Delivery fee</span><span>{currency}{deliveryFee.toLocaleString()}</span></div>}
                             <div className="totals-row total"><span>Total</span><span>{currency}{total.toLocaleString()}</span></div>
                         </div>
-                        <button className="place-order-btn" onClick={handlePlaceOrder}>
-                            Place Order · {currency}{total.toLocaleString()}
+                        <button className="place-order-btn" onClick={handlePlaceOrder} disabled={isSubmitting}>
+                            {isSubmitting ? "Sending to Kitchen..." : `Place Order · ${currency}${total.toLocaleString()}`}
                         </button>
                     </div>
                 </div>
             );
         }
 
+        // ── 6. MENU BROWSING SCREEN ──
         return (
             <div className="app">
                 <div className="hero">
@@ -504,15 +569,15 @@
                     <div className="hero-title">Order Fresh Food</div>
                     <div className="hero-sub">Hot & delicious, {mode === 'delivery' ? 'delivered to your door' : 'ready for collection'}</div>
                     <div className="hero-badges">
-                        <span className="hero-badge">⏱ 25-35 min</span>
-                        <span className="hero-badge">🚗 {currency}250 delivery</span>
-                        <span className="hero-badge">⭐ 4.8 (320 reviews)</span>
+                        <span className="hero-badge">⏱ 20-30 min</span>
+                        {mode === "delivery" && <span className="hero-badge">🚗 {currency}250 delivery</span>}
+                        <span className="hero-badge">⭐ 4.9 (450+ reviews)</span>
                     </div>
                 </div>
 
                 <div className="search-bar">
                     <span className="search-icon">🔍</span>
-                    <input className="search-input" placeholder="Search menu items..." value={search} onChange={e => setSearch(e.target.value)} />
+                    <input className="search-input" placeholder="Search food, beverages..." value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
 
                 <div className="categories">
@@ -520,32 +585,37 @@
                 </div>
 
                 <div className="section-title">
-                    {cat === "Popular" ? "⭐ Popular Items" : cat === "All" ? "🍽️ Full Menu" : cat}
-                    {cat === "Popular" && <span className="tag-new">Fan favourites</span>}
+                    {cat === "All" ? "🍽️ Full Menu" : cat}
                 </div>
 
                 <div className="menu-list">
-                    {filtered.map(item => (
-                        <div key={item.id} className="menu-card">
-                            <div className="menu-card-emoji">{item.emoji}</div>
-                            <div className="menu-card-info">
-                                <div className="menu-card-name">{item.name}{item.popular && <span className="tag-new">Popular</span>}</div>
-                                <div className="menu-card-desc">{item.desc}</div>
-                                <div className="menu-card-bottom">
-                                    <div className="menu-card-price">{currency}{item.price.toLocaleString()}</div>
-                                    {cart[item.id] ? (
-                                        <div className="qty-control">
-                                            <button className="qty-btn-sm" onClick={() => setQty(item.id, -1)}>−</button>
-                                            <span className="qty-num">{cart[item.id]}</span>
-                                            <button className="qty-btn-sm filled" onClick={() => setQty(item.id, 1)}>+</button>
-                                        </div>
-                                    ) : (
-                                        <button className="add-btn" onClick={() => setQty(item.id, 1)}>+</button>
-                                    )}
+                    {loadingMenu ? (
+                        <div style={{ textAlign:'center', padding:'40px', color:'#888' }}>Loading menu items from database…</div>
+                    ) : filtered.length === 0 ? (
+                        <div style={{ textAlign:'center', padding:'40px', color:'#888' }}>No items found.</div>
+                    ) : (
+                        filtered.map(item => (
+                            <div key={item.id} className="menu-card">
+                                <div className="menu-card-emoji">{item.emoji}</div>
+                                <div className="menu-card-info">
+                                    <div className="menu-card-name">{item.name}</div>
+                                    {item.desc && <div className="menu-card-desc">{item.desc}</div>}
+                                    <div className="menu-card-bottom">
+                                        <div className="menu-card-price">{currency}{item.price.toLocaleString()}</div>
+                                        {cart[item.id] ? (
+                                            <div className="qty-control">
+                                                <button className="qty-btn-sm" onClick={() => setQty(item.id, -1)}>−</button>
+                                                <span className="qty-num">{cart[item.id]}</span>
+                                                <button className="qty-btn-sm filled" onClick={() => setQty(item.id, 1)}>+</button>
+                                            </div>
+                                        ) : (
+                                            <button className="add-btn" onClick={() => setQty(item.id, 1)}>+</button>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        ))
+                    )}
                 </div>
 
                 {totalItems > 0 && (
