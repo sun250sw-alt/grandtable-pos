@@ -23,7 +23,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   border-radius:10px;font-weight:700;color:black;}
 
 /* LAYOUT */
-.layout{display:grid;grid-template-columns:320px 1fr;
+.layout{display:grid;grid-template-columns:340px 1fr;
   height:calc(100vh - 58px);}
 
 /* CHEF SELECTION SCREEN */
@@ -70,16 +70,48 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 }
 .chef-name { font-weight:700; font-size:14px; color:#e6edf3; }
 
-/* QUEUE PANEL */
+/* QUEUE PANEL & FILTER TABS */
 .queue-panel{background:#161b22;border-right:1px solid #30363d;
-  overflow-y:auto;padding:14px;}
-.queue-title{font-size:11px;font-weight:700;text-transform:uppercase;
-  letter-spacing:1.5px;color:#8b949e;margin-bottom:12px;}
+  overflow-y:auto;padding:14px;display:flex;flex-direction:column;}
+.queue-filters {
+  display:flex;
+  gap:6px;
+  margin-bottom:12px;
+  background:#0d1117;
+  padding:4px;
+  border-radius:8px;
+}
+.q-tab {
+  flex:1;
+  text-align:center;
+  padding:6px 2px;
+  font-size:11px;
+  font-weight:700;
+  border-radius:6px;
+  cursor:pointer;
+  color:#8b949e;
+  border:none;
+  background:transparent;
+  transition:all 0.15s;
+}
+.q-tab.active {
+  background:#21262d;
+  color:#f39c12;
+}
+
 .queue-item{background:#21262d;border-radius:10px;padding:13px;
   margin-bottom:8px;cursor:pointer;border:2px solid transparent;
   transition:all .2s;position:relative;}
 .queue-item:hover{border-color:#f39c12;}
 .queue-item.active{border-color:#f39c12;background:#2d2209;}
+.queue-item.cooking-other {
+  border-left:4px solid #3b82f6;
+  opacity:0.85;
+}
+.queue-item.cooking-mine {
+  border-left:4px solid #f39c12;
+}
+
 .qi-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;}
 .qi-order{font-weight:700;font-size:14px;}
 .qi-table{font-size:12px;color:#8b949e;}
@@ -87,7 +119,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .qty-pill{background:#f39c12;color:black;font-weight:900;font-size:11px;padding:1px 6px;border-radius:6px;}
 .qi-note{font-size:11px;color:#8b949e;background:#0d1117;
   padding:4px 8px;border-radius:5px;margin-top:5px;}
-.qi-chef-tag{font-size:10px;color:#58a6ff;background:rgba(88,166,255,0.1);padding:2px 6px;border-radius:4px;margin-top:4px;display:inline-block;}
+
+.qi-chef-tag{
+  font-size:10px;
+  font-weight:700;
+  padding:3px 8px;
+  border-radius:6px;
+  margin-top:6px;
+  display:inline-block;
+}
+.qi-chef-other { background:rgba(59,130,246,0.15); color:#60a5fa; border:1px solid rgba(59,130,246,0.3); }
+.qi-chef-mine { background:rgba(243,156,18,0.15); color:#f39c12; border:1px solid rgba(243,156,18,0.3); }
 
 .urgency-dot{display:inline-block;width:8px;height:8px;
   border-radius:50%;margin-right:2px;}
@@ -142,7 +184,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 }
 .gate-btn:active { transform:scale(0.98); }
 
-/* Batch Multiplier Pill */
 .batch-pill {
   display:inline-block;
   background:#e67e22;
@@ -289,7 +330,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <div class="layout">
       <!-- QUEUE -->
       <div class="queue-panel">
-        <div class="queue-title">Cook Station Queue</div>
+        <div class="queue-filters">
+          <button class="q-tab active" id="tab-all" onclick="setQueueFilter('all')">All (<span id="cnt-all">0</span>)</button>
+          <button class="q-tab" id="tab-unclaimed" onclick="setQueueFilter('unclaimed')">Available (<span id="cnt-unclaimed">0</span>)</button>
+          <button class="q-tab" id="tab-mine" onclick="setQueueFilter('mine')">My Cooking (<span id="cnt-mine">0</span>)</button>
+        </div>
         <div id="queue-list">
           <div class="queue-empty">
             <div style="font-size:32px;margin-bottom:8px">⏳</div>
@@ -331,7 +376,8 @@ var STATE = {
   queueIntervalId : null,
   gateState       : "none",
   inFlightFinished: {},
-  availableRecipes: {}
+  availableRecipes: {},
+  activeTab       : "all" // "all" | "unclaimed" | "mine"
 };
 
 var FALLBACK_RECIPES = {
@@ -372,6 +418,64 @@ var FALLBACK_RECIPES = {
 
 function getPosApi() {
   return window.POS_GAPI || window.POS_API || null;
+}
+
+// Cleans extra notes from dish name e.g. "Burger (no onion)" -> "burger"
+function cleanDishName(name) {
+  if (!name) return "";
+  return String(name)
+    .replace(/\(.*?\)/g, "")
+    .replace(/[-–—].*$/g, "")
+    .replace(/#\d+/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+// Matches a dish against available database recipes with fuzzy fallback
+function findRecipeForDish(dishName) {
+  if (!dishName) return null;
+  var exact = dishName.trim().toLowerCase();
+  if (STATE.availableRecipes[exact]) return STATE.availableRecipes[exact];
+  
+  var cleaned = cleanDishName(dishName);
+  if (STATE.availableRecipes[cleaned]) return STATE.availableRecipes[cleaned];
+
+  for (var k in STATE.availableRecipes) {
+    if (k === exact || k === cleaned || exact.startsWith(k) || k.startsWith(cleaned)) {
+      return STATE.availableRecipes[k];
+    }
+  }
+
+  return FALLBACK_RECIPES[dishName] || FALLBACK_RECIPES[cleaned] || null;
+}
+
+// Safely parses order items array across varied Google Sheet formats
+function safeParseItems(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (!raw || typeof raw !== "string") return [];
+  var trimmed = raw.trim();
+
+  // Try standard JSON
+  try {
+    var res = JSON.parse(trimmed);
+    if (Array.isArray(res)) return res;
+    if (typeof res === "string") return safeParseItems(res);
+  } catch(e){}
+
+  // Try single-quote JSON
+  try {
+    var fixed = trimmed.replace(/'/g, '"');
+    var res2 = JSON.parse(fixed);
+    if (Array.isArray(res2)) return res2;
+  } catch(e){}
+
+  // Fallback comma-separated items
+  var items = [];
+  trimmed.split(",").forEach(function(part) {
+    var p = part.trim();
+    if (p) items.push({ name: p, qty: 1 });
+  });
+  return items;
 }
 
 function formatIngredientAmount(rawAmount, qty) {
@@ -469,6 +573,14 @@ function selectChef(name) {
   STATE.queueIntervalId = setInterval(loadQueue, pollMs);
 }
 
+function setQueueFilter(tab) {
+  STATE.activeTab = tab;
+  document.querySelectorAll(".q-tab").forEach(function(btn) { btn.classList.remove("active"); });
+  var activeBtn = document.getElementById("tab-" + tab);
+  if (activeBtn) activeBtn.classList.add("active");
+  renderQueue();
+}
+
 // ── SYNC ACTIVE ORDERS ONLY FROM GOOGLE SHEETS ──
 function loadQueue() {
   var api = getPosApi();
@@ -476,20 +588,24 @@ function loadQueue() {
   if (!api || !api.Orders || typeof api.Orders.getAll !== "function") {
     STATE.availableRecipes = FALLBACK_RECIPES;
     STATE.queue = [
-      { key:"ORD-001#0#Burger Deluxe", orderId:"ORD-001", itemIdx:0, table:3, dish:"Burger Deluxe", qty:2, note:"No onions on one", urgency:"high", status:"new" },
-      { key:"ORD-002#0#Steak", orderId:"ORD-002", itemIdx:0, table:5, dish:"Steak", qty:1, note:"Medium rare", urgency:"med", status:"new" }
+      { key:"ORD-001#0#Burger Deluxe", orderId:"ORD-001", itemIdx:0, table:3, dish:"Burger Deluxe", qty:2, note:"No onions on one", urgency:"high", status:"new", chef:"" },
+      { key:"ORD-002#0#Steak", orderId:"ORD-002", itemIdx:0, table:5, dish:"Steak", qty:1, note:"Medium rare", urgency:"med", status:"new", chef:"" }
     ];
     renderQueue();
     return;
   }
 
+  // Load Recipes from sheet
   var recipePromise = (api.Recipes && typeof api.Recipes.getAll === "function") 
     ? api.Recipes.getAll().then(function(res) {
         var rMap = {};
         if (res && res.data) {
           res.data.forEach(function(r) {
             var dishName = (r.DishName || r.Dish || r.Name || r.ItemName || r.Title || r.dish || r.name || "").trim().toLowerCase();
-            if (dishName) rMap[dishName] = r;
+            if (dishName) {
+              rMap[dishName] = r;
+              rMap[cleanDishName(dishName)] = r;
+            }
           });
         }
         STATE.availableRecipes = rMap;
@@ -501,31 +617,13 @@ function loadQueue() {
   }).then(function(res) {
     var orders = (res && res.data) ? res.data : [];
     
-    // STRICT ACTIVE FILTER: Only new, pending, preparing, in_progress, open
     var activeStatuses = ["new", "pending", "preparing", "in_progress", "in progress", "kitchen", "open"];
     var finishedStatuses = ["completed", "closed", "delivered", "served", "paid", "ready", "cancelled", "void", "settled", "archived"];
 
-    var now = Date.now();
-    var maxAgeMs = 24 * 60 * 60 * 1000; // Only show orders from last 24 hours
-
     var activeOrders = orders.filter(function(o) {
       var st = (o.Status || o.status || "").toLowerCase().trim();
-      
-      // If order is explicitly marked closed or finished, reject
       if (finishedStatuses.includes(st)) return false;
-      
-      // Must be an active kitchen state
       if (!activeStatuses.includes(st) && st !== "") return false;
-
-      // Ignore old tickets from previous days
-      var timeStr = o.OrderTime || o.orderTime || o.CreatedAt || o.created_at || o.Date;
-      if (timeStr) {
-        var orderDate = new Date(timeStr).getTime();
-        if (!isNaN(orderDate) && (now - orderDate > maxAgeMs)) {
-          return false;
-        }
-      }
-
       return true;
     });
 
@@ -542,7 +640,7 @@ function buildQueueFromOrders(orders) {
   orders.forEach(function(order) {
     try {
       var rawItems = order.Items || order.items || order.OrderItems || [];
-      var orderItems = typeof rawItems === "string" ? JSON.parse(rawItems) : (rawItems || []);
+      var orderItems = safeParseItems(rawItems);
       var orderId = order.OrderID || order.OrderId || order.orderId || order.id || "ORD";
       var tableNo = order.TableNumber || order.Table || order.TableNo || order.table || "—";
       var orderNotes = order.Notes || order.notes || "";
@@ -554,7 +652,7 @@ function buildQueueFromOrders(orders) {
         var itemStatus = (item.status || "new").toLowerCase().trim();
         var uniqueItemKey = orderId + "#" + itemIdx + "#" + dishName;
 
-        // 1. Skip if marked in-flight finished
+        // 1. Skip if in-flight finished
         if (STATE.inFlightFinished[uniqueItemKey]) return;
 
         // 2. Skip items already marked completed, ready or served
@@ -566,6 +664,12 @@ function buildQueueFromOrders(orders) {
         var prepTime = item.prepTime || item.PrepTime || "";
         var cat = (item.category || item.Category || "").toLowerCase();
         if (prepTime === "Bypass Prep" || cat === "drinks" || cat === "beverages" || cat === "bar") {
+          return;
+        }
+
+        // 4. Require that this item has a recipe in the system (or fallback)
+        var matchedRecipe = findRecipeForDish(dishName);
+        if (!matchedRecipe) {
           return;
         }
 
@@ -595,19 +699,71 @@ function buildQueueFromOrders(orders) {
 function renderQueue() {
   var el = document.getElementById("queue-list");
   if (!el) return;
-  document.getElementById("queue-count").textContent = STATE.queue.length + " dishes";
 
-  if (!STATE.queue.length) {
-    el.innerHTML = '<div class="no-selection" style="padding:20px 10px;"><div style="font-size:32px;margin-bottom:8px">✅</div><div style="font-weight:700">All caught up!</div></div>';
+  var currentChef = STATE.currentChef;
+  var allCount = STATE.queue.length;
+  var unclaimedCount = 0;
+  var mineCount = 0;
+
+  STATE.queue.forEach(function(item) {
+    var isCooking = (item.status === "preparing") || (STATE.timers[item.key] && STATE.timers[item.key].running);
+    var itemChef = item.chef || (STATE.timers[item.key] ? currentChef : "");
+    if (!isCooking || !itemChef) {
+      unclaimedCount++;
+    } else if (itemChef === currentChef) {
+      mineCount++;
+    }
+  });
+
+  var cntAll = document.getElementById("cnt-all");
+  var cntUnc = document.getElementById("cnt-unclaimed");
+  var cntMin = document.getElementById("cnt-mine");
+  if (cntAll) cntAll.textContent = allCount;
+  if (cntUnc) cntUnc.textContent = unclaimedCount;
+  if (cntMin) cntMin.textContent = mineCount;
+
+  document.getElementById("queue-count").textContent = allCount + " dishes";
+
+  // Filter based on active tab
+  var filteredQueue = STATE.queue.filter(function(item) {
+    var isCooking = (item.status === "preparing") || (STATE.timers[item.key] && STATE.timers[item.key].running);
+    var itemChef = item.chef || (STATE.timers[item.key] ? currentChef : "");
+    if (STATE.activeTab === "unclaimed") {
+      return !isCooking || !itemChef;
+    }
+    if (STATE.activeTab === "mine") {
+      return isCooking && itemChef === currentChef;
+    }
+    return true;
+  });
+
+  if (!filteredQueue.length) {
+    el.innerHTML = '<div class="no-selection" style="padding:20px 10px;"><div style="font-size:32px;margin-bottom:8px">✅</div><div style="font-weight:700">No tickets in this view</div></div>';
     return;
   }
 
-  el.innerHTML = STATE.queue.map(function(item, idx) {
+  el.innerHTML = filteredQueue.map(function(item) {
     var key = item.key;
     var isActive = STATE.selectedKey === key;
     var backgroundTimer = STATE.timers[key];
-    var timerBadgeHtml = "";
+    var isCooking = (item.status === "preparing") || (backgroundTimer && backgroundTimer.running);
+    var itemChef = item.chef || (backgroundTimer ? currentChef : "");
+    var isMine = itemChef === currentChef;
 
+    var chefTagHtml = "";
+    var extraClass = "";
+
+    if (isCooking && itemChef) {
+      if (isMine) {
+        extraClass = " cooking-mine";
+        chefTagHtml = '<div class="qi-chef-tag qi-chef-mine">🔥 Cooking (You)</div>';
+      } else {
+        extraClass = " cooking-other";
+        chefTagHtml = '<div class="qi-chef-tag qi-chef-other">👨‍🍳 Cooking by ' + itemChef + '</div>';
+      }
+    }
+
+    var timerBadgeHtml = "";
     if (backgroundTimer && backgroundTimer.running && backgroundTimer.remaining > 0) {
       var m = Math.floor(backgroundTimer.remaining / 60);
       var s = backgroundTimer.remaining % 60;
@@ -616,7 +772,9 @@ function renderQueue() {
       timerBadgeHtml = '<div class="qi-timer-badge" style="background:#27ae60; color:white;">✅ Done</div>';
     }
 
-    return '<div class="queue-item' + (isActive ? " active" : "") + '" onclick="selectDish(' + idx + ')">' +
+    var originalIdx = STATE.queue.findIndex(function(q){ return q.key === key; });
+
+    return '<div class="queue-item' + (isActive ? " active" : "") + extraClass + '" onclick="selectDish(' + originalIdx + ')">' +
       '<div class="qi-header">' +
         '<span class="qi-order">' + item.orderId + '</span>' +
         '<span class="qi-table">Table ' + item.table + '</span>' +
@@ -627,7 +785,7 @@ function renderQueue() {
         item.dish +
       '</div>' +
       (item.note ? '<div class="qi-note">⚠️ ' + item.note + '</div>' : '') +
-      (item.chef && item.chef !== STATE.currentChef ? '<div class="qi-chef-tag">👨‍🍳 ' + item.chef + '</div>' : '') +
+      chefTagHtml +
       timerBadgeHtml +
     '</div>';
   }).join("");
@@ -656,18 +814,15 @@ function selectDish(idx) {
     '<div class="loading-recipe"><div class="loading-spin">⚙️</div>' +
     '<div>Loading recipe for ' + item.dish + '…</div></div>';
 
-  var api = getPosApi();
-  var normName = item.dish.trim().toLowerCase();
-
-  if (STATE.availableRecipes && STATE.availableRecipes[normName]) {
-    var r = STATE.availableRecipes[normName];
-    var steps = typeof r.Steps === "string" ? JSON.parse(r.Steps) : (r.Steps || []);
-    var ings  = typeof r.Ingredients === "string" ? JSON.parse(r.Ingredients) : (r.Ingredients || []);
+  var matched = findRecipeForDish(item.dish);
+  if (matched && (matched.Steps || matched.steps)) {
+    var steps = typeof matched.Steps === "string" ? JSON.parse(matched.Steps) : (matched.Steps || matched.steps || []);
+    var ings  = typeof matched.Ingredients === "string" ? JSON.parse(matched.Ingredients) : (matched.Ingredients || matched.ingredients || []);
     
     STATE.recipe = {
-      prepTime   : r.PrepTime || r.prepTime || "—",
-      cookTime   : r.CookTime || r.cookTime || "—",
-      difficulty : r.Difficulty || r.difficulty || "Standard",
+      prepTime   : matched.PrepTime || matched.prepTime || "—",
+      cookTime   : matched.CookTime || matched.cookTime || "—",
+      difficulty : matched.Difficulty || matched.difficulty || "Standard",
       ingredients: ings,
       steps      : steps.map(function(s) {
         return {
@@ -682,6 +837,7 @@ function selectDish(idx) {
     return;
   }
 
+  var api = getPosApi();
   if (api && api.Recipes && typeof api.Recipes.get === "function") {
     api.Recipes.get(item.dish).then(function(res) {
       if (res && res.data && (res.data.Steps || res.data.steps)) {
@@ -704,15 +860,15 @@ function selectDish(idx) {
           })
         };
       } else {
-        STATE.recipe = FALLBACK_RECIPES[item.dish] || buildDefaultRecipe(item.dish);
+        STATE.recipe = buildDefaultRecipe(item.dish);
       }
       renderRecipe();
     }).catch(function() {
-      STATE.recipe = FALLBACK_RECIPES[item.dish] || buildDefaultRecipe(item.dish);
+      STATE.recipe = buildDefaultRecipe(item.dish);
       renderRecipe();
     });
   } else {
-    STATE.recipe = FALLBACK_RECIPES[item.dish] || buildDefaultRecipe(item.dish);
+    STATE.recipe = buildDefaultRecipe(item.dish);
     renderRecipe();
   }
 }
@@ -722,7 +878,7 @@ function buildDefaultRecipe(dishName) {
     prepTime: "5 min",
     cookTime: "10 min",
     difficulty: "Standard",
-    ingredients: [{ name: dishName + " ingredients", amount: "1 portion" }],
+    ingredients: [{ name: dishName + " base ingredients", amount: "1 portion" }],
     steps: [
       { title: "Mise En Place", description: "Prepare all necessary ingredients and station tools for " + dishName + ".", timerSec: 60, tip: null },
       { title: "Cook & Plate", description: "Cook and plate " + dishName + " according to kitchen standards.", timerSec: 300, tip: "Check seasoning and garnish before serving." }
@@ -761,7 +917,7 @@ function updateSheetToPreparing() {
     if (!order) return;
 
     var rawItems = order.Items || order.items || [];
-    var itemsArray = typeof rawItems === "string" ? JSON.parse(rawItems) : (rawItems || []);
+    var itemsArray = safeParseItems(rawItems);
     
     if (itemsArray[targetItemIdx]) {
       itemsArray[targetItemIdx].chef = chefName;
@@ -806,7 +962,7 @@ function updateSheetToReady() {
     if (!order) return;
 
     var rawItems = order.Items || order.items || [];
-    var itemsArray = typeof rawItems === "string" ? JSON.parse(rawItems) : (rawItems || []);
+    var itemsArray = safeParseItems(rawItems);
     
     if (itemsArray[targetItemIdx]) {
       itemsArray[targetItemIdx].status = "ready";
@@ -970,6 +1126,8 @@ function renderRecipe() {
 
   if (!panel || !item) return;
 
+  var isCookingByOther = (item.status === "preparing" && item.chef && item.chef !== STATE.currentChef);
+
   if (!r || !r.steps || !r.steps.length) {
     panel.innerHTML =
       '<div class="no-selection">' +
@@ -1100,15 +1258,19 @@ function renderRecipe() {
           '<span>🔥 Cook: ' + r.cookTime + '</span>' +
           '<span>⭐ ' + r.difficulty + '</span>' +
           (item.note ? '<span style="color:#f39c12">⚠️ ' + item.note + '</span>' : '') +
+          (isCookingByOther ? '<span style="color:#60a5fa;font-weight:700">👨‍🍳 Cooking by ' + item.chef + '</span>' : '') +
           '<span class="' + (done === total && total > 0 ? "meta-ok" : "meta-warn") + '">✅ ' + done + '/' + total + ' steps done</span>' +
         '</div>' +
       '</div>' +
       '<div>' +
-        '<button class="gate-btn" style="padding:12px 28px; font-size:14px; width:auto;" onclick="STATE.gateState = \'hygiene\'; renderRecipe();">🔥 START COOKING' + (qty > 1 ? ' (' + qty + 'x)' : '') + '</button>' +
+        '<button class="gate-btn" style="padding:12px 28px; font-size:14px; width:auto;" onclick="STATE.gateState = \'hygiene\'; renderRecipe();">' +
+          (isCookingByOther ? '✋ TAKE OVER COOKING' : '🔥 START COOKING' + (qty > 1 ? ' (' + qty + 'x)' : '')) +
+        '</button>' +
       '</div>' +
     '</div>' +
     '<div class="recipe-content">' +
       '<div class="steps-section">' +
+        (isCookingByOther ? '<div style="background:rgba(59,130,246,0.1); border:1px solid rgba(59,130,246,0.3); color:#93c5fd; padding:10px 14px; border-radius:8px; font-size:12px; margin-bottom:14px;">ℹ️ Chef ' + item.chef + ' is currently preparing this dish. Click "Take Over" above if you are switching stations.</div>' : '') +
         '<div class="section-lbl">Preparation Steps</div>' +
         r.steps.map(function(step, i) {
           var isDone = STATE.doneSteps.indexOf(i) >= 0;
