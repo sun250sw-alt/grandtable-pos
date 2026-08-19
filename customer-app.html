@@ -251,7 +251,7 @@
 <div id="root"></div>
 
 <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect } = React;
 
     function CustomerApp() {
         const [menuItems, setMenuItems] = useState([]);
@@ -267,7 +267,33 @@
         const [orderStatus, setOrderStatus] = useState("new");
         const [isSubmitting, setIsSubmitting] = useState(false);
 
-        // ── 1. LOAD LIVE MENU DIRECTLY FROM GOOGLE SHEETS ──
+        // Helper to format raw rows into standard menu items
+        const formatRawMenuRows = (rows) => {
+            return rows
+                .map((r, idx) => {
+                    const name = r.Name || r.name || r.ItemName || r.DishName || r.dish || "";
+                    if (!name) return null;
+
+                    const availStr = String(r.Available !== undefined ? r.Available : (r.available !== undefined ? r.available : r.Status || "true")).toLowerCase();
+                    if (availStr === "false" || availStr === "unavailable" || availStr === "0") return null;
+
+                    let price = parseFloat(r.Price || r.price || 0);
+                    if (isNaN(price)) price = 0;
+
+                    return {
+                        id: r.ItemID || r.itemId || r.id || `menu-${idx}`,
+                        name: name,
+                        cat: r.Category || r.category || "Main Course",
+                        price: price,
+                        emoji: r.Emoji || r.emoji || "🍽️",
+                        desc: r.Description || r.description || "",
+                        prepTime: r.PrepTime || r.prepTime || ""
+                    };
+                })
+                .filter(Boolean);
+        };
+
+        // ── 1. LOAD LIVE MENU FROM GOOGLE SHEETS ──
         useEffect(() => {
             async function loadMenuFromDatabase() {
                 const api = window.POS_API || window.POS_GAPI;
@@ -277,78 +303,80 @@
                     targetSheetId = window.POS_CONFIG.SPREADSHEET_ID || window.POS_CONFIG.SHEET_ID;
                 } else {
                     const urlParams = new URLSearchParams(window.location.search);
-                    targetSheetId = urlParams.get("sheetid") || urlParams.get("sheetId");
+                    targetSheetId = urlParams.get("sheetid") || urlParams.get("sheetId") || localStorage.getItem("pos_sheet_id") || localStorage.getItem("pos_active_sheet_id");
                 }
 
-                // Method A: Query POS_API / POS_GAPI
-                if (api && api.Menu && typeof api.Menu.getAll === "function") {
+                // Strategy 1: Direct API queries
+                if (api) {
                     try {
-                        const res = await api.Menu.getAll();
-                        if (res && res.data && res.data.length > 0) {
-                            const formatted = res.data
-                                .filter(i => (i.Name || i.name) && String(i.Available || i.available || "true").toLowerCase() !== "false")
-                                .map((i, idx) => ({
-                                    id: i.ItemID || i.itemId || i.id || `menu-${idx}`,
-                                    name: i.Name || i.name,
-                                    cat: i.Category || i.category || "Main Course",
-                                    price: parseFloat(i.Price || i.price || 0) || 0,
-                                    emoji: i.Emoji || i.emoji || "🍽️",
-                                    desc: i.Description || i.description || "",
-                                    prepTime: i.PrepTime || i.prepTime || ""
-                                }));
-                            setMenuItems(formatted);
-                            setLoadingMenu(false);
-                            return;
+                        let res = null;
+                        if (api.Menu && typeof api.Menu.getAll === "function") {
+                            res = await api.Menu.getAll();
+                        } else if (api.MenuItems && typeof api.MenuItems.getAll === "function") {
+                            res = await api.MenuItems.getAll();
+                        } else if (typeof api.getRows === "function") {
+                            const rows = await api.getRows("Menu").catch(() => api.getRows("MenuItems"));
+                            res = { data: rows };
                         }
-                    } catch(e) { console.warn("API Menu fetch error:", e); }
+
+                        if (res && res.data && res.data.length > 0) {
+                            const formatted = formatRawMenuRows(res.data);
+                            if (formatted.length > 0) {
+                                setMenuItems(formatted);
+                                setLoadingMenu(false);
+                                return;
+                            }
+                        }
+                    } catch(e) {
+                        console.warn("Direct API menu fetch attempt error:", e);
+                    }
                 }
 
-                // Method B: Query Google Spreadsheet Visualizer Endpoint (Public No-Auth)
+                // Strategy 2: Google Spreadsheet Visualizer Endpoint (Public No-Auth with Row 0 Header Detection)
                 if (targetSheetId) {
-                    const tabNames = ["Menu", "MenuItems", "Menu Items", "Sheet1"];
+                    const tabNames = ["Menu", "MenuItems", "Menu Items", "Menus", "Sheet1"];
                     for (let tab of tabNames) {
                         try {
                             const url = `https://docs.google.com/spreadsheets/d/${targetSheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(tab)}`;
                             const text = await fetch(url).then(r => r.text());
-                            if (!text || text.includes("error")) continue;
+                            if (!text || text.includes("error") || !text.includes("({")) continue;
 
                             const jsonStr = text.substring(text.indexOf("({") + 1, text.lastIndexOf("})") + 1);
                             const data = JSON.parse(jsonStr);
-                            const cols = data.table.cols.map(c => (c.label || "").trim());
                             
-                            const rows = data.table.rows.map(r => {
+                            let cols = (data.table.cols || []).map(c => (c.label || "").trim());
+                            let rowsData = data.table.rows || [];
+
+                            // If GViz returned empty column labels, the 1st row (rows[0]) contains the headers!
+                            if (cols.every(c => !c) && rowsData.length > 0) {
+                                const headerRow = rowsData[0].c || [];
+                                cols = headerRow.map((cell, idx) => (cell && cell.v !== null ? String(cell.v).trim() : `col_${idx}`));
+                                rowsData = rowsData.slice(1);
+                            }
+
+                            const parsedRows = rowsData.map(r => {
                                 const obj = {};
-                                cols.forEach((col, idx) => {
-                                    if (col) {
-                                        const cell = r.c[idx];
-                                        obj[col] = cell ? (cell.v !== null ? cell.v : "") : "";
+                                (r.c || []).forEach((cell, idx) => {
+                                    const colName = cols[idx];
+                                    if (colName) {
+                                        obj[colName] = cell ? (cell.v !== null ? cell.v : "") : "";
                                     }
                                 });
                                 return obj;
                             });
 
-                            if (rows && rows.length > 0) {
-                                const formatted = rows
-                                    .filter(i => (i.Name || i.name) && String(i.Available || i.available || "true").toLowerCase() !== "false")
-                                    .map((i, idx) => ({
-                                        id: i.ItemID || i.itemId || `menu-${idx}`,
-                                        name: i.Name || i.name,
-                                        cat: i.Category || i.category || "Main Course",
-                                        price: parseFloat(i.Price || i.price || 0) || 0,
-                                        emoji: i.Emoji || i.emoji || "🍽️",
-                                        desc: i.Description || i.description || "",
-                                        prepTime: i.PrepTime || i.prepTime || ""
-                                    }));
-
-                                if (formatted.length > 0) {
-                                    setMenuItems(formatted);
-                                    setLoadingMenu(false);
-                                    return;
-                                }
+                            const formatted = formatRawMenuRows(parsedRows);
+                            if (formatted.length > 0) {
+                                setMenuItems(formatted);
+                                setLoadingMenu(false);
+                                return;
                             }
-                        } catch(e) {}
+                        } catch(e) {
+                            console.warn(`GViz fetch error on tab '${tab}':`, e);
+                        }
                     }
                 }
+
                 setLoadingMenu(false);
             }
 
@@ -400,7 +428,7 @@
 
         const cartItems = menuItems.filter(item => cart[item.id] > 0);
 
-        // ── 3. PLACE ORDER & SYNC DIRECTLY TO GOOGLE SHEETS ──
+        // ── 3. PLACE ORDER DIRECTLY TO GOOGLE SHEETS ──
         const handlePlaceOrder = async () => {
             if (!form.name || !form.phone) {
                 alert("Please enter your name and phone number.");
@@ -435,7 +463,6 @@
                 orderTime: new Date().toISOString()
             };
 
-            let success = false;
             let realOrderId = generatedOrderId;
 
             if (api && api.Orders && typeof api.Orders.create === "function") {
@@ -444,9 +471,8 @@
                     if (res && res.data && (res.data.OrderID || res.data.orderId)) {
                         realOrderId = res.data.OrderID || res.data.orderId;
                     }
-                    success = true;
 
-                    // If delivery, create row in Deliveries tab
+                    // Create Delivery Row
                     if (mode === "delivery" && api.Deliveries && typeof api.Deliveries.create === "function") {
                         await api.Deliveries.create({
                             orderId: realOrderId,
@@ -590,9 +616,9 @@
 
                 <div className="menu-list">
                     {loadingMenu ? (
-                        <div style={{ textAlign:'center', padding:'40px', color:'#888' }}>Loading menu items from database…</div>
+                        <div style={{ textAlign:'center', padding:'40px', color:'#888' }}>Loading menu items from Google Sheets…</div>
                     ) : filtered.length === 0 ? (
-                        <div style={{ textAlign:'center', padding:'40px', color:'#888' }}>No items found.</div>
+                        <div style={{ textAlign:'center', padding:'40px', color:'#888' }}>No items found in menu.</div>
                     ) : (
                         filtered.map(item => (
                             <div key={item.id} className="menu-card">
