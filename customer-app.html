@@ -10,6 +10,7 @@
     <script src="pos-config.js"></script>
     <script src="pos-api.js"></script>
     <script src="pos-gapi.js"></script>
+    <script src="pos-auth.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f9fa; color: #1a1a2e; }
@@ -251,7 +252,7 @@
 <div id="root"></div>
 
 <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
 
     function CustomerApp() {
         const [menuItems, setMenuItems] = useState([]);
@@ -267,120 +268,168 @@
         const [orderStatus, setOrderStatus] = useState("new");
         const [isSubmitting, setIsSubmitting] = useState(false);
 
-        // Helper to format raw rows into standard menu items
-        const formatRawMenuRows = (rows) => {
-            return rows
-                .map((r, idx) => {
-                    const name = r.Name || r.name || r.ItemName || r.DishName || r.dish || "";
-                    if (!name) return null;
-
-                    const availStr = String(r.Available !== undefined ? r.Available : (r.available !== undefined ? r.available : r.Status || "true")).toLowerCase();
-                    if (availStr === "false" || availStr === "unavailable" || availStr === "0") return null;
-
-                    let price = parseFloat(r.Price || r.price || 0);
-                    if (isNaN(price)) price = 0;
-
-                    return {
-                        id: r.ItemID || r.itemId || r.id || `menu-${idx}`,
-                        name: name,
-                        cat: r.Category || r.category || "Main Course",
-                        price: price,
-                        emoji: r.Emoji || r.emoji || "🍽️",
-                        desc: r.Description || r.description || "",
-                        prepTime: r.PrepTime || r.prepTime || ""
-                    };
-                })
-                .filter(Boolean);
-        };
-
-        // ── 1. LOAD LIVE MENU FROM GOOGLE SHEETS ──
-        useEffect(() => {
-            async function loadMenuFromDatabase() {
-                const api = window.POS_API || window.POS_GAPI;
-                let targetSheetId = "";
-
-                if (window.POS_CONFIG && (window.POS_CONFIG.SPREADSHEET_ID || window.POS_CONFIG.SHEET_ID)) {
-                    targetSheetId = window.POS_CONFIG.SPREADSHEET_ID || window.POS_CONFIG.SHEET_ID;
-                } else {
-                    const urlParams = new URLSearchParams(window.location.search);
-                    targetSheetId = urlParams.get("sheetid") || urlParams.get("sheetId") || localStorage.getItem("pos_sheet_id") || localStorage.getItem("pos_active_sheet_id");
-                }
-
-                // Strategy 1: Direct API queries
-                if (api) {
-                    try {
-                        let res = null;
-                        if (api.Menu && typeof api.Menu.getAll === "function") {
-                            res = await api.Menu.getAll();
-                        } else if (api.MenuItems && typeof api.MenuItems.getAll === "function") {
-                            res = await api.MenuItems.getAll();
-                        } else if (typeof api.getRows === "function") {
-                            const rows = await api.getRows("Menu").catch(() => api.getRows("MenuItems"));
-                            res = { data: rows };
-                        }
-
-                        if (res && res.data && res.data.length > 0) {
-                            const formatted = formatRawMenuRows(res.data);
-                            if (formatted.length > 0) {
-                                setMenuItems(formatted);
-                                setLoadingMenu(false);
-                                return;
-                            }
-                        }
-                    } catch(e) {
-                        console.warn("Direct API menu fetch attempt error:", e);
-                    }
-                }
-
-                // Strategy 2: Google Spreadsheet Visualizer Endpoint (Public No-Auth with Row 0 Header Detection)
-                if (targetSheetId) {
-                    const tabNames = ["Menu", "MenuItems", "Menu Items", "Menus", "Sheet1"];
-                    for (let tab of tabNames) {
-                        try {
-                            const url = `https://docs.google.com/spreadsheets/d/${targetSheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(tab)}`;
-                            const text = await fetch(url).then(r => r.text());
-                            if (!text || text.includes("error") || !text.includes("({")) continue;
-
-                            const jsonStr = text.substring(text.indexOf("({") + 1, text.lastIndexOf("})") + 1);
-                            const data = JSON.parse(jsonStr);
-                            
-                            let cols = (data.table.cols || []).map(c => (c.label || "").trim());
-                            let rowsData = data.table.rows || [];
-
-                            // If GViz returned empty column labels, the 1st row (rows[0]) contains the headers!
-                            if (cols.every(c => !c) && rowsData.length > 0) {
-                                const headerRow = rowsData[0].c || [];
-                                cols = headerRow.map((cell, idx) => (cell && cell.v !== null ? String(cell.v).trim() : `col_${idx}`));
-                                rowsData = rowsData.slice(1);
-                            }
-
-                            const parsedRows = rowsData.map(r => {
-                                const obj = {};
-                                (r.c || []).forEach((cell, idx) => {
-                                    const colName = cols[idx];
-                                    if (colName) {
-                                        obj[colName] = cell ? (cell.v !== null ? cell.v : "") : "";
-                                    }
-                                });
-                                return obj;
-                            });
-
-                            const formatted = formatRawMenuRows(parsedRows);
-                            if (formatted.length > 0) {
-                                setMenuItems(formatted);
-                                setLoadingMenu(false);
-                                return;
-                            }
-                        } catch(e) {
-                            console.warn(`GViz fetch error on tab '${tab}':`, e);
-                        }
-                    }
-                }
-
-                setLoadingMenu(false);
+        // Helper: Extract Spreadsheet ID from any string or URL
+        const resolveSpreadsheetId = () => {
+            let id = "";
+            if (window.POS_CONFIG) {
+                id = window.POS_CONFIG.SPREADSHEET_ID || window.POS_CONFIG.SHEET_ID || window.POS_CONFIG.spreadsheetId || window.POS_CONFIG.sheetId || "";
+            }
+            if (!id && window.POS_API && typeof window.POS_API.getSheetId === "function") {
+                id = window.POS_API.getSheetId();
+            }
+            if (!id && window.POS_GAPI && typeof window.POS_GAPI.getSheetId === "function") {
+                id = window.POS_GAPI.getSheetId();
+            }
+            if (!id) {
+                try {
+                    id = localStorage.getItem("pos_sheet_id") || localStorage.getItem("pos_active_sheet_id") || localStorage.getItem("pos_spreadsheet_id") || "";
+                } catch(e){}
+            }
+            if (!id) {
+                const urlParams = new URLSearchParams(window.location.search);
+                id = urlParams.get("sheetid") || urlParams.get("sheetId") || urlParams.get("id") || "";
             }
 
-            loadMenuFromDatabase();
+            if (id && id.includes("/spreadsheets/d/")) {
+                const match = id.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+                if (match) id = match[1];
+            }
+            return id ? id.trim() : "";
+        };
+
+        // Helper: Standardize rows into menu items
+        const formatRawMenuRows = (rows) => {
+            if (!Array.isArray(rows) || !rows.length) return [];
+            return rows.map((r, idx) => {
+                if (!r || typeof r !== "object") return null;
+
+                const name = r.Name || r.name || r.ItemName || r.itemName || r.DishName || r.dish || r.Item || r.item || "";
+                if (!name) return null;
+
+                const availStr = String(r.Available !== undefined ? r.Available : (r.available !== undefined ? r.available : r.Status || "true")).toLowerCase().trim();
+                if (availStr === "false" || availStr === "unavailable" || availStr === "0" || availStr === "off") return null;
+
+                const priceRaw = r.Price !== undefined ? r.Price : (r.price !== undefined ? r.price : 0);
+                const price = parseFloat(String(priceRaw).replace(/[^0-9.]/g, "")) || 0;
+
+                return {
+                    id: String(r.ItemID || r.itemId || r.id || `menu-${idx}`),
+                    name: String(name).trim(),
+                    cat: String(r.Category || r.category || "Main Course").trim(),
+                    price: price,
+                    emoji: String(r.Emoji || r.emoji || "🍽️").trim(),
+                    desc: String(r.Description || r.description || "").trim(),
+                    prepTime: String(r.PrepTime || r.prepTime || "").trim()
+                };
+            }).filter(Boolean);
+        };
+
+        // ── 1. LOAD LIVE MENU (WITH GViz ROW-0 HEADER DETECTION & AUTO-RETRY) ──
+        const loadMenuFromDatabase = async () => {
+            const api = window.POS_API || window.POS_GAPI;
+            const targetSheetId = resolveSpreadsheetId();
+
+            // 1. Query Direct API
+            if (api) {
+                try {
+                    let rows = [];
+                    if (typeof api.getRows === "function") {
+                        rows = await api.getRows("MenuItems").catch(() => api.getRows("Menu")).catch(() => []);
+                    } else if (api.Menu && typeof api.Menu.getAll === "function") {
+                        const res = await api.Menu.getAll();
+                        rows = (res && res.data) ? res.data : [];
+                    } else if (api.MenuItems && typeof api.MenuItems.getAll === "function") {
+                        const res = await api.MenuItems.getAll();
+                        rows = (res && res.data) ? res.data : [];
+                    }
+
+                    if (rows && rows.length > 0) {
+                        const formatted = formatRawMenuRows(rows);
+                        if (formatted.length > 0) {
+                            setMenuItems(formatted);
+                            setLoadingMenu(false);
+                            return true;
+                        }
+                    }
+                } catch(e) {
+                    console.warn("Direct API menu fetch attempt:", e);
+                }
+            }
+
+            // 2. Query Google Visualization Endpoint (Row-0 Headers + GViz Table Labels)
+            if (targetSheetId) {
+                const tabQueries = [
+                    `sheet=MenuItems`,
+                    `sheet=Menu`,
+                    `sheet=Menus`,
+                    `sheet=Menu%20Items`,
+                    `sheet=Sheet1`,
+                    `` // default active sheet
+                ];
+
+                for (let q of tabQueries) {
+                    try {
+                        const url = `https://docs.google.com/spreadsheets/d/${targetSheetId}/gviz/tq?tqx=out:json${q ? '&' + q : ''}`;
+                        const text = await fetch(url).then(r => r.text());
+                        if (!text || text.includes("error") || !text.includes("({")) continue;
+
+                        const jsonStr = text.substring(text.indexOf("({") + 1, text.lastIndexOf("})") + 1);
+                        const data = JSON.parse(jsonStr);
+                        
+                        let cols = (data.table.cols || []).map(c => (c.label || "").trim());
+                        let rowsData = data.table.rows || [];
+
+                        // If cols are empty, the 1st row (rows[0]) contains the real headers
+                        if (cols.every(c => !c) && rowsData.length > 0) {
+                            const headerRow = rowsData[0].c || [];
+                            cols = headerRow.map((cell, idx) => (cell && cell.v !== null ? String(cell.v).trim() : `col_${idx}`));
+                            rowsData = rowsData.slice(1);
+                        }
+
+                        const parsedRows = rowsData.map(r => {
+                            const obj = {};
+                            (r.c || []).forEach((cell, idx) => {
+                                const colName = cols[idx];
+                                if (colName) {
+                                    obj[colName] = cell ? (cell.v !== null ? cell.v : "") : "";
+                                }
+                            });
+                            return obj;
+                        });
+
+                        const formatted = formatRawMenuRows(parsedRows);
+                        if (formatted.length > 0) {
+                            setMenuItems(formatted);
+                            setLoadingMenu(false);
+                            return true;
+                        }
+                    } catch(e) {}
+                }
+            }
+
+            return false;
+        };
+
+        useEffect(() => {
+            let tries = 0;
+            async function attemptLoad() {
+                const ok = await loadMenuFromDatabase();
+                if (!ok && tries < 6) {
+                    tries++;
+                    setTimeout(attemptLoad, 600);
+                } else {
+                    setLoadingMenu(false);
+                }
+            }
+
+            if (typeof POS_AUTH !== "undefined") {
+                POS_AUTH.init("order-online", {
+                    onReady: attemptLoad,
+                    onError: attemptLoad
+                });
+            } else {
+                attemptLoad();
+            }
         }, []);
 
         // ── 2. LIVE ORDER STATUS POLLING ──
@@ -458,7 +507,7 @@
                 })),
                 subtotal: subtotal,
                 total: total,
-                notes: (mode === "delivery" ? `[DELIVERY to: ${form.address}] ` : '[PICKUP] ') + (form.notes || ""),
+                notes: (mode === "delivery" ? `[DELIVERY: ${form.address}] ` : '[PICKUP] ') + (form.notes || ""),
                 status: "new",
                 orderTime: new Date().toISOString()
             };
@@ -472,7 +521,6 @@
                         realOrderId = res.data.OrderID || res.data.orderId;
                     }
 
-                    // Create Delivery Row
                     if (mode === "delivery" && api.Deliveries && typeof api.Deliveries.create === "function") {
                         await api.Deliveries.create({
                             orderId: realOrderId,
