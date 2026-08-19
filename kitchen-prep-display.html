@@ -370,12 +370,10 @@ var FALLBACK_RECIPES = {
   }
 };
 
-// Helper: Resolve active backend POS API interface
 function getPosApi() {
   return window.POS_GAPI || window.POS_API || null;
 }
 
-// Helper: Formats and accurately scales ingredient amounts by quantity batch
 function formatIngredientAmount(rawAmount, qty) {
   var count = parseInt(qty, 10) || 1;
   if (!rawAmount || count <= 1) return rawAmount || "—";
@@ -471,7 +469,7 @@ function selectChef(name) {
   STATE.queueIntervalId = setInterval(loadQueue, pollMs);
 }
 
-// ── SYNC RECIPES AND ORDERS FROM GOOGLE SHEETS ──
+// ── SYNC ACTIVE ORDERS ONLY FROM GOOGLE SHEETS ──
 function loadQueue() {
   var api = getPosApi();
   
@@ -485,7 +483,6 @@ function loadQueue() {
     return;
   }
 
-  // Load Recipes from sheet, capturing any column variation (DishName, Name, Dish, ItemName)
   var recipePromise = (api.Recipes && typeof api.Recipes.getAll === "function") 
     ? api.Recipes.getAll().then(function(res) {
         var rMap = {};
@@ -504,13 +501,35 @@ function loadQueue() {
   }).then(function(res) {
     var orders = (res && res.data) ? res.data : [];
     
-    // Only exclude cancelled/voided/paid orders
-    var nonClosedOrders = orders.filter(function(o) {
-      var st = (o.Status || o.status || "").toLowerCase();
-      return !["cancelled", "void", "paid"].includes(st);
+    // STRICT ACTIVE FILTER: Only new, pending, preparing, in_progress, open
+    var activeStatuses = ["new", "pending", "preparing", "in_progress", "in progress", "kitchen", "open"];
+    var finishedStatuses = ["completed", "closed", "delivered", "served", "paid", "ready", "cancelled", "void", "settled", "archived"];
+
+    var now = Date.now();
+    var maxAgeMs = 24 * 60 * 60 * 1000; // Only show orders from last 24 hours
+
+    var activeOrders = orders.filter(function(o) {
+      var st = (o.Status || o.status || "").toLowerCase().trim();
+      
+      // If order is explicitly marked closed or finished, reject
+      if (finishedStatuses.includes(st)) return false;
+      
+      // Must be an active kitchen state
+      if (!activeStatuses.includes(st) && st !== "") return false;
+
+      // Ignore old tickets from previous days
+      var timeStr = o.OrderTime || o.orderTime || o.CreatedAt || o.created_at || o.Date;
+      if (timeStr) {
+        var orderDate = new Date(timeStr).getTime();
+        if (!isNaN(orderDate) && (now - orderDate > maxAgeMs)) {
+          return false;
+        }
+      }
+
+      return true;
     });
 
-    STATE.queue = buildQueueFromOrders(nonClosedOrders);
+    STATE.queue = buildQueueFromOrders(activeOrders);
     renderQueue();
   }).catch(function(err) {
     console.error("Kitchen Prep: error loading queue from sheet:", err);
@@ -532,13 +551,13 @@ function buildQueueFromOrders(orders) {
         var dishName = item.name || item.Name || item.dish || item.Dish || item.Item || item.title || "";
         if (!dishName) return;
 
-        var itemStatus = (item.status || "new").toLowerCase();
+        var itemStatus = (item.status || "new").toLowerCase().trim();
         var uniqueItemKey = orderId + "#" + itemIdx + "#" + dishName;
 
         // 1. Skip if marked in-flight finished
         if (STATE.inFlightFinished[uniqueItemKey]) return;
 
-        // 2. Skip items already completed/served
+        // 2. Skip items already marked completed, ready or served
         if (["ready", "completed", "served", "done", "cancelled", "void"].includes(itemStatus)) {
           return;
         }
@@ -640,7 +659,6 @@ function selectDish(idx) {
   var api = getPosApi();
   var normName = item.dish.trim().toLowerCase();
 
-  // 1. First check loaded database recipes
   if (STATE.availableRecipes && STATE.availableRecipes[normName]) {
     var r = STATE.availableRecipes[normName];
     var steps = typeof r.Steps === "string" ? JSON.parse(r.Steps) : (r.Steps || []);
@@ -664,7 +682,6 @@ function selectDish(idx) {
     return;
   }
 
-  // 2. Fetch directly if not cached
   if (api && api.Recipes && typeof api.Recipes.get === "function") {
     api.Recipes.get(item.dish).then(function(res) {
       if (res && res.data && (res.data.Steps || res.data.steps)) {
@@ -700,7 +717,6 @@ function selectDish(idx) {
   }
 }
 
-// Build a clean preparation recipe for any dish without a custom recipe
 function buildDefaultRecipe(dishName) {
   return {
     prepTime: "5 min",
@@ -1050,8 +1066,8 @@ function renderRecipe() {
         '<div class="focus-step-card">' +
           '<span class="focus-step-num">Step ' + (stepIdx + 1) + ' of ' + r.steps.length + (isManualStep ? " — Manual" : "") + '</span>' +
           (qty > 1 ? '<div class="batch-pill" style="margin-top:-6px; margin-bottom:14px;">🔥 PREPARING BATCH OF ' + qty + '</div>' : '') +
-          '<div class="focus-step-title">${currentStep.title}</div>' +
-          '<div class="focus-step-desc">${currentStep.description}</div>' +
+          '<div class="focus-step-title">' + currentStep.title + '</div>' +
+          '<div class="focus-step-desc">' + currentStep.description + '</div>' +
           (currentStep.tip ? '<div class="focus-step-tip">💡 Chef Tip: ' + currentStep.tip + '</div>' : '') +
         '</div>' +
         '<div class="section-lbl">Recipe Steps Timeline</div>' +
