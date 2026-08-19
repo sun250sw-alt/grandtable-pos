@@ -274,7 +274,7 @@
         const [orderStatus, setOrderStatus] = useState("new");
         const [isSubmitting, setIsSubmitting] = useState(false);
 
-        // Helper: Formats raw row data into menu item models
+        // Helper: Formats raw row objects into standard menu item models
         const formatRawRows = (rows) => {
             if (!Array.isArray(rows) || !rows.length) return [];
             return rows.map((r, idx) => {
@@ -301,85 +301,54 @@
             }).filter(Boolean);
         };
 
-        // Helper: Robust CSV parser
-        const parseCSV = (text) => {
-            const lines = text.split(/\r?\n/).filter(Boolean);
-            if (!lines.length) return [];
-            
-            const splitLine = (line) => {
-                const values = [];
-                let current = '';
-                let inQuotes = false;
-                for (let i = 0; i < line.length; i++) {
-                    const c = line[i];
-                    if (c === '"') {
-                        inQuotes = !inQuotes;
-                    } else if (c === ',' && !inQuotes) {
-                        values.push(current.trim());
-                        current = '';
-                    } else {
-                        current += c;
-                    }
-                }
-                values.push(current.trim());
-                return values.map(v => v.replace(/^"|"$/g, '').replace(/""/g, '"').trim());
-            };
+        // ── ZERO-CORS JSONP GOOGLE SHEETS LOADER ──
+        const fetchGVizJSONP = (sheetId, queryParam) => {
+            return new Promise((resolve, reject) => {
+                const callbackName = 'gviz_cb_' + Math.floor(Math.random() * 1000000);
+                const timeoutId = setTimeout(() => {
+                    delete window[callbackName];
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                    reject(new Error("Timeout loading sheet data"));
+                }, 6000);
 
-            const headers = splitLine(lines[0]);
-            const rows = [];
-            for (let i = 1; i < lines.length; i++) {
-                const row = splitLine(lines[i]);
-                if (!row.length || !row[0]) continue;
-                const obj = {};
-                for (let h = 0; h < headers.length; h++) {
-                    obj[headers[h]] = row[h] !== undefined ? row[h] : '';
-                }
-                rows.push(obj);
-            }
-            return rows;
+                window[callbackName] = (data) => {
+                    clearTimeout(timeoutId);
+                    delete window[callbackName];
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                    resolve(data);
+                };
+
+                const script = document.createElement('script');
+                const q = queryParam ? ('&' + queryParam) : '';
+                script.src = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=responseHandler:${callbackName}${q}`;
+                script.onerror = (err) => {
+                    clearTimeout(timeoutId);
+                    delete window[callbackName];
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                    reject(err);
+                };
+                document.head.appendChild(script);
+            });
         };
 
-        // ── 1. LOAD LIVE MENU (CSV + GVIZ DUAL ENGINE) ──
+        // ── 1. LOAD LIVE MENU (JSONP ENGINE) ──
         const loadMenuFromDatabase = async () => {
-            // Strategy A: Direct CSV Export (Fastest, zero wrappers)
-            const csvUrls = [
-                `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${MENU_TAB_GID}`,
-                `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&sheet=MenuItems`,
-                `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&sheet=Menu`
+            const queries = [
+                `gid=${MENU_TAB_GID}`,
+                `sheet=MenuItems`,
+                `sheet=Menu`,
+                `sheet=Menus`,
+                `` // Default active sheet
             ];
 
-            for (let url of csvUrls) {
+            for (let q of queries) {
                 try {
-                    const text = await fetch(url).then(r => r.text());
-                    if (text && !text.includes("<!DOCTYPE") && text.includes(",")) {
-                        const parsedCSV = parseCSV(text);
-                        const formatted = formatRawRows(parsedCSV);
-                        if (formatted.length > 0) {
-                            setMenuItems(formatted);
-                            setLoadingMenu(false);
-                            return true;
-                        }
-                    }
-                } catch(e) {}
-            }
-
-            // Strategy B: Google Visualization API
-            const gvizUrls = [
-                `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&gid=${MENU_TAB_GID}`,
-                `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=MenuItems`,
-                `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Menu`
-            ];
-
-            for (let url of gvizUrls) {
-                try {
-                    const text = await fetch(url).then(r => r.text());
-                    if (text && text.includes("({")) {
-                        const jsonStr = text.substring(text.indexOf("({") + 1, text.lastIndexOf("})") + 1);
-                        const data = JSON.parse(jsonStr);
-
+                    const data = await fetchGVizJSONP(SPREADSHEET_ID, q);
+                    if (data && data.table) {
                         let cols = (data.table.cols || []).map(c => (c.label || "").trim());
                         let rowsData = data.table.rows || [];
 
+                        // If column headers are in Row 0
                         if (cols.every(c => !c) && rowsData.length > 0) {
                             const headerRow = rowsData[0].c || [];
                             cols = headerRow.map((cell, idx) => (cell && cell.v !== null ? String(cell.v).trim() : `col_${idx}`));
@@ -391,7 +360,7 @@
                             (r.c || []).forEach((cell, idx) => {
                                 const colName = cols[idx];
                                 if (colName) {
-                                    obj[colName] = cell ? (cell.v !== null ? cell.v : "") : "";
+                                    obj[colName] = (cell && cell.v !== null) ? cell.v : "";
                                 }
                             });
                             return obj;
