@@ -370,13 +370,17 @@ var FALLBACK_RECIPES = {
   }
 };
 
+// Helper: Resolve active backend POS API interface
+function getPosApi() {
+  return window.POS_GAPI || window.POS_API || null;
+}
+
 // Helper: Formats and accurately scales ingredient amounts by quantity batch
 function formatIngredientAmount(rawAmount, qty) {
   var count = parseInt(qty, 10) || 1;
   if (!rawAmount || count <= 1) return rawAmount || "—";
   var trimmed = String(rawAmount).trim();
 
-  // Try matching numeric portion e.g., "180g", "1 pc", "2 slices", "1.5 tbsp"
   var match = trimmed.match(/^([\d\.]+)\s*(.*)$/);
   if (match) {
     var num = parseFloat(match[1]);
@@ -420,7 +424,7 @@ function doSignOutChef() {
 }
 
 function loadChefSelection() {
-  var api = window.POS_GAPI || window.POS_API;
+  var api = getPosApi();
   var container = document.getElementById("chef-grid");
   if (!container) return;
 
@@ -433,12 +437,14 @@ function loadChefSelection() {
     }).join("");
   }
 
-  if (api && api.getSheetId && api.getSheetId()) {
+  if (api && api.Staff && typeof api.Staff.getAll === "function") {
     api.Staff.getAll().then(function(res) {
       if (res && res.data && res.data.length > 0) {
         var chefs = res.data.filter(function(s) {
-          return (s.Status || "active").toLowerCase() === "active" && (s.Role || "").toLowerCase() !== "driver";
-        }).map(function(s){ return s.Name; });
+          var role = (s.Role || s.role || "").toLowerCase();
+          var status = (s.Status || s.status || "active").toLowerCase();
+          return status === "active" && role !== "driver";
+        }).map(function(s){ return s.Name || s.StaffName || s.ChefName || s.name; });
         renderGrid(chefs.length > 0 ? chefs : ["Head Chef", "Line Cook 1", "Line Cook 2"]);
       } else {
         renderGrid(["Head Chef", "Line Cook 1", "Line Cook 2"]);
@@ -461,15 +467,15 @@ function selectChef(name) {
   
   if (STATE.queueIntervalId) clearInterval(STATE.queueIntervalId);
   loadQueue();
-  var pollMs = (window.POS_CONFIG && window.POS_CONFIG.POLL_MS) || 5000;
+  var pollMs = (window.POS_CONFIG && window.POS_CONFIG.POLL_MS) || 4000;
   STATE.queueIntervalId = setInterval(loadQueue, pollMs);
 }
 
-// ── SYNC RECIPES AND QUEUE ──
+// ── SYNC RECIPES AND ORDERS FROM GOOGLE SHEETS ──
 function loadQueue() {
-  var api = window.POS_GAPI || window.POS_API;
+  var api = getPosApi();
   
-  if (!api || !api.getSheetId || !api.getSheetId()) {
+  if (!api || !api.Orders || typeof api.Orders.getAll !== "function") {
     STATE.availableRecipes = FALLBACK_RECIPES;
     STATE.queue = [
       { key:"ORD-001#0#Burger Deluxe", orderId:"ORD-001", itemIdx:0, table:3, dish:"Burger Deluxe", qty:2, note:"No onions on one", urgency:"high", status:"new" },
@@ -479,12 +485,13 @@ function loadQueue() {
     return;
   }
 
-  var recipePromise = (api.Recipes && api.Recipes.getAll) 
+  // Load Recipes from sheet, capturing any column variation (DishName, Name, Dish, ItemName)
+  var recipePromise = (api.Recipes && typeof api.Recipes.getAll === "function") 
     ? api.Recipes.getAll().then(function(res) {
         var rMap = {};
         if (res && res.data) {
           res.data.forEach(function(r) {
-            var dishName = (r.DishName || r.dish || "").trim().toLowerCase();
+            var dishName = (r.DishName || r.Dish || r.Name || r.ItemName || r.Title || r.dish || r.name || "").trim().toLowerCase();
             if (dishName) rMap[dishName] = r;
           });
         }
@@ -497,16 +504,16 @@ function loadQueue() {
   }).then(function(res) {
     var orders = (res && res.data) ? res.data : [];
     
-    // Only exclude cancelled/voided orders
+    // Only exclude cancelled/voided/paid orders
     var nonClosedOrders = orders.filter(function(o) {
-      var st = (o.Status || "").toLowerCase();
-      return !["cancelled", "void"].includes(st);
+      var st = (o.Status || o.status || "").toLowerCase();
+      return !["cancelled", "void", "paid"].includes(st);
     });
 
     STATE.queue = buildQueueFromOrders(nonClosedOrders);
     renderQueue();
   }).catch(function(err) {
-    console.error("Kitchen Prep: error loading queue:", err);
+    console.error("Kitchen Prep: error loading queue from sheet:", err);
     renderQueue();
   });
 }
@@ -515,11 +522,16 @@ function buildQueueFromOrders(orders) {
   var items = [];
   orders.forEach(function(order) {
     try {
-      var orderItems = typeof order.Items === "string" ? JSON.parse(order.Items) : (order.Items || []);
-      var orderId = order.OrderID || order.orderId || "";
+      var rawItems = order.Items || order.items || order.OrderItems || [];
+      var orderItems = typeof rawItems === "string" ? JSON.parse(rawItems) : (rawItems || []);
+      var orderId = order.OrderID || order.OrderId || order.orderId || order.id || "ORD";
+      var tableNo = order.TableNumber || order.Table || order.TableNo || order.table || "—";
+      var orderNotes = order.Notes || order.notes || "";
 
       orderItems.forEach(function(item, itemIdx) {
-        var dishName = item.name || item.Name || item.dish || item.Dish || "";
+        var dishName = item.name || item.Name || item.dish || item.Dish || item.Item || item.title || "";
+        if (!dishName) return;
+
         var itemStatus = (item.status || "new").toLowerCase();
         var uniqueItemKey = orderId + "#" + itemIdx + "#" + dishName;
 
@@ -531,33 +543,32 @@ function buildQueueFromOrders(orders) {
           return;
         }
 
-        // 3. Skip drinks / Bypass prep
-        if (item.prepTime === "Bypass Prep" || (item.category || "").toLowerCase() === "drinks") {
+        // 3. Skip drinks / items explicitly set to Bypass Prep
+        var prepTime = item.prepTime || item.PrepTime || "";
+        var cat = (item.category || item.Category || "").toLowerCase();
+        if (prepTime === "Bypass Prep" || cat === "drinks" || cat === "beverages" || cat === "bar") {
           return;
         }
 
-        // 4. If dish has NO recipe in the system, exclude from kitchen display
-        var normName = dishName.trim().toLowerCase();
-        var hasRecipe = STATE.availableRecipes[normName] || FALLBACK_RECIPES[dishName];
-        if (!hasRecipe) {
-          return;
-        }
+        var elapsed = order.OrderTime || order.orderTime
+          ? (Date.now() - new Date(order.OrderTime || order.orderTime).getTime()) / 60000 : 0;
 
-        var elapsed = order.OrderTime ? (Date.now() - new Date(order.OrderTime).getTime()) / 60000 : 0;
         items.push({
           key     : uniqueItemKey,
           orderId : orderId,
           itemIdx : itemIdx,
-          table   : order.TableNumber || order.table || "—",
+          table   : tableNo,
           dish    : dishName,
-          qty     : item.quantity || item.qty || 1,
-          note    : order.Notes || item.note || "",
+          qty     : parseInt(item.quantity || item.qty || item.Qty || 1, 10),
+          note    : item.note || item.Notes || orderNotes,
           chef    : item.chef || "",
           status  : itemStatus,
           urgency : elapsed > 15 ? "high" : elapsed > 8 ? "med" : "low"
         });
       });
-    } catch(e) {}
+    } catch(e) {
+      console.warn("Kitchen Prep: error parsing order items", e);
+    }
   });
   return items;
 }
@@ -626,23 +637,49 @@ function selectDish(idx) {
     '<div class="loading-recipe"><div class="loading-spin">⚙️</div>' +
     '<div>Loading recipe for ' + item.dish + '…</div></div>';
 
-  var api = window.POS_GAPI || window.POS_API;
+  var api = getPosApi();
+  var normName = item.dish.trim().toLowerCase();
 
-  if (api && api.Recipes) {
+  // 1. First check loaded database recipes
+  if (STATE.availableRecipes && STATE.availableRecipes[normName]) {
+    var r = STATE.availableRecipes[normName];
+    var steps = typeof r.Steps === "string" ? JSON.parse(r.Steps) : (r.Steps || []);
+    var ings  = typeof r.Ingredients === "string" ? JSON.parse(r.Ingredients) : (r.Ingredients || []);
+    
+    STATE.recipe = {
+      prepTime   : r.PrepTime || r.prepTime || "—",
+      cookTime   : r.CookTime || r.cookTime || "—",
+      difficulty : r.Difficulty || r.difficulty || "Standard",
+      ingredients: ings,
+      steps      : steps.map(function(s) {
+        return {
+          title: s.title || s.Title || "Step",
+          description: s.description || s.Description || "",
+          timerSec: parseInt(s.timerSec || s.TimerSec || 0, 10),
+          tip: s.tip || s.Tip || ""
+        };
+      })
+    };
+    renderRecipe();
+    return;
+  }
+
+  // 2. Fetch directly if not cached
+  if (api && api.Recipes && typeof api.Recipes.get === "function") {
     api.Recipes.get(item.dish).then(function(res) {
-      if (res && res.data && res.data.Steps) {
+      if (res && res.data && (res.data.Steps || res.data.steps)) {
         var r = res.data;
-        var steps = typeof r.Steps === "string" ? JSON.parse(r.Steps) : r.Steps;
-        var ings  = typeof r.Ingredients === "string" ? JSON.parse(r.Ingredients) : (r.Ingredients || []);
+        var steps = typeof r.Steps === "string" ? JSON.parse(r.Steps) : (r.Steps || r.steps || []);
+        var ings  = typeof r.Ingredients === "string" ? JSON.parse(r.Ingredients) : (r.Ingredients || r.ingredients || []);
         
         STATE.recipe = {
-          prepTime   : r.PrepTime   || "—",
-          cookTime   : r.CookTime   || "—",
-          difficulty : r.Difficulty || "—",
+          prepTime   : r.PrepTime || r.prepTime || "—",
+          cookTime   : r.CookTime || r.cookTime || "—",
+          difficulty : r.Difficulty || r.difficulty || "Standard",
           ingredients: ings,
           steps      : steps.map(function(s) {
             return {
-              title: s.title || s.Title || "",
+              title: s.title || s.Title || "Step",
               description: s.description || s.Description || "",
               timerSec: parseInt(s.timerSec || s.TimerSec || 0, 10),
               tip: s.tip || s.Tip || ""
@@ -650,17 +687,31 @@ function selectDish(idx) {
           })
         };
       } else {
-        STATE.recipe = FALLBACK_RECIPES[item.dish] || null;
+        STATE.recipe = FALLBACK_RECIPES[item.dish] || buildDefaultRecipe(item.dish);
       }
       renderRecipe();
     }).catch(function() {
-      STATE.recipe = FALLBACK_RECIPES[item.dish] || null;
+      STATE.recipe = FALLBACK_RECIPES[item.dish] || buildDefaultRecipe(item.dish);
       renderRecipe();
     });
   } else {
-    STATE.recipe = FALLBACK_RECIPES[item.dish] || null;
+    STATE.recipe = FALLBACK_RECIPES[item.dish] || buildDefaultRecipe(item.dish);
     renderRecipe();
   }
+}
+
+// Build a clean preparation recipe for any dish without a custom recipe
+function buildDefaultRecipe(dishName) {
+  return {
+    prepTime: "5 min",
+    cookTime: "10 min",
+    difficulty: "Standard",
+    ingredients: [{ name: dishName + " ingredients", amount: "1 portion" }],
+    steps: [
+      { title: "Mise En Place", description: "Prepare all necessary ingredients and station tools for " + dishName + ".", timerSec: 60, tip: null },
+      { title: "Cook & Plate", description: "Cook and plate " + dishName + " according to kitchen standards.", timerSec: 300, tip: "Check seasoning and garnish before serving." }
+    ]
+  };
 }
 
 function playTickChime() {
@@ -680,8 +731,8 @@ function playTickChime() {
 }
 
 function updateSheetToPreparing() {
-  var api = window.POS_GAPI || window.POS_API;
-  if (!api || !api.getSheetId || !api.getSheetId() || !STATE.selected) return;
+  var api = getPosApi();
+  if (!api || !api.Orders || !STATE.selected) return;
 
   var targetOrderId = STATE.selected.orderId;
   var targetItemIdx = STATE.selected.itemIdx;
@@ -690,12 +741,13 @@ function updateSheetToPreparing() {
 
   api.Orders.getAll().then(function(res) {
     var orders = (res && res.data) ? res.data : [];
-    var order = orders.find(function(r) { return (r.OrderID || r.orderId) === targetOrderId; });
+    var order = orders.find(function(r) { return (r.OrderID || r.OrderId || r.orderId || r.id) === targetOrderId; });
     if (!order) return;
 
-    var itemsArray = typeof order.Items === "string" ? JSON.parse(order.Items) : (order.Items || []);
+    var rawItems = order.Items || order.items || [];
+    var itemsArray = typeof rawItems === "string" ? JSON.parse(rawItems) : (rawItems || []);
     
-    if (itemsArray[targetItemIdx] && (itemsArray[targetItemIdx].name || itemsArray[targetItemIdx].Name || itemsArray[targetItemIdx].dish) === targetDish) {
+    if (itemsArray[targetItemIdx]) {
       itemsArray[targetItemIdx].chef = chefName;
       itemsArray[targetItemIdx].status = "preparing";
     } else {
@@ -718,7 +770,7 @@ function updateSheetToPreparing() {
 }
 
 function updateSheetToReady() {
-  var api = window.POS_GAPI || window.POS_API;
+  var api = getPosApi();
   if (!STATE.selected) return Promise.resolve();
 
   var targetOrderId = STATE.selected.orderId;
@@ -728,18 +780,19 @@ function updateSheetToReady() {
 
   STATE.inFlightFinished[targetKey] = true;
 
-  if (!api || !api.getSheetId || !api.getSheetId()) {
+  if (!api || !api.Orders || typeof api.Orders.getAll !== "function") {
     return Promise.resolve();
   }
 
   return api.Orders.getAll().then(function(res) {
     var orders = (res && res.data) ? res.data : [];
-    var order = orders.find(function(r) { return (r.OrderID || r.orderId) === targetOrderId; });
+    var order = orders.find(function(r) { return (r.OrderID || r.OrderId || r.orderId || r.id) === targetOrderId; });
     if (!order) return;
 
-    var itemsArray = typeof order.Items === "string" ? JSON.parse(order.Items) : (order.Items || []);
+    var rawItems = order.Items || order.items || [];
+    var itemsArray = typeof rawItems === "string" ? JSON.parse(rawItems) : (rawItems || []);
     
-    if (itemsArray[targetItemIdx] && (itemsArray[targetItemIdx].name || itemsArray[targetItemIdx].Name || itemsArray[targetItemIdx].dish) === targetDish) {
+    if (itemsArray[targetItemIdx]) {
       itemsArray[targetItemIdx].status = "ready";
     } else {
       for (var i = 0; i < itemsArray.length; i++) {
@@ -997,8 +1050,8 @@ function renderRecipe() {
         '<div class="focus-step-card">' +
           '<span class="focus-step-num">Step ' + (stepIdx + 1) + ' of ' + r.steps.length + (isManualStep ? " — Manual" : "") + '</span>' +
           (qty > 1 ? '<div class="batch-pill" style="margin-top:-6px; margin-bottom:14px;">🔥 PREPARING BATCH OF ' + qty + '</div>' : '') +
-          '<div class="focus-step-title">' + currentStep.title + '</div>' +
-          '<div class="focus-step-desc">' + currentStep.description + '</div>' +
+          '<div class="focus-step-title">${currentStep.title}</div>' +
+          '<div class="focus-step-desc">${currentStep.description}</div>' +
           (currentStep.tip ? '<div class="focus-step-tip">💡 Chef Tip: ' + currentStep.tip + '</div>' : '') +
         '</div>' +
         '<div class="section-lbl">Recipe Steps Timeline</div>' +
