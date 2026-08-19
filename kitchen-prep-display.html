@@ -22,6 +22,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .queue-count{background:rgba(0,0,0,.2);padding:5px 14px;
   border-radius:10px;font-weight:700;color:black;}
 
+/* FULLSCREEN BUTTON */
+.fs-btn {
+  background:rgba(0,0,0,0.25);
+  border:1px solid rgba(255,255,255,0.3);
+  color:white;
+  padding:5px 12px;
+  border-radius:8px;
+  font-size:11px;
+  font-weight:700;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  gap:5px;
+  transition:all 0.2s;
+}
+.fs-btn:hover {
+  background:rgba(0,0,0,0.45);
+  border-color:white;
+}
+
 /* LAYOUT */
 .layout{display:grid;grid-template-columns:320px 1fr;
   height:calc(100vh - 58px);}
@@ -254,7 +274,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .bt-pause{background:#f39c12;color:#000;}
 .bt-stop{background:#30363d;color:#aaa;}
 
-/* Green Confirm Finish Button */
+/* Buttons */
 .bt-confirm-finish {
   background:#27ae60 !important;
   color:white !important;
@@ -273,6 +293,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 }
 .bt-confirm-finish:active {
   transform:scale(0.97);
+}
+
+.bt-reject-dish {
+  background:rgba(231,76,60,0.15) !important;
+  color:#ff6b6b !important;
+  border:1px solid rgba(231,76,60,0.4) !important;
+  font-weight:800 !important;
+  font-size:13px !important;
+  padding:9px 16px !important;
+  border-radius:7px !important;
+  cursor:pointer;
+  transition:all 0.15s;
+}
+.bt-reject-dish:hover {
+  background:#e74c3c !important;
+  color:white !important;
 }
 
 /* Ingredients */
@@ -386,12 +422,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
          <h1>👨‍🍳 Kitchen Prep Display</h1>
       </div>
       <div class="header-right">
-        <!-- CHEF HISTORY BUTTON -->
         <button onclick="openChefHistory()" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.25); color:white; padding:5px 12px; border-radius:8px; font-size:11px; cursor:pointer; font-weight:700; display:flex; align-items:center; gap:6px;">📋 My History</button>
         <button onclick="doSignOutChef()" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:white; padding:5px 12px; border-radius:8px; font-size:11px; cursor:pointer;">↩ Switch Station</button>
         <span id="chef-badge" style="font-weight:700; color:black; background:white; padding:5px 12px; border-radius:8px;">Chef: —</span>
         <div class="queue-count" id="queue-count">0 dishes</div>
         <span id="hdr-time" style="opacity:.7"></span>
+        <!-- FULLSCREEN BUTTON -->
+        <button id="fs-btn" class="fs-btn" onclick="toggleFullScreen()">⛶ Fullscreen</button>
       </div>
     </div>
 
@@ -463,8 +500,59 @@ var STATE = {
   queueIntervalId : null,
   gateState       : "none",
   inFlightFinished: {},
-  recipesCache    : {}
+  recipesCache    : {},
+  lastActivity    : Date.now()
 };
+
+// Activity tracking
+function resetActivity() {
+  STATE.lastActivity = Date.now();
+}
+['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll', 'click'].forEach(function(evt) {
+  window.addEventListener(evt, resetActivity, { passive: true });
+});
+
+// Fullscreen API Controller
+function toggleFullScreen() {
+  resetActivity();
+  if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.msFullscreenElement) {
+    var docEl = document.documentElement;
+    if (docEl.requestFullscreen) {
+      docEl.requestFullscreen().catch(function(){});
+    } else if (docEl.webkitRequestFullscreen) {
+      docEl.webkitRequestFullscreen();
+    } else if (docEl.msRequestFullscreen) {
+      docEl.msRequestFullscreen();
+    }
+  } else {
+    if (document.exitFullscreen) {
+      document.exitFullscreen().catch(function(){});
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    } else if (document.msExitFullscreen) {
+      document.msExitFullscreen();
+    }
+  }
+}
+
+function updateFullscreenBtn() {
+  var btn = document.getElementById("fs-btn");
+  if (!btn) return;
+  var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+  if (isFs) {
+    btn.innerHTML = "🗗 Exit";
+    btn.style.background = "rgba(231,76,60,0.3)";
+    btn.style.borderColor = "rgba(231,76,60,0.6)";
+  } else {
+    btn.innerHTML = "⛶ Fullscreen";
+    btn.style.background = "rgba(0,0,0,0.25)";
+    btn.style.borderColor = "rgba(255,255,255,0.3)";
+  }
+}
+
+['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(function(evt) {
+  document.addEventListener(evt, updateFullscreenBtn);
+});
 
 function getPosApi() {
   return window.POS_GAPI || window.POS_API || null;
@@ -664,6 +752,7 @@ function loadChefSelection() {
 
 function selectChef(name) {
   STATE.currentChef = name;
+  STATE.lastActivity = Date.now();
   document.getElementById("chef-badge").textContent = "Chef: " + name;
   document.getElementById("chef-overlay").style.display = "none";
   document.getElementById("main-panel").style.display = "block";
@@ -676,8 +765,9 @@ function selectChef(name) {
   STATE.queueIntervalId = setInterval(loadQueue, pollMs);
 }
 
-// ── CHEF HISTORY DIALOG & CONTROLLER ──
+// ── CHEF HISTORY CONTROLLER ──
 function openChefHistory() {
+  resetActivity();
   if (!STATE.currentChef) return;
   var modal = document.getElementById("history-modal");
   var title = document.getElementById("hm-modal-title");
@@ -730,7 +820,6 @@ function openChefHistory() {
       return;
     }
 
-    // Sort newest first
     chefHistory.reverse();
 
     var rowsHtml = chefHistory.map(function(h) {
@@ -762,6 +851,7 @@ function openChefHistory() {
 }
 
 function closeChefHistory() {
+  resetActivity();
   document.getElementById("history-modal").style.display = "none";
 }
 
@@ -920,6 +1010,7 @@ function renderQueue() {
 
 // ── FETCH & RENDER EXACT RECIPE FROM GOOGLE SHEETS ──
 function selectDish(idx) {
+  resetActivity();
   var item = STATE.queue[idx];
   if (!item) return;
 
@@ -1119,11 +1210,99 @@ function updateSheetToReady() {
   });
 }
 
+// ── REJECT / RELEASE DISH ──
+function rejectAndReleaseDish() {
+  resetActivity();
+  if (!STATE.selected) return;
+
+  var btns = document.querySelectorAll(".bt-reject-dish, .bt-confirm-finish");
+  btns.forEach(function(b){ b.disabled = true; b.textContent = "Releasing..."; });
+
+  var targetOrderId = STATE.selected.orderId;
+  var targetItemIdx = STATE.selected.itemIdx;
+  var targetDish = STATE.selected.dish;
+  var key = STATE.selectedKey;
+
+  if (key && STATE.timers[key]) {
+    delete STATE.timers[key];
+  }
+  delete STATE.inFlightFinished[key];
+
+  var api = getPosApi();
+  var updatePromise = Promise.resolve();
+
+  if (api && api.Orders && typeof api.Orders.getAll === "function") {
+    updatePromise = api.Orders.getAll().then(function(res) {
+      var orders = (res && res.data) ? res.data : [];
+      var order = orders.find(function(r) { return (r.OrderID || r.OrderId || r.orderId || r.id) === targetOrderId; });
+      if (!order) return;
+
+      var rawItems = order.Items || order.items || [];
+      var itemsArray = safeParseItems(rawItems);
+
+      if (itemsArray[targetItemIdx]) {
+        itemsArray[targetItemIdx].chef = "";
+        itemsArray[targetItemIdx].status = "new";
+      } else {
+        for (var i = 0; i < itemsArray.length; i++) {
+          var itName = itemsArray[i].name || itemsArray[i].Name || itemsArray[i].dish || "";
+          if (itName.trim().toLowerCase() === targetDish.trim().toLowerCase()) {
+            itemsArray[i].chef = "";
+            itemsArray[i].status = "new";
+            break;
+          }
+        }
+      }
+
+      var anyPreparing = itemsArray.some(function(it) {
+        return (it.status || "").toLowerCase() === "preparing";
+      });
+
+      return api.Orders.update({
+        orderId: targetOrderId,
+        status: anyPreparing ? "preparing" : "new",
+        items: itemsArray
+      });
+    });
+  }
+
+  updatePromise.finally(function() {
+    STATE.selected = null;
+    STATE.selectedKey = null;
+    STATE.recipe = null;
+    STATE.gateState = "none";
+
+    renderQueue();
+    document.getElementById("recipe-panel").innerHTML =
+      '<div class="no-selection">' +
+        '<div class="ns-icon">👈</div>' +
+        '<div class="ns-title">Select a dish from the queue</div>' +
+        '<p style="font-size:14px;margin-top:6px">Tap any dish to see step-by-step recipe</p>' +
+      '</div>';
+    loadQueue();
+  });
+}
+
 function startGlobalInterval() {
   if (STATE.globalIntervalId) return;
   STATE.globalIntervalId = setInterval(function() {
     var stateUpdated = false;
+    var now = Date.now();
 
+    // 1 MINUTE IDLE TIMEOUT CHECK
+    var hasActiveTimerRunning = Object.keys(STATE.timers).some(function(key) {
+      return STATE.timers[key] && STATE.timers[key].running;
+    });
+
+    if (STATE.currentChef && !hasActiveTimerRunning) {
+      if (now - STATE.lastActivity >= 60000) {
+        console.log("Kitchen Prep: 1 minute inactivity timeout. Returning to station select.");
+        doSignOutChef();
+        return;
+      }
+    }
+
+    // TIMER TICKING
     Object.keys(STATE.timers).forEach(function(key) {
       var t = STATE.timers[key];
       if (!t || !t.running) return;
@@ -1160,6 +1339,7 @@ function startGlobalInterval() {
 }
 
 function handleStepAdvance() {
+  resetActivity();
   var t = STATE.timers[STATE.selectedKey];
   if (!t || !STATE.recipe) return;
   
@@ -1176,6 +1356,7 @@ function handleStepAdvance() {
 }
 
 function toggleAutoCooking() {
+  resetActivity();
   var key = STATE.selectedKey;
   var backgroundTimer = STATE.timers[key];
 
@@ -1200,6 +1381,7 @@ function toggleAutoCooking() {
 }
 
 function stopCookingTimer() {
+  resetActivity();
   if (STATE.selectedKey) {
     delete STATE.timers[STATE.selectedKey];
   }
@@ -1208,6 +1390,7 @@ function stopCookingTimer() {
 }
 
 function confirmRecipeFinished() {
+  resetActivity();
   var btns = document.querySelectorAll(".bt-confirm-finish, .bt-controls button");
   btns.forEach(function(b){ b.disabled = true; b.textContent = "Finishing..."; });
 
@@ -1262,7 +1445,10 @@ function renderRecipe() {
         '<div class="ns-icon">📋</div>' +
         '<div class="ns-title">No recipe found in database for ' + item.dish + '</div>' +
         '<p style="font-size:13px;margin-top:8px;max-width:380px;color:#8b949e">Add step-by-step instructions in the Recipes tab of your Google Sheet.</p>' +
-        '<button class="bt-confirm-finish" style="margin-top:24px; font-size:14px; padding:12px 28px;" onclick="confirmRecipeFinished()">✅ Confirm Finish</button>' +
+        '<div style="display:flex; gap:12px; margin-top:24px;">' +
+          '<button class="bt-confirm-finish" style="font-size:14px; padding:12px 28px;" onclick="confirmRecipeFinished()">✅ Confirm Finish</button>' +
+          '<button class="bt-reject-dish" style="font-size:14px; padding:12px 20px;" onclick="rejectAndReleaseDish()">✋ Release</button>' +
+        '</div>' +
       '</div>';
     return;
   }
@@ -1335,12 +1521,13 @@ function renderRecipe() {
             '<div style="font-size:16px; color:#f39c12; font-weight:800;">' + (qty > 1 ? qty + '× ' : '') + item.dish + ' · Table ' + item.table + '</div>' +
             '<div style="font-size:12px; color:#8b949e; margin-top:2px;">⏱ Total Recipe Remaining: <strong>' + totalTimeDisp + '</strong></div>' +
           '</div>' +
-          '<div style="display:flex; align-items:center; gap:16px;">' +
+          '<div style="display:flex; align-items:center; gap:12px;">' +
             '<div class="bt-display ' + (rem <= 10 && !isManualStep && !isTimerComplete ? 'urgent' : isTimerComplete ? 'done-color' : '') + '" style="font-size:36px; margin:0;">' +
               (isManualStep && !isTimerComplete ? "MANUAL" : isTimerComplete ? "🎉 DONE!" : bigTimeDisp) +
             '</div>' +
             '<div class="bt-controls">' +
               '<button class="bt-confirm-finish" onclick="confirmRecipeFinished()">✅ Confirm Finish</button>' +
+              '<button class="bt-reject-dish" onclick="rejectAndReleaseDish()">✋ Release</button>' +
               (isManualStep && !isTimerComplete
                 ? '<button class="bt-ctrl" style="background:#f39c12; color:black; font-weight:800;" onclick="handleStepAdvance()">➡️ Next Step</button>'
                 : !isTimerComplete 
@@ -1392,7 +1579,8 @@ function renderRecipe() {
         '</div>' +
       '</div>' +
       '<div style="display:flex; gap:10px; align-items:center;">' +
-        '<button class="bt-confirm-finish" style="padding:12px 20px; font-size:13px;" onclick="confirmRecipeFinished()">✅ Confirm Finish</button>' +
+        '<button class="bt-confirm-finish" style="padding:12px 18px; font-size:13px;" onclick="confirmRecipeFinished()">✅ Confirm Finish</button>' +
+        '<button class="bt-reject-dish" style="padding:12px 16px; font-size:13px;" onclick="rejectAndReleaseDish()">✋ Release</button>' +
         '<button class="gate-btn" style="padding:12px 24px; font-size:14px; width:auto;" onclick="STATE.gateState = \'hygiene\'; renderRecipe();">🔥 START COOKING' + (qty > 1 ? ' (' + qty + 'x)' : '') + '</button>' +
       '</div>' +
     '</div>' +
@@ -1431,11 +1619,13 @@ function renderRecipe() {
 }
 
 function markDone(i) {
+  resetActivity();
   if (STATE.doneSteps.indexOf(i) < 0) STATE.doneSteps.push(i);
   renderRecipe();
 }
 
 function undoStep(i) {
+  resetActivity();
   STATE.doneSteps = STATE.doneSteps.filter(function(d){ return d !== i; });
   renderRecipe();
 }
