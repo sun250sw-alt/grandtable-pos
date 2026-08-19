@@ -10,7 +10,6 @@
     <script src="pos-config.js"></script>
     <script src="pos-api.js"></script>
     <script src="pos-gapi.js"></script>
-    <script src="pos-auth.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f9fa; color: #1a1a2e; }
@@ -252,7 +251,7 @@
 <div id="root"></div>
 
 <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect } = React;
 
     function CustomerApp() {
         const [menuItems, setMenuItems] = useState([]);
@@ -268,7 +267,7 @@
         const [orderStatus, setOrderStatus] = useState("new");
         const [isSubmitting, setIsSubmitting] = useState(false);
 
-        // Helper: Extract Spreadsheet ID from any string or URL
+        // Helper: Extract Spreadsheet ID from configs or URLs
         const resolveSpreadsheetId = () => {
             let id = "";
             if (window.POS_CONFIG) {
@@ -324,87 +323,60 @@
             }).filter(Boolean);
         };
 
-        // ── 1. LOAD LIVE MENU (WITH GViz ROW-0 HEADER DETECTION & AUTO-RETRY) ──
+        // ── 1. LOAD LIVE MENU DIRECTLY FROM GOOGLE SHEETS (NO LOGIN REQUIRED) ──
         const loadMenuFromDatabase = async () => {
-            const api = window.POS_API || window.POS_GAPI;
             const targetSheetId = resolveSpreadsheetId();
-
-            // 1. Query Direct API
-            if (api) {
-                try {
-                    let rows = [];
-                    if (typeof api.getRows === "function") {
-                        rows = await api.getRows("MenuItems").catch(() => api.getRows("Menu")).catch(() => []);
-                    } else if (api.Menu && typeof api.Menu.getAll === "function") {
-                        const res = await api.Menu.getAll();
-                        rows = (res && res.data) ? res.data : [];
-                    } else if (api.MenuItems && typeof api.MenuItems.getAll === "function") {
-                        const res = await api.MenuItems.getAll();
-                        rows = (res && res.data) ? res.data : [];
-                    }
-
-                    if (rows && rows.length > 0) {
-                        const formatted = formatRawMenuRows(rows);
-                        if (formatted.length > 0) {
-                            setMenuItems(formatted);
-                            setLoadingMenu(false);
-                            return true;
-                        }
-                    }
-                } catch(e) {
-                    console.warn("Direct API menu fetch attempt:", e);
-                }
+            if (!targetSheetId) {
+                console.warn("Spreadsheet ID not found. Ensure it is defined in pos-config.js or URL.");
+                return false;
             }
 
-            // 2. Query Google Visualization Endpoint (Row-0 Headers + GViz Table Labels)
-            if (targetSheetId) {
-                const tabQueries = [
-                    `sheet=MenuItems`,
-                    `sheet=Menu`,
-                    `sheet=Menus`,
-                    `sheet=Menu%20Items`,
-                    `sheet=Sheet1`,
-                    `` // default active sheet
-                ];
+            const tabQueries = [
+                `sheet=MenuItems`,
+                `sheet=Menu`,
+                `sheet=Menus`,
+                `sheet=Menu%20Items`,
+                `sheet=Sheet1`,
+                `` // default first active sheet
+            ];
 
-                for (let q of tabQueries) {
-                    try {
-                        const url = `https://docs.google.com/spreadsheets/d/${targetSheetId}/gviz/tq?tqx=out:json${q ? '&' + q : ''}`;
-                        const text = await fetch(url).then(r => r.text());
-                        if (!text || text.includes("error") || !text.includes("({")) continue;
+            for (let q of tabQueries) {
+                try {
+                    const url = `https://docs.google.com/spreadsheets/d/${targetSheetId}/gviz/tq?tqx=out:json${q ? '&' + q : ''}`;
+                    const text = await fetch(url).then(r => r.text());
+                    if (!text || text.includes("error") || !text.includes("({")) continue;
 
-                        const jsonStr = text.substring(text.indexOf("({") + 1, text.lastIndexOf("})") + 1);
-                        const data = JSON.parse(jsonStr);
-                        
-                        let cols = (data.table.cols || []).map(c => (c.label || "").trim());
-                        let rowsData = data.table.rows || [];
+                    const jsonStr = text.substring(text.indexOf("({") + 1, text.lastIndexOf("})") + 1);
+                    const data = JSON.parse(jsonStr);
+                    
+                    let cols = (data.table.cols || []).map(c => (c.label || "").trim());
+                    let rowsData = data.table.rows || [];
 
-                        // If cols are empty, the 1st row (rows[0]) contains the real headers
-                        if (cols.every(c => !c) && rowsData.length > 0) {
-                            const headerRow = rowsData[0].c || [];
-                            cols = headerRow.map((cell, idx) => (cell && cell.v !== null ? String(cell.v).trim() : `col_${idx}`));
-                            rowsData = rowsData.slice(1);
-                        }
+                    // If column headers are placed in Row 0
+                    if (cols.every(c => !c) && rowsData.length > 0) {
+                        const headerRow = rowsData[0].c || [];
+                        cols = headerRow.map((cell, idx) => (cell && cell.v !== null ? String(cell.v).trim() : `col_${idx}`));
+                        rowsData = rowsData.slice(1);
+                    }
 
-                        const parsedRows = rowsData.map(r => {
-                            const obj = {};
-                            (r.c || []).forEach((cell, idx) => {
-                                const colName = cols[idx];
-                                if (colName) {
-                                    obj[colName] = cell ? (cell.v !== null ? cell.v : "") : "";
-                                }
-                            });
-                            return obj;
+                    const parsedRows = rowsData.map(r => {
+                        const obj = {};
+                        (r.c || []).forEach((cell, idx) => {
+                            const colName = cols[idx];
+                            if (colName) {
+                                obj[colName] = cell ? (cell.v !== null ? cell.v : "") : "";
+                            }
                         });
+                        return obj;
+                    });
 
-                        const formatted = formatRawMenuRows(parsedRows);
-                        if (formatted.length > 0) {
-                            setMenuItems(formatted);
-                            setLoadingMenu(false);
-                            return true;
-                        }
-                    } catch(e) {}
-                }
+                    const formatted = formatRawMenuRows(parsedRows);
+                    if (formatted.length > 0) {
+                        setMenuItems(formatted);
+                        setLoadingMenu(false);
+                        return true;
+                    }
+                } catch(e) {}
             }
 
             return false;
@@ -414,22 +386,15 @@
             let tries = 0;
             async function attemptLoad() {
                 const ok = await loadMenuFromDatabase();
-                if (!ok && tries < 6) {
+                if (!ok && tries < 5) {
                     tries++;
-                    setTimeout(attemptLoad, 600);
+                    setTimeout(attemptLoad, 500);
                 } else {
                     setLoadingMenu(false);
                 }
             }
 
-            if (typeof POS_AUTH !== "undefined") {
-                POS_AUTH.init("order-online", {
-                    onReady: attemptLoad,
-                    onError: attemptLoad
-                });
-            } else {
-                attemptLoad();
-            }
+            attemptLoad();
         }, []);
 
         // ── 2. LIVE ORDER STATUS POLLING ──
@@ -514,6 +479,7 @@
 
             let realOrderId = generatedOrderId;
 
+            // Submit via POS_API / Google Apps Script Web App without requiring customer login
             if (api && api.Orders && typeof api.Orders.create === "function") {
                 try {
                     const res = await api.Orders.create(orderPayload);
