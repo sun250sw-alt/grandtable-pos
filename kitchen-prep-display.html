@@ -248,11 +248,32 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .bt-display.urgent{color:#e74c3c;animation:urgblink .7s infinite;}
 .bt-display.done-color{color:#27ae60;}
 @keyframes urgblink{0%,100%{opacity:1}50%{opacity:.2}}
-.bt-controls{display:flex;gap:8px;justify-content:center;}
+.bt-controls{display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap;}
 .bt-ctrl{padding:8px 16px;border:none;border-radius:7px;
   cursor:pointer;font-weight:700;font-size:12px;}
 .bt-pause{background:#f39c12;color:#000;}
 .bt-stop{background:#30363d;color:#aaa;}
+
+/* Green Confirm Finish Button */
+.bt-confirm-finish {
+  background:#27ae60 !important;
+  color:white !important;
+  font-weight:800 !important;
+  font-size:13px !important;
+  padding:9px 18px !important;
+  border-radius:7px !important;
+  box-shadow:0 3px 10px rgba(39,174,96,0.3);
+  transition:transform 0.1s, background 0.2s;
+  cursor:pointer;
+  border:none;
+}
+.bt-confirm-finish:hover {
+  background:#2ecc71 !important;
+  transform:translateY(-1px);
+}
+.bt-confirm-finish:active {
+  transform:scale(0.97);
+}
 
 /* Ingredients */
 .ing-row{display:flex;justify-content:space-between;align-items:flex-start;
@@ -571,7 +592,6 @@ function loadQueue() {
   });
 }
 
-// ── SMART QUEUE BUILDER (HANDLES MULTIPLE & RE-ORDERED PORTIONS) ──
 function buildQueueFromOrders(orders) {
   var items = [];
   orders.forEach(function(order) {
@@ -589,11 +609,10 @@ function buildQueueFromOrders(orders) {
         var itemStatus = (item.status || "new").toLowerCase().trim();
         var totalQty = parseInt(item.quantity || item.qty || item.Qty || 1, 10);
         
-        // Track already prepared portions to prevent re-cooking completed items
         var preparedQty = parseInt(item.preparedQty || item.doneQty || (itemStatus === "ready" || itemStatus === "served" || itemStatus === "completed" ? totalQty : 0), 10);
         var remainingQty = totalQty - preparedQty;
 
-        // 1. If all portions are already prepared/cooked, hide it!
+        // 1. If all portions are already prepared/cooked, hide it
         if (remainingQty <= 0) {
           return;
         }
@@ -623,7 +642,7 @@ function buildQueueFromOrders(orders) {
           itemIdx       : itemIdx,
           table         : tableNo,
           dish          : dishName,
-          qty           : remainingQty,      // Only cook the remaining portions
+          qty           : remainingQty,
           totalOrdered  : totalQty,
           alreadyServed : preparedQty,
           note          : item.note || item.Notes || orderNotes,
@@ -682,7 +701,7 @@ function renderQueue() {
   }).join("");
 }
 
-// ── FETCH & RENDER RECIPE ──
+// ── FETCH & RENDER EXACT RECIPE ──
 function selectDish(idx) {
   var item = STATE.queue[idx];
   if (!item) return;
@@ -864,7 +883,7 @@ function updateSheetToReady() {
     if (itemsArray[targetItemIdx]) {
       var it = itemsArray[targetItemIdx];
       var totalQ = parseInt(it.quantity || it.qty || 1, 10);
-      it.preparedQty = totalQ; // Record all ordered portions as finished
+      it.preparedQty = totalQ;
       it.status = "ready";
     } else {
       for (var i = 0; i < itemsArray.length; i++) {
@@ -983,8 +1002,8 @@ function stopCookingTimer() {
 }
 
 function confirmRecipeFinished() {
-  var btn = document.querySelector(".bt-controls button");
-  if (btn) { btn.disabled = true; btn.textContent = "Finishing..."; }
+  var btns = document.querySelectorAll(".bt-confirm-finish, .bt-controls button");
+  btns.forEach(function(b){ b.disabled = true; b.textContent = "Finishing..."; });
 
   updateSheetToReady().then(function() {
     if (STATE.selectedKey) {
@@ -1037,7 +1056,7 @@ function renderRecipe() {
         '<div class="ns-icon">📋</div>' +
         '<div class="ns-title">No recipe found for ' + item.dish + '</div>' +
         '<p style="font-size:13px;margin-top:8px;max-width:360px">This item can be prepared manually.</p>' +
-        '<button class="gate-btn" style="margin-top:20px; max-width:260px;" onclick="confirmRecipeFinished()">✅ Mark Dish as Ready</button>' +
+        '<button class="bt-confirm-finish" style="margin-top:20px; font-size:15px; padding:12px 28px;" onclick="confirmRecipeFinished()">✅ Confirm Finish</button>' +
       '</div>';
     return;
   }
@@ -1085,6 +1104,7 @@ function renderRecipe() {
     return;
   }
 
+  // ── ACTIVE COOKING VIEW: "Confirm Finish" IS ALWAYS VISIBLE ──
   if (localGate === "focus_cooking" && backgroundTimer) {
     var stepIdx = backgroundTimer.currentStepIdx;
     var currentStep = r.steps[stepIdx] || r.steps[0];
@@ -1109,18 +1129,20 @@ function renderRecipe() {
             '<div style="font-size:16px; color:#f39c12; font-weight:800;">' + (qty > 1 ? qty + '× ' : '') + item.dish + ' · Table ' + item.table + '</div>' +
             '<div style="font-size:12px; color:#8b949e; margin-top:2px;">⏱ Total Recipe Remaining: <strong>' + totalTimeDisp + '</strong></div>' +
           '</div>' +
-          '<div style="display:flex; align-items:center; gap:20px;">' +
-            '<div class="bt-display ' + (rem <= 10 && !isManualStep && !isTimerComplete ? 'urgent' : isTimerComplete ? 'done-color' : '') + '" style="font-size:38px; margin:0;">' +
+          '<div style="display:flex; align-items:center; gap:16px;">' +
+            '<div class="bt-display ' + (rem <= 10 && !isManualStep && !isTimerComplete ? 'urgent' : isTimerComplete ? 'done-color' : '') + '" style="font-size:36px; margin:0;">' +
               (isManualStep && !isTimerComplete ? "MANUAL" : isTimerComplete ? "🎉 DONE!" : bigTimeDisp) +
             '</div>' +
             '<div class="bt-controls">' +
+              // ALWAYS VISIBLE GREEN CONFIRM FINISH BUTTON
+              '<button class="bt-confirm-finish" onclick="confirmRecipeFinished()">✅ Confirm Finish</button>' +
               (isManualStep && !isTimerComplete
                 ? '<button class="bt-ctrl" style="background:#f39c12; color:black; font-weight:800;" onclick="handleStepAdvance()">➡️ Next Step</button>'
                 : !isTimerComplete 
-                  ? '<button class="bt-ctrl bt-pause" style="background:' + (backgroundTimer.running ? '#e74c3c' : '#27ae60') + '; color:white;" onclick="toggleAutoCooking()">' + (backgroundTimer.running ? "⏸ Pause" : "▶ Resume") + '</button>'
-                  : '<button class="bt-ctrl" style="background:#27ae60; color:white; font-size:14px; padding:10px 20px;" onclick="confirmRecipeFinished()">✅ Confirm Finish</button>'
+                  ? '<button class="bt-ctrl bt-pause" style="background:' + (backgroundTimer.running ? '#e74c3c' : '#f39c12') + '; color:' + (backgroundTimer.running ? 'white' : 'black') + ';" onclick="toggleAutoCooking()">' + (backgroundTimer.running ? "⏸ Pause" : "▶ Resume") + '</button>'
+                  : ''
               ) +
-              '<button class="bt-ctrl bt-stop" onclick="stopCookingTimer()">✕ Stop</button>' +
+              '<button class="bt-ctrl bt-stop" onclick="stopCookingTimer()">✕ Cancel</button>' +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -1164,8 +1186,9 @@ function renderRecipe() {
           '<span class="' + (done === total && total > 0 ? "meta-ok" : "meta-warn") + '">✅ ' + done + '/' + total + ' steps done</span>' +
         '</div>' +
       '</div>' +
-      '<div>' +
-        '<button class="gate-btn" style="padding:12px 28px; font-size:14px; width:auto;" onclick="STATE.gateState = \'hygiene\'; renderRecipe();">🔥 START COOKING' + (qty > 1 ? ' (' + qty + 'x)' : '') + '</button>' +
+      '<div style="display:flex; gap:10px; align-items:center;">' +
+        '<button class="bt-confirm-finish" style="padding:12px 20px; font-size:13px;" onclick="confirmRecipeFinished()">✅ Confirm Finish</button>' +
+        '<button class="gate-btn" style="padding:12px 24px; font-size:14px; width:auto;" onclick="STATE.gateState = \'hygiene\'; renderRecipe();">🔥 START COOKING' + (qty > 1 ? ' (' + qty + 'x)' : '') + '</button>' +
       '</div>' +
     '</div>' +
     '<div class="recipe-content">' +
