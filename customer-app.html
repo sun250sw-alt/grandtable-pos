@@ -245,7 +245,7 @@
         .live-dot { width: 8px; height: 8px; background: #2e7d32; border-radius: 50%; animation: pulse-icon 1.2s infinite; }
 
         .new-order-btn { width: 100%; padding: 14px; background: #1a1a2e; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; }
-        .refresh-btn { background: #f0f2f5; border: 1px solid #ddd; padding: 8px 16px; border-radius: 8px; font-weight: 700; cursor: pointer; margin-top: 12px; }
+        .refresh-btn { background: #1a1a2e; color:white; border:none; padding: 10px 20px; border-radius: 8px; font-weight: 700; cursor: pointer; margin-top: 14px; }
     </style>
 </head>
 <body>
@@ -253,6 +253,12 @@
 
 <script type="text/babel">
     const { useState, useEffect } = React;
+
+    // ════════════════════════════════════════════════════════════════
+    // 🔴 YOUR SPREADSHEET ID & MENU GID (DIRECTLY LINKED):
+    // ════════════════════════════════════════════════════════════════
+    const HARDCODED_SPREADSHEET_ID = "1jMTY5g5zTrO0br4ibf4Rhw0qbRn8BzGFM9BfLs_lba4"; 
+    const TARGET_MENU_GID = "178083244";
 
     function CustomerApp() {
         const [menuItems, setMenuItems] = useState([]);
@@ -268,14 +274,12 @@
         const [orderStatus, setOrderStatus] = useState("new");
         const [isSubmitting, setIsSubmitting] = useState(false);
 
-        // Universal Spreadsheet ID Resolver
+        // Helper: Extract Spreadsheet ID
         const resolveSpreadsheetId = () => {
-            let id = "";
-            if (window.POS_CONFIG) {
+            let id = HARDCODED_SPREADSHEET_ID.trim();
+
+            if (!id && window.POS_CONFIG) {
                 id = window.POS_CONFIG.SPREADSHEET_ID || window.POS_CONFIG.SHEET_ID || window.POS_CONFIG.spreadsheetId || window.POS_CONFIG.sheetId || "";
-                if (!id && window.POS_CONFIG.CONFIG) {
-                    id = window.POS_CONFIG.CONFIG.spreadsheetId || window.POS_CONFIG.CONFIG.sheetId || "";
-                }
             }
             if (!id && window.POS_API && typeof window.POS_API.getSheetId === "function") {
                 id = window.POS_API.getSheetId();
@@ -319,7 +323,7 @@
                 if (!r || typeof r !== "object") return null;
 
                 const name = r.Name || r.name || r.ItemName || r.itemName || r.DishName || r.dish || r.Item || r.item || "";
-                if (!name) return null;
+                if (!name || name === "Name") return null;
 
                 const availStr = String(r.Available !== undefined ? r.Available : (r.available !== undefined ? r.available : r.Status || "true")).toLowerCase().trim();
                 if (availStr === "false" || availStr === "unavailable" || availStr === "0" || availStr === "off") return null;
@@ -344,7 +348,7 @@
             const api = window.POS_API || window.POS_GAPI;
             const targetSheetId = resolveSpreadsheetId();
 
-            // Attempt 1: Direct API queries
+            // 1. Direct API queries if available
             if (api) {
                 try {
                     let rows = [];
@@ -366,14 +370,13 @@
                             return true;
                         }
                     }
-                } catch(e) {
-                    console.warn("Direct API menu fetch attempt:", e);
-                }
+                } catch(e) {}
             }
 
-            // Attempt 2: Public Google Sheets GViz Visualizer Endpoint
+            // 2. Google Visualization Public Endpoint (with GID & Tab Queries)
             if (targetSheetId) {
                 const tabQueries = [
+                    `gid=${TARGET_MENU_GID}`,
                     `sheet=MenuItems`,
                     `sheet=Menu`,
                     `sheet=Menus`,
@@ -430,9 +433,9 @@
             let tries = 0;
             async function attemptLoad() {
                 const ok = await loadMenuFromDatabase();
-                if (!ok && tries < 4) {
+                if (!ok && tries < 3) {
                     tries++;
-                    setTimeout(attemptLoad, 500);
+                    setTimeout(attemptLoad, 600);
                 }
             }
             attemptLoad();
@@ -483,7 +486,7 @@
 
         const cartItems = menuItems.filter(item => cart[item.id] > 0);
 
-        // ── 3. PLACE ORDER TO GOOGLE SHEETS ──
+        // ── 3. PLACE ORDER DIRECTLY TO GOOGLE SHEETS ──
         const handlePlaceOrder = async () => {
             if (!form.name || !form.phone) {
                 alert("Please enter your name and phone number.");
@@ -671,11 +674,14 @@
                 <div className="menu-list">
                     {loadingMenu ? (
                         <div style={{ textAlign:'center', padding:'40px', color:'#888' }}>
+                            <div style={{ fontSize:'28px', marginBottom:'10px' }}>⏳</div>
                             <div>Loading menu items from Google Sheets…</div>
                         </div>
                     ) : filtered.length === 0 ? (
-                        <div style={{ textAlign:'center', padding:'40px', color:'#888' }}>
-                            <div>No items found in menu.</div>
+                        <div style={{ textAlign:'center', padding:'40px 20px', color:'#888' }}>
+                            <div style={{ fontSize:'32px', marginBottom:'8px' }}>📋</div>
+                            <div style={{ fontWeight:'700', fontSize:'16px', color:'#1a1a2e', marginBottom:'6px' }}>No items found in menu.</div>
+                            <div style={{ fontSize:'12px', color:'#888', marginBottom:'12px' }}>Please ensure your Google Sheet Share setting is set to "Anyone with the link can view".</div>
                             <button className="refresh-btn" onClick={() => { setLoadingMenu(true); loadMenuFromDatabase(); }}>🔄 Reload Menu</button>
                         </div>
                     ) : (
