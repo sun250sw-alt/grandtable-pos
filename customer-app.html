@@ -255,10 +255,10 @@
     const { useState, useEffect } = React;
 
     // ════════════════════════════════════════════════════════════════
-    // 🔴 YOUR SPREADSHEET ID & MENU GID (DIRECTLY LINKED):
+    // 🔴 SPREADSHEET CONFIGURATION (DIRECTLY LINKED):
     // ════════════════════════════════════════════════════════════════
-    const HARDCODED_SPREADSHEET_ID = "1jMTY5g5zTrO0br4ibf4Rhw0qbRn8BzGFM9BfLs_lba4"; 
-    const TARGET_MENU_GID = "178083244";
+    const SPREADSHEET_ID = "1jMTY5g5zTrO0br4ibf4Rhw0qbRn8BzGFM9BfLs_lba4"; 
+    const MENU_TAB_GID = "178083244";
 
     function CustomerApp() {
         const [menuItems, setMenuItems] = useState([]);
@@ -274,55 +274,13 @@
         const [orderStatus, setOrderStatus] = useState("new");
         const [isSubmitting, setIsSubmitting] = useState(false);
 
-        // Helper: Extract Spreadsheet ID
-        const resolveSpreadsheetId = () => {
-            let id = HARDCODED_SPREADSHEET_ID.trim();
-
-            if (!id && window.POS_CONFIG) {
-                id = window.POS_CONFIG.SPREADSHEET_ID || window.POS_CONFIG.SHEET_ID || window.POS_CONFIG.spreadsheetId || window.POS_CONFIG.sheetId || "";
-            }
-            if (!id && window.POS_API && typeof window.POS_API.getSheetId === "function") {
-                id = window.POS_API.getSheetId();
-            }
-            if (!id && window.POS_GAPI && typeof window.POS_GAPI.getSheetId === "function") {
-                id = window.POS_GAPI.getSheetId();
-            }
-            if (!id) {
-                const keys = ["pos_sheet_id", "pos_active_sheet_id", "pos_spreadsheet_id", "pos_session", "pos_auth", "pos_config"];
-                for (let k of keys) {
-                    try {
-                        const val = localStorage.getItem(k);
-                        if (val) {
-                            if (val.startsWith("{")) {
-                                const parsed = JSON.parse(val);
-                                id = parsed.sheetId || parsed.spreadsheetId || parsed.SHEET_ID || parsed.SPREADSHEET_ID || "";
-                            } else {
-                                id = val;
-                            }
-                            if (id) break;
-                        }
-                    } catch(e){}
-                }
-            }
-            if (!id) {
-                const urlParams = new URLSearchParams(window.location.search);
-                id = urlParams.get("sheetid") || urlParams.get("sheetId") || urlParams.get("id") || "";
-            }
-
-            if (id && id.includes("/spreadsheets/d/")) {
-                const match = id.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-                if (match) id = match[1];
-            }
-            return id ? id.trim() : "";
-        };
-
-        // Formats raw sheet rows into standardized menu items
-        const formatRawMenuRows = (rows) => {
+        // Helper: Formats raw row data into menu item models
+        const formatRawRows = (rows) => {
             if (!Array.isArray(rows) || !rows.length) return [];
             return rows.map((r, idx) => {
                 if (!r || typeof r !== "object") return null;
 
-                const name = r.Name || r.name || r.ItemName || r.itemName || r.DishName || r.dish || r.Item || r.item || "";
+                const name = r.Name || r.name || r.ItemName || r.DishName || r.dish || r.Item || "";
                 if (!name || name === "Name") return null;
 
                 const availStr = String(r.Available !== undefined ? r.Available : (r.available !== undefined ? r.available : r.Status || "true")).toLowerCase().trim();
@@ -343,27 +301,59 @@
             }).filter(Boolean);
         };
 
-        // ── 1. LOAD LIVE MENU FROM GOOGLE SHEETS ──
-        const loadMenuFromDatabase = async () => {
-            const api = window.POS_API || window.POS_GAPI;
-            const targetSheetId = resolveSpreadsheetId();
-
-            // 1. Direct API queries if available
-            if (api) {
-                try {
-                    let rows = [];
-                    if (typeof api.getRows === "function") {
-                        rows = await api.getRows("MenuItems").catch(() => api.getRows("Menu")).catch(() => api.getRows("Menus")).catch(() => []);
-                    } else if (api.Menu && typeof api.Menu.getAll === "function") {
-                        const res = await api.Menu.getAll();
-                        rows = (res && res.data) ? res.data : [];
-                    } else if (api.MenuItems && typeof api.MenuItems.getAll === "function") {
-                        const res = await api.MenuItems.getAll();
-                        rows = (res && res.data) ? res.data : [];
+        // Helper: Robust CSV parser
+        const parseCSV = (text) => {
+            const lines = text.split(/\r?\n/).filter(Boolean);
+            if (!lines.length) return [];
+            
+            const splitLine = (line) => {
+                const values = [];
+                let current = '';
+                let inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                    const c = line[i];
+                    if (c === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (c === ',' && !inQuotes) {
+                        values.push(current.trim());
+                        current = '';
+                    } else {
+                        current += c;
                     }
+                }
+                values.push(current.trim());
+                return values.map(v => v.replace(/^"|"$/g, '').replace(/""/g, '"').trim());
+            };
 
-                    if (rows && rows.length > 0) {
-                        const formatted = formatRawMenuRows(rows);
+            const headers = splitLine(lines[0]);
+            const rows = [];
+            for (let i = 1; i < lines.length; i++) {
+                const row = splitLine(lines[i]);
+                if (!row.length || !row[0]) continue;
+                const obj = {};
+                for (let h = 0; h < headers.length; h++) {
+                    obj[headers[h]] = row[h] !== undefined ? row[h] : '';
+                }
+                rows.push(obj);
+            }
+            return rows;
+        };
+
+        // ── 1. LOAD LIVE MENU (CSV + GVIZ DUAL ENGINE) ──
+        const loadMenuFromDatabase = async () => {
+            // Strategy A: Direct CSV Export (Fastest, zero wrappers)
+            const csvUrls = [
+                `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${MENU_TAB_GID}`,
+                `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&sheet=MenuItems`,
+                `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&sheet=Menu`
+            ];
+
+            for (let url of csvUrls) {
+                try {
+                    const text = await fetch(url).then(r => r.text());
+                    if (text && !text.includes("<!DOCTYPE") && text.includes(",")) {
+                        const parsedCSV = parseCSV(text);
+                        const formatted = formatRawRows(parsedCSV);
                         if (formatted.length > 0) {
                             setMenuItems(formatted);
                             setLoadingMenu(false);
@@ -373,31 +363,23 @@
                 } catch(e) {}
             }
 
-            // 2. Google Visualization Public Endpoint (with GID & Tab Queries)
-            if (targetSheetId) {
-                const tabQueries = [
-                    `gid=${TARGET_MENU_GID}`,
-                    `sheet=MenuItems`,
-                    `sheet=Menu`,
-                    `sheet=Menus`,
-                    `sheet=Menu%20Items`,
-                    `sheet=Sheet1`,
-                    ``
-                ];
+            // Strategy B: Google Visualization API
+            const gvizUrls = [
+                `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&gid=${MENU_TAB_GID}`,
+                `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=MenuItems`,
+                `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Menu`
+            ];
 
-                for (let q of tabQueries) {
-                    try {
-                        const url = `https://docs.google.com/spreadsheets/d/${targetSheetId}/gviz/tq?tqx=out:json${q ? '&' + q : ''}`;
-                        const text = await fetch(url).then(r => r.text());
-                        if (!text || text.includes("error") || !text.includes("({")) continue;
-
+            for (let url of gvizUrls) {
+                try {
+                    const text = await fetch(url).then(r => r.text());
+                    if (text && text.includes("({")) {
                         const jsonStr = text.substring(text.indexOf("({") + 1, text.lastIndexOf("})") + 1);
                         const data = JSON.parse(jsonStr);
-                        
+
                         let cols = (data.table.cols || []).map(c => (c.label || "").trim());
                         let rowsData = data.table.rows || [];
 
-                        // If column headers were returned in Row 0
                         if (cols.every(c => !c) && rowsData.length > 0) {
                             const headerRow = rowsData[0].c || [];
                             cols = headerRow.map((cell, idx) => (cell && cell.v !== null ? String(cell.v).trim() : `col_${idx}`));
@@ -415,14 +397,14 @@
                             return obj;
                         });
 
-                        const formatted = formatRawMenuRows(parsedRows);
+                        const formatted = formatRawRows(parsedRows);
                         if (formatted.length > 0) {
                             setMenuItems(formatted);
                             setLoadingMenu(false);
                             return true;
                         }
-                    } catch(e) {}
-                }
+                    }
+                } catch(e) {}
             }
 
             setLoadingMenu(false);
@@ -430,15 +412,7 @@
         };
 
         useEffect(() => {
-            let tries = 0;
-            async function attemptLoad() {
-                const ok = await loadMenuFromDatabase();
-                if (!ok && tries < 3) {
-                    tries++;
-                    setTimeout(attemptLoad, 600);
-                }
-            }
-            attemptLoad();
+            loadMenuFromDatabase();
         }, []);
 
         // ── 2. LIVE ORDER STATUS POLLING ──
@@ -486,7 +460,7 @@
 
         const cartItems = menuItems.filter(item => cart[item.id] > 0);
 
-        // ── 3. PLACE ORDER DIRECTLY TO GOOGLE SHEETS ──
+        // ── 3. PLACE ORDER ──
         const handlePlaceOrder = async () => {
             if (!form.name || !form.phone) {
                 alert("Please enter your name and phone number.");
@@ -681,7 +655,6 @@
                         <div style={{ textAlign:'center', padding:'40px 20px', color:'#888' }}>
                             <div style={{ fontSize:'32px', marginBottom:'8px' }}>📋</div>
                             <div style={{ fontWeight:'700', fontSize:'16px', color:'#1a1a2e', marginBottom:'6px' }}>No items found in menu.</div>
-                            <div style={{ fontSize:'12px', color:'#888', marginBottom:'12px' }}>Please ensure your Google Sheet Share setting is set to "Anyone with the link can view".</div>
                             <button className="refresh-btn" onClick={() => { setLoadingMenu(true); loadMenuFromDatabase(); }}>🔄 Reload Menu</button>
                         </div>
                     ) : (
