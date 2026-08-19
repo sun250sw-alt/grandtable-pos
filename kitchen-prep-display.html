@@ -445,20 +445,19 @@ function selectChef(name) {
 function loadQueue() {
   var api = window.POS_GAPI || window.POS_API;
   if (!api || !api.getSheetId()) { STATE.queue = DEMO_QUEUE; renderQueue(); return; }
-  
+
+  // Sheet is connected — always trust it. Zero active orders is a real
+  // "all caught up" state, not a reason to fall back to demo data.
   api.Orders.getAll().then(function(res) {
-    var orders = (res && res.data) ? res.data : null;
-    if (orders && orders.length > 0) {
-      var activeOrders = orders.filter(function(o) {
-        return o.Status === "new" || o.Status === "preparing";
-      });
-      STATE.queue = buildQueueFromOrders(activeOrders);
-    } else {
-      STATE.queue = DEMO_QUEUE;  
-    }
+    var orders = (res && res.data) ? res.data : [];
+    var activeOrders = orders.filter(function(o) {
+      return o.Status === "new" || o.Status === "preparing";
+    });
+    STATE.queue = buildQueueFromOrders(activeOrders);
     renderQueue();
-  }).catch(function() {
-    STATE.queue = DEMO_QUEUE;
+  }).catch(function(err) {
+    console.error("Kitchen Prep: failed to load queue from Google Sheet:", err);
+    STATE.queue = [];
     renderQueue();
   });
 }
@@ -553,6 +552,8 @@ function selectDish(idx) {
     '<div>Loading recipe for ' + item.dish + '…</div></div>';
 
   var api = window.POS_GAPI || window.POS_API;
+  var sheetConnected = !!(api && api.getSheetId());
+
   api.Recipes.get(item.dish).then(function(res) {
     if (res && res.data && res.data.Steps) {
       var r = res.data;
@@ -575,8 +576,13 @@ function selectDish(idx) {
         ingredients: ings,
         steps      : parsedSteps,
       };
-    } else {
+    } else if (!sheetConnected) {
+      // No sheet connected at all — ok to show a demo recipe.
       STATE.recipe = FALLBACK_RECIPES[item.dish] || null;
+    } else {
+      // Sheet is connected but this dish has no recipe saved yet —
+      // show the real "no recipe" state instead of demo data.
+      STATE.recipe = null;
     }
 
     if (backgroundTimer) {
@@ -585,8 +591,9 @@ function selectDish(idx) {
       STATE.gateState = "none";
       renderRecipe();
     }
-  }).catch(function() {
-    STATE.recipe = FALLBACK_RECIPES[item.dish] || null;
+  }).catch(function(err) {
+    console.error("Kitchen Prep: failed to load recipe for " + item.dish + ":", err);
+    STATE.recipe = sheetConnected ? null : (FALLBACK_RECIPES[item.dish] || null);
     renderRecipe();
   });
 }
