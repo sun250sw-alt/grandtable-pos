@@ -245,6 +245,7 @@
         .live-dot { width: 8px; height: 8px; background: #2e7d32; border-radius: 50%; animation: pulse-icon 1.2s infinite; }
 
         .new-order-btn { width: 100%; padding: 14px; background: #1a1a2e; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; }
+        .refresh-btn { background: #f0f2f5; border: 1px solid #ddd; padding: 8px 16px; border-radius: 8px; font-weight: 700; cursor: pointer; margin-top: 12px; }
     </style>
 </head>
 <body>
@@ -267,11 +268,14 @@
         const [orderStatus, setOrderStatus] = useState("new");
         const [isSubmitting, setIsSubmitting] = useState(false);
 
-        // Helper: Extract Spreadsheet ID from configs or URLs
+        // Universal Spreadsheet ID Resolver
         const resolveSpreadsheetId = () => {
             let id = "";
             if (window.POS_CONFIG) {
                 id = window.POS_CONFIG.SPREADSHEET_ID || window.POS_CONFIG.SHEET_ID || window.POS_CONFIG.spreadsheetId || window.POS_CONFIG.sheetId || "";
+                if (!id && window.POS_CONFIG.CONFIG) {
+                    id = window.POS_CONFIG.CONFIG.spreadsheetId || window.POS_CONFIG.CONFIG.sheetId || "";
+                }
             }
             if (!id && window.POS_API && typeof window.POS_API.getSheetId === "function") {
                 id = window.POS_API.getSheetId();
@@ -280,9 +284,21 @@
                 id = window.POS_GAPI.getSheetId();
             }
             if (!id) {
-                try {
-                    id = localStorage.getItem("pos_sheet_id") || localStorage.getItem("pos_active_sheet_id") || localStorage.getItem("pos_spreadsheet_id") || "";
-                } catch(e){}
+                const keys = ["pos_sheet_id", "pos_active_sheet_id", "pos_spreadsheet_id", "pos_session", "pos_auth", "pos_config"];
+                for (let k of keys) {
+                    try {
+                        const val = localStorage.getItem(k);
+                        if (val) {
+                            if (val.startsWith("{")) {
+                                const parsed = JSON.parse(val);
+                                id = parsed.sheetId || parsed.spreadsheetId || parsed.SHEET_ID || parsed.SPREADSHEET_ID || "";
+                            } else {
+                                id = val;
+                            }
+                            if (id) break;
+                        }
+                    } catch(e){}
+                }
             }
             if (!id) {
                 const urlParams = new URLSearchParams(window.location.search);
@@ -296,7 +312,7 @@
             return id ? id.trim() : "";
         };
 
-        // Helper: Standardize rows into menu items
+        // Formats raw sheet rows into standardized menu items
         const formatRawMenuRows = (rows) => {
             if (!Array.isArray(rows) || !rows.length) return [];
             return rows.map((r, idx) => {
@@ -323,62 +339,90 @@
             }).filter(Boolean);
         };
 
-        // ── 1. LOAD LIVE MENU DIRECTLY FROM GOOGLE SHEETS (NO LOGIN REQUIRED) ──
+        // ── 1. LOAD LIVE MENU FROM GOOGLE SHEETS ──
         const loadMenuFromDatabase = async () => {
+            const api = window.POS_API || window.POS_GAPI;
             const targetSheetId = resolveSpreadsheetId();
-            if (!targetSheetId) {
-                console.warn("Spreadsheet ID not found. Ensure it is defined in pos-config.js or URL.");
-                return false;
-            }
 
-            const tabQueries = [
-                `sheet=MenuItems`,
-                `sheet=Menu`,
-                `sheet=Menus`,
-                `sheet=Menu%20Items`,
-                `sheet=Sheet1`,
-                `` // default first active sheet
-            ];
-
-            for (let q of tabQueries) {
+            // Attempt 1: Direct API queries
+            if (api) {
                 try {
-                    const url = `https://docs.google.com/spreadsheets/d/${targetSheetId}/gviz/tq?tqx=out:json${q ? '&' + q : ''}`;
-                    const text = await fetch(url).then(r => r.text());
-                    if (!text || text.includes("error") || !text.includes("({")) continue;
-
-                    const jsonStr = text.substring(text.indexOf("({") + 1, text.lastIndexOf("})") + 1);
-                    const data = JSON.parse(jsonStr);
-                    
-                    let cols = (data.table.cols || []).map(c => (c.label || "").trim());
-                    let rowsData = data.table.rows || [];
-
-                    // If column headers are placed in Row 0
-                    if (cols.every(c => !c) && rowsData.length > 0) {
-                        const headerRow = rowsData[0].c || [];
-                        cols = headerRow.map((cell, idx) => (cell && cell.v !== null ? String(cell.v).trim() : `col_${idx}`));
-                        rowsData = rowsData.slice(1);
+                    let rows = [];
+                    if (typeof api.getRows === "function") {
+                        rows = await api.getRows("MenuItems").catch(() => api.getRows("Menu")).catch(() => api.getRows("Menus")).catch(() => []);
+                    } else if (api.Menu && typeof api.Menu.getAll === "function") {
+                        const res = await api.Menu.getAll();
+                        rows = (res && res.data) ? res.data : [];
+                    } else if (api.MenuItems && typeof api.MenuItems.getAll === "function") {
+                        const res = await api.MenuItems.getAll();
+                        rows = (res && res.data) ? res.data : [];
                     }
 
-                    const parsedRows = rowsData.map(r => {
-                        const obj = {};
-                        (r.c || []).forEach((cell, idx) => {
-                            const colName = cols[idx];
-                            if (colName) {
-                                obj[colName] = cell ? (cell.v !== null ? cell.v : "") : "";
-                            }
-                        });
-                        return obj;
-                    });
-
-                    const formatted = formatRawMenuRows(parsedRows);
-                    if (formatted.length > 0) {
-                        setMenuItems(formatted);
-                        setLoadingMenu(false);
-                        return true;
+                    if (rows && rows.length > 0) {
+                        const formatted = formatRawMenuRows(rows);
+                        if (formatted.length > 0) {
+                            setMenuItems(formatted);
+                            setLoadingMenu(false);
+                            return true;
+                        }
                     }
-                } catch(e) {}
+                } catch(e) {
+                    console.warn("Direct API menu fetch attempt:", e);
+                }
             }
 
+            // Attempt 2: Public Google Sheets GViz Visualizer Endpoint
+            if (targetSheetId) {
+                const tabQueries = [
+                    `sheet=MenuItems`,
+                    `sheet=Menu`,
+                    `sheet=Menus`,
+                    `sheet=Menu%20Items`,
+                    `sheet=Sheet1`,
+                    ``
+                ];
+
+                for (let q of tabQueries) {
+                    try {
+                        const url = `https://docs.google.com/spreadsheets/d/${targetSheetId}/gviz/tq?tqx=out:json${q ? '&' + q : ''}`;
+                        const text = await fetch(url).then(r => r.text());
+                        if (!text || text.includes("error") || !text.includes("({")) continue;
+
+                        const jsonStr = text.substring(text.indexOf("({") + 1, text.lastIndexOf("})") + 1);
+                        const data = JSON.parse(jsonStr);
+                        
+                        let cols = (data.table.cols || []).map(c => (c.label || "").trim());
+                        let rowsData = data.table.rows || [];
+
+                        // If column headers were returned in Row 0
+                        if (cols.every(c => !c) && rowsData.length > 0) {
+                            const headerRow = rowsData[0].c || [];
+                            cols = headerRow.map((cell, idx) => (cell && cell.v !== null ? String(cell.v).trim() : `col_${idx}`));
+                            rowsData = rowsData.slice(1);
+                        }
+
+                        const parsedRows = rowsData.map(r => {
+                            const obj = {};
+                            (r.c || []).forEach((cell, idx) => {
+                                const colName = cols[idx];
+                                if (colName) {
+                                    obj[colName] = cell ? (cell.v !== null ? cell.v : "") : "";
+                                }
+                            });
+                            return obj;
+                        });
+
+                        const formatted = formatRawMenuRows(parsedRows);
+                        if (formatted.length > 0) {
+                            setMenuItems(formatted);
+                            setLoadingMenu(false);
+                            return true;
+                        }
+                    } catch(e) {}
+                }
+            }
+
+            setLoadingMenu(false);
             return false;
         };
 
@@ -386,14 +430,11 @@
             let tries = 0;
             async function attemptLoad() {
                 const ok = await loadMenuFromDatabase();
-                if (!ok && tries < 5) {
+                if (!ok && tries < 4) {
                     tries++;
                     setTimeout(attemptLoad, 500);
-                } else {
-                    setLoadingMenu(false);
                 }
             }
-
             attemptLoad();
         }, []);
 
@@ -442,7 +483,7 @@
 
         const cartItems = menuItems.filter(item => cart[item.id] > 0);
 
-        // ── 3. PLACE ORDER DIRECTLY TO GOOGLE SHEETS ──
+        // ── 3. PLACE ORDER TO GOOGLE SHEETS ──
         const handlePlaceOrder = async () => {
             if (!form.name || !form.phone) {
                 alert("Please enter your name and phone number.");
@@ -479,7 +520,6 @@
 
             let realOrderId = generatedOrderId;
 
-            // Submit via POS_API / Google Apps Script Web App without requiring customer login
             if (api && api.Orders && typeof api.Orders.create === "function") {
                 try {
                     const res = await api.Orders.create(orderPayload);
@@ -630,9 +670,14 @@
 
                 <div className="menu-list">
                     {loadingMenu ? (
-                        <div style={{ textAlign:'center', padding:'40px', color:'#888' }}>Loading menu items from Google Sheets…</div>
+                        <div style={{ textAlign:'center', padding:'40px', color:'#888' }}>
+                            <div>Loading menu items from Google Sheets…</div>
+                        </div>
                     ) : filtered.length === 0 ? (
-                        <div style={{ textAlign:'center', padding:'40px', color:'#888' }}>No items found in menu.</div>
+                        <div style={{ textAlign:'center', padding:'40px', color:'#888' }}>
+                            <div>No items found in menu.</div>
+                            <button className="refresh-btn" onClick={() => { setLoadingMenu(true); loadMenuFromDatabase(); }}>🔄 Reload Menu</button>
+                        </div>
                     ) : (
                         filtered.map(item => (
                             <div key={item.id} className="menu-card">
