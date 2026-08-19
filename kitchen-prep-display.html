@@ -23,7 +23,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   border-radius:10px;font-weight:700;color:black;}
 
 /* LAYOUT */
-.layout{display:grid;grid-template-columns:300px 1fr;
+.layout{display:grid;grid-template-columns:320px 1fr;
   height:calc(100vh - 58px);}
 
 /* CHEF SELECTION HOME SCREEN */
@@ -264,7 +264,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 <body>
 
 <div id="app" style="display:none">
-  <!-- Dynamic Chef selection screen overlay -->
+  <!-- Chef selection screen overlay -->
   <div id="chef-overlay" class="chef-screen">
     <div style="font-size:56px">👨‍🍳</div>
     <h2 style="font-size:26px;font-weight:800;color:white;margin-top:12px">Select Your Cooking Station</h2>
@@ -336,6 +336,19 @@ var STATE = {
 };
 
 var FALLBACK_RECIPES = {
+  "Coffee": {
+    prepTime: "2 min", cookTime: "3 min", difficulty: "Easy",
+    ingredients: [
+      { name: "Coffee beans (ground)", amount: "18g" },
+      { name: "Hot water (93°C)", amount: "200ml" },
+      { name: "Milk / Sugar", amount: "Optional" }
+    ],
+    steps: [
+      { title: "Grind & Dose", description: "Grind 18g fresh coffee beans into portafilter / filter.", timerSec: 30, tip: "Level and tamp evenly." },
+      { title: "Brew & Extract", description: "Extract with 93°C hot water. Target 30-36g espresso output.", timerSec: 30, tip: "Watch for golden crema." },
+      { title: "Steam Milk & Serve", description: "Steam fresh milk if requested and pour into cup.", timerSec: 60, tip: "Serve hot immediately." }
+    ]
+  },
   "Burger Deluxe":{
     prepTime:"5 min",cookTime:"12 min",difficulty:"Easy",
     ingredients:[
@@ -522,15 +535,15 @@ function selectChef(name) {
   STATE.queueIntervalId = setInterval(loadQueue, pollMs);
 }
 
-// ── SYNC QUEUE FROM GOOGLE SHEETS WITH ORIGINAL FILTER LOGIC ──
+// ── SYNC QUEUE FROM GOOGLE SHEETS ──
 function loadQueue() {
   var api = getPosApi();
   
   if (!api || !api.Orders || typeof api.Orders.getAll !== "function") {
     STATE.availableRecipes = FALLBACK_RECIPES;
     STATE.queue = [
-      { key:"ORD-001#0#Burger Deluxe", orderId:"ORD-001", itemIdx:0, table:3, dish:"Burger Deluxe", qty:2, note:"No onions on one", urgency:"high", status:"new", chef:"" },
-      { key:"ORD-002#0#Steak", orderId:"ORD-002", itemIdx:0, table:5, dish:"Steak", qty:1, note:"Medium rare", urgency:"med", status:"new", chef:"" }
+      { key:"ORD-001#0#Burger Deluxe", orderId:"ORD-001", itemIdx:0, table:3, dish:"Burger Deluxe", qty:2, note:"No onions on one", urgency:"high", status:"new" },
+      { key:"ORD-002#0#Steak", orderId:"ORD-002", itemIdx:0, table:5, dish:"Steak", qty:1, note:"Medium rare", urgency:"med", status:"new" }
     ];
     renderQueue();
     return;
@@ -558,7 +571,7 @@ function loadQueue() {
   }).then(function(res) {
     var orders = (res && res.data) ? res.data : [];
     
-    // Original status filter: Only new and preparing orders
+    // Only load active orders
     var activeOrders = orders.filter(function(o) {
       var st = (o.Status || o.status || "").toLowerCase().trim();
       return st === "new" || st === "preparing";
@@ -597,21 +610,14 @@ function buildQueueFromOrders(orders) {
           return;
         }
 
-        // 3. ORIGINAL FILTER: Hide item completely if another chef is preparing it
+        // 3. HIDE ITEM if another chef has claimed / is cooking it
         if (itemStatus === "preparing" && item.chef && item.chef !== STATE.currentChef) {
           return;
         }
 
-        // 4. ORIGINAL FILTER: Hide items marked "Bypass Prep" (Drinks/Ready-made items)
-        var prepTime = item.prepTime || item.PrepTime || "";
-        var cat = (item.category || item.Category || "").toLowerCase();
-        if (prepTime === "Bypass Prep" || cat === "drinks" || cat === "beverages" || cat === "bar") {
-          return;
-        }
-
-        // 5. Check recipe exists (or fallback)
-        var matchedRecipe = findRecipeForDish(dishName);
-        if (!matchedRecipe) {
+        // 4. HIDE ONLY IF EXPLICITLY MARKED "Bypass Prep"
+        var prepTime = (item.prepTime || item.PrepTime || "").trim();
+        if (prepTime.toLowerCase() === "bypass prep") {
           return;
         }
 
@@ -866,7 +872,8 @@ function updateSheetToReady() {
 
     var allReady = itemsArray.every(function(it) {
       var st = (it.status || "").toLowerCase();
-      return st === "ready" || st === "served" || st === "completed" || it.prepTime === "Bypass Prep";
+      var pTime = (it.prepTime || it.PrepTime || "").toLowerCase().trim();
+      return st === "ready" || st === "served" || st === "completed" || pTime === "bypass prep";
     });
 
     return api.Orders.update({
