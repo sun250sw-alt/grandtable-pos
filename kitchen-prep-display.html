@@ -83,8 +83,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .qi-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;}
 .qi-order{font-weight:700;font-size:14px;}
 .qi-table{font-size:12px;color:#8b949e;}
-.qi-dish{font-size:13px;color:#f39c12;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:6px;}
+.qi-dish{font-size:13px;color:#f39c12;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
 .qty-pill{background:#f39c12;color:black;font-weight:900;font-size:11px;padding:1px 6px;border-radius:6px;}
+.reorder-pill{background:#3b82f6;color:white;font-weight:800;font-size:10px;padding:1px 6px;border-radius:6px;}
 .qi-note{font-size:11px;color:#8b949e;background:#0d1117;
   padding:4px 8px;border-radius:5px;margin-top:5px;}
 .urgency-dot{display:inline-block;width:8px;height:8px;
@@ -374,7 +375,6 @@ function safeParseItems(raw) {
   return items;
 }
 
-// Safely parses Steps from JSON, single-quotes, or multi-line text
 function safeParseSteps(raw) {
   if (Array.isArray(raw)) return raw;
   if (!raw || typeof raw !== "string") return [];
@@ -402,7 +402,6 @@ function safeParseSteps(raw) {
   return [];
 }
 
-// Safely parses Ingredients from JSON, single-quotes, or multi-line text
 function safeParseIngredients(raw) {
   if (Array.isArray(raw)) return raw;
   if (!raw || typeof raw !== "string") return [];
@@ -559,7 +558,6 @@ function loadQueue() {
   api.Orders.getAll().then(function(res) {
     var orders = (res && res.data) ? res.data : [];
     
-    // Filter active orders
     var activeOrders = orders.filter(function(o) {
       var st = (o.Status || o.status || "").toLowerCase().trim();
       return st === "new" || st === "preparing";
@@ -573,6 +571,7 @@ function loadQueue() {
   });
 }
 
+// ── SMART QUEUE BUILDER (HANDLES MULTIPLE & RE-ORDERED PORTIONS) ──
 function buildQueueFromOrders(orders) {
   var items = [];
   orders.forEach(function(order) {
@@ -588,17 +587,23 @@ function buildQueueFromOrders(orders) {
         if (!dishName) return;
 
         var itemStatus = (item.status || "new").toLowerCase().trim();
-        var uniqueItemKey = orderId + "#" + itemIdx + "#" + dishName;
+        var totalQty = parseInt(item.quantity || item.qty || item.Qty || 1, 10);
+        
+        // Track already prepared portions to prevent re-cooking completed items
+        var preparedQty = parseInt(item.preparedQty || item.doneQty || (itemStatus === "ready" || itemStatus === "served" || itemStatus === "completed" ? totalQty : 0), 10);
+        var remainingQty = totalQty - preparedQty;
 
-        // 1. Skip if completed in-flight
-        if (STATE.inFlightFinished[uniqueItemKey]) return;
-
-        // 2. Hide completed/ready items
-        if (["ready", "completed", "served", "done", "cancelled", "void"].includes(itemStatus)) {
+        // 1. If all portions are already prepared/cooked, hide it!
+        if (remainingQty <= 0) {
           return;
         }
 
-        // 3. Hide item if another chef is preparing it
+        var uniqueItemKey = orderId + "#" + itemIdx + "#" + dishName;
+
+        // 2. Skip if completed in-flight
+        if (STATE.inFlightFinished[uniqueItemKey]) return;
+
+        // 3. Hide item if another chef has claimed / is cooking it
         if (itemStatus === "preparing" && item.chef && item.chef !== STATE.currentChef) {
           return;
         }
@@ -613,16 +618,18 @@ function buildQueueFromOrders(orders) {
           ? (Date.now() - new Date(order.OrderTime || order.orderTime).getTime()) / 60000 : 0;
 
         items.push({
-          key     : uniqueItemKey,
-          orderId : orderId,
-          itemIdx : itemIdx,
-          table   : tableNo,
-          dish    : dishName,
-          qty     : parseInt(item.quantity || item.qty || item.Qty || 1, 10),
-          note    : item.note || item.Notes || orderNotes,
-          chef    : item.chef || "",
-          status  : itemStatus,
-          urgency : elapsed > 15 ? "high" : elapsed > 8 ? "med" : "low"
+          key           : uniqueItemKey,
+          orderId       : orderId,
+          itemIdx       : itemIdx,
+          table         : tableNo,
+          dish          : dishName,
+          qty           : remainingQty,      // Only cook the remaining portions
+          totalOrdered  : totalQty,
+          alreadyServed : preparedQty,
+          note          : item.note || item.Notes || orderNotes,
+          chef          : item.chef || "",
+          status        : itemStatus,
+          urgency       : elapsed > 15 ? "high" : elapsed > 8 ? "med" : "low"
         });
       });
     } catch(e) {
@@ -657,6 +664,8 @@ function renderQueue() {
       timerBadgeHtml = '<div class="qi-timer-badge" style="background:#27ae60; color:white;">✅ Done</div>';
     }
 
+    var reorderBadge = (item.alreadyServed > 0) ? '<span class="reorder-pill">+' + item.qty + ' re-order</span>' : '';
+
     return '<div class="queue-item' + (isActive ? " active" : "") + '" onclick="selectDish(' + idx + ')">' +
       '<div class="qi-header">' +
         '<span class="qi-order">' + item.orderId + '</span>' +
@@ -665,7 +674,7 @@ function renderQueue() {
       '<div class="qi-dish">' +
         '<span class="urgency-dot urg-' + item.urgency + '"></span>' +
         (item.qty > 1 ? '<span class="qty-pill">x' + item.qty + '</span> ' : '') +
-        item.dish +
+        item.dish + ' ' + reorderBadge +
       '</div>' +
       (item.note ? '<div class="qi-note">⚠️ ' + item.note + '</div>' : '') +
       timerBadgeHtml +
@@ -673,7 +682,7 @@ function renderQueue() {
   }).join("");
 }
 
-// ── FETCH & RENDER EXACT RECIPE FROM GOOGLE SHEET ──
+// ── FETCH & RENDER RECIPE ──
 function selectDish(idx) {
   var item = STATE.queue[idx];
   if (!item) return;
@@ -853,11 +862,16 @@ function updateSheetToReady() {
     var itemsArray = safeParseItems(rawItems);
     
     if (itemsArray[targetItemIdx]) {
-      itemsArray[targetItemIdx].status = "ready";
+      var it = itemsArray[targetItemIdx];
+      var totalQ = parseInt(it.quantity || it.qty || 1, 10);
+      it.preparedQty = totalQ; // Record all ordered portions as finished
+      it.status = "ready";
     } else {
       for (var i = 0; i < itemsArray.length; i++) {
         var itName = itemsArray[i].name || itemsArray[i].Name || itemsArray[i].dish || "";
         if (itName.trim().toLowerCase() === targetDish.trim().toLowerCase() && (itemsArray[i].status || "").toLowerCase() !== "ready") {
+          var tQ = parseInt(itemsArray[i].quantity || itemsArray[i].qty || 1, 10);
+          itemsArray[i].preparedQty = tQ;
           itemsArray[i].status = "ready";
           break;
         }
@@ -867,7 +881,9 @@ function updateSheetToReady() {
     var allReady = itemsArray.every(function(it) {
       var st = (it.status || "").toLowerCase();
       var pTime = (it.prepTime || it.PrepTime || "").toLowerCase().trim();
-      return st === "ready" || st === "served" || st === "completed" || pTime === "bypass prep";
+      var tQ = parseInt(it.quantity || it.qty || 1, 10);
+      var pQ = parseInt(it.preparedQty || 0, 10);
+      return st === "ready" || st === "served" || st === "completed" || pTime === "bypass prep" || (pQ >= tQ && tQ > 0);
     });
 
     return api.Orders.update({
