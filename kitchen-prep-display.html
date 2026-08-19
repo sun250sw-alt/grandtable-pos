@@ -174,8 +174,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   background:#f39c12; color:black; font-weight:900; font-size:16px;
   padding:4px 16px; border-radius:20px; text-transform:uppercase; margin-bottom:18px;
 }
-.focus-step-title { font-size:32px; font-weight:800; color:white; margin-bottom:14px; }
-.focus-step-desc { font-size:19px; line-height:1.7; color:#c9d1d9; max-width:680px; }
+.focus-step-title { font-size:30px; font-weight:800; color:white; margin-bottom:14px; }
+.focus-step-desc { font-size:18px; line-height:1.7; color:#c9d1d9; max-width:680px; }
 .focus-step-tip {
   margin-top:20px; font-size:14px; color:#f39c12; background:rgba(243,156,18,0.08);
   padding:10px 18px; border-radius:8px; border-left:4px solid #f39c12; max-width:600px;
@@ -332,56 +332,7 @@ var STATE = {
   queueIntervalId : null,
   gateState       : "none",
   inFlightFinished: {},
-  availableRecipes: {}
-};
-
-var FALLBACK_RECIPES = {
-  "Coffee": {
-    prepTime: "2 min", cookTime: "3 min", difficulty: "Easy",
-    ingredients: [
-      { name: "Coffee beans (ground)", amount: "18g" },
-      { name: "Hot water (93°C)", amount: "200ml" },
-      { name: "Milk / Sugar", amount: "Optional" }
-    ],
-    steps: [
-      { title: "Grind & Dose", description: "Grind 18g fresh coffee beans into portafilter / filter.", timerSec: 30, tip: "Level and tamp evenly." },
-      { title: "Brew & Extract", description: "Extract with 93°C hot water. Target 30-36g espresso output.", timerSec: 30, tip: "Watch for golden crema." },
-      { title: "Steam Milk & Serve", description: "Steam fresh milk if requested and pour into cup.", timerSec: 60, tip: "Serve hot immediately." }
-    ]
-  },
-  "Burger Deluxe":{
-    prepTime:"5 min",cookTime:"12 min",difficulty:"Easy",
-    ingredients:[
-      {name:"Beef patty (180g)",amount:"1 pc"},{name:"Brioche bun",amount:"1 pc"},
-      {name:"Cheddar cheese",amount:"2 slices"},{name:"Lettuce",amount:"2 leaves"},
-      {name:"Tomato",amount:"2 slices"},{name:"Special sauce",amount:"1 tbsp"},
-      {name:"Fries (frozen)",amount:"150g"}
-    ],
-    steps:[
-      {title:"Prep Ingredients",   description:"Slice tomatoes and lettuce. Pat patty dry. Season both sides with salt and pepper.",timerSec:120,  tip:"Patty at room temp for even cooking."},
-      {title:"Cook Fries",         description:"Place fries in fryer at 180°C. Shake halfway through.",                               timerSec:300,  tip:"Don't overcrowd the basket!"},
-      {title:"Grill the Patty",    description:"Place on hot grill. DO NOT move. Cook 4 min first side without moving.",              timerSec:240,  tip:"Resist pressing — keeps juices in."},
-      {title:"Add Cheese & Toast", description:"Add cheese on patty. Place bun face-down on grill. Wait until melted.",               timerSec:60,   tip:null},
-      {title:"Assemble & Serve",   description:"Bottom bun → sauce → lettuce → tomato → patty → pickles → top bun.",                 timerSec:45,   tip:"Serve immediately!"}
-    ]
-  },
-  "Steak":{
-    prepTime:"5 min",cookTime:"15 min",difficulty:"Medium",
-    ingredients:[
-      {name:"Ribeye steak (250g)",amount:"1 pc"},{name:"Butter",amount:"30g"},
-      {name:"Garlic cloves",amount:"3 pcs"},{name:"Rosemary",amount:"2 sprigs"},
-      {name:"Sea salt & pepper",amount:"To taste"},{name:"Olive oil",amount:"1 tbsp"}
-    ],
-    steps:[
-      {title:"Bring to Room Temp",description:"Remove from fridge 15 min before. Pat dry with paper towel.",timerSec:900,tip:"Dry surface = better sear."},
-      {title:"Season Generously", description:"Season all sides firmly with sea salt and black pepper.",      timerSec:30, tip:null},
-      {title:"Heat Pan",          description:"Cast iron on highest heat 3 minutes until smoking.",           timerSec:180,tip:"Pan must be screaming hot."},
-      {title:"Sear First Side",   description:"Place steak away from you. DO NOT MOVE. 2.5 min.",            timerSec:150,tip:"Look for deep brown crust."},
-      {title:"Flip & Baste",      description:"Flip. Add butter, garlic, rosemary. Baste continuously.",     timerSec:120,tip:"Basting constantly = more flavour."},
-      {title:"Rest the Steak",    description:"Remove from heat. Tent with foil. Rest 5 min — mandatory.",   timerSec:300,tip:"Never skip — juices redistribute."},
-      {title:"Slice & Plate",     description:"Slice against the grain. Pour resting juices over.",          timerSec:45, tip:null}
-    ]
-  }
+  recipesCache    : {}
 };
 
 function getPosApi() {
@@ -396,23 +347,6 @@ function cleanDishName(name) {
     .replace(/#\d+/g, "")
     .trim()
     .toLowerCase();
-}
-
-function findRecipeForDish(dishName) {
-  if (!dishName) return null;
-  var exact = dishName.trim().toLowerCase();
-  if (STATE.availableRecipes[exact]) return STATE.availableRecipes[exact];
-  
-  var cleaned = cleanDishName(dishName);
-  if (STATE.availableRecipes[cleaned]) return STATE.availableRecipes[cleaned];
-
-  for (var k in STATE.availableRecipes) {
-    if (k === exact || k === cleaned || exact.startsWith(k) || k.startsWith(cleaned)) {
-      return STATE.availableRecipes[k];
-    }
-  }
-
-  return FALLBACK_RECIPES[dishName] || FALLBACK_RECIPES[cleaned] || null;
 }
 
 function safeParseItems(raw) {
@@ -438,6 +372,68 @@ function safeParseItems(raw) {
     if (p) items.push({ name: p, qty: 1 });
   });
   return items;
+}
+
+// Safely parses Steps from JSON, single-quotes, or multi-line text
+function safeParseSteps(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (!raw || typeof raw !== "string") return [];
+  var s = raw.trim();
+
+  try {
+    var res = JSON.parse(s);
+    if (Array.isArray(res)) return res;
+  } catch(e){}
+
+  try {
+    var res2 = JSON.parse(s.replace(/'/g, '"'));
+    if (Array.isArray(res2)) return res2;
+  } catch(e){}
+
+  var lines = s.split("\n").map(function(l){ return l.trim(); }).filter(Boolean);
+  if (lines.length) {
+    return lines.map(function(line, idx) {
+      var parts = line.split(":");
+      var title = parts.length > 1 ? parts[0].trim() : ("Step " + (idx + 1));
+      var desc = parts.length > 1 ? parts.slice(1).join(":").trim() : line;
+      return { title: title, description: desc, timerSec: 60, tip: "" };
+    });
+  }
+  return [];
+}
+
+// Safely parses Ingredients from JSON, single-quotes, or multi-line text
+function safeParseIngredients(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (!raw || typeof raw !== "string") return [];
+  var s = raw.trim();
+
+  try {
+    var res = JSON.parse(s);
+    if (Array.isArray(res)) return res;
+  } catch(e){}
+
+  try {
+    var res2 = JSON.parse(s.replace(/'/g, '"'));
+    if (Array.isArray(res2)) return res2;
+  } catch(e){}
+
+  var delims = s.indexOf("\n") >= 0 ? "\n" : ",";
+  var lines = s.split(delims).map(function(l){ return l.trim(); }).filter(Boolean);
+  if (lines.length) {
+    return lines.map(function(line) {
+      if (line.indexOf(":") >= 0) {
+        var p = line.split(":");
+        return { name: p[0].trim(), amount: p.slice(1).join(":").trim() };
+      }
+      if (line.indexOf("-") >= 0) {
+        var p2 = line.split("-");
+        return { name: p2[0].trim(), amount: p2.slice(1).join("-").trim() };
+      }
+      return { name: line, amount: "1 portion" };
+    });
+  }
+  return [];
 }
 
 function formatIngredientAmount(rawAmount, qty) {
@@ -535,43 +531,35 @@ function selectChef(name) {
   STATE.queueIntervalId = setInterval(loadQueue, pollMs);
 }
 
-// ── SYNC QUEUE FROM GOOGLE SHEETS ──
+// ── SYNC ORDERS FROM GOOGLE SHEETS ──
 function loadQueue() {
   var api = getPosApi();
-  
   if (!api || !api.Orders || typeof api.Orders.getAll !== "function") {
-    STATE.availableRecipes = FALLBACK_RECIPES;
-    STATE.queue = [
-      { key:"ORD-001#0#Burger Deluxe", orderId:"ORD-001", itemIdx:0, table:3, dish:"Burger Deluxe", qty:2, note:"No onions on one", urgency:"high", status:"new" },
-      { key:"ORD-002#0#Steak", orderId:"ORD-002", itemIdx:0, table:5, dish:"Steak", qty:1, note:"Medium rare", urgency:"med", status:"new" }
-    ];
     renderQueue();
     return;
   }
 
-  // Preload recipes
-  var recipePromise = (api.Recipes && typeof api.Recipes.getAll === "function") 
-    ? api.Recipes.getAll().then(function(res) {
-        var rMap = {};
-        if (res && res.data) {
-          res.data.forEach(function(r) {
-            var dishName = (r.DishName || r.Dish || r.Name || r.ItemName || r.Title || r.dish || r.name || "").trim().toLowerCase();
-            if (dishName) {
-              rMap[dishName] = r;
-              rMap[cleanDishName(dishName)] = r;
-            }
-          });
-        }
-        STATE.availableRecipes = rMap;
-      }).catch(function(){})
-    : Promise.resolve();
+  // Pre-cache recipes from Recipes tab
+  var recipeFetch = (api.Recipes && typeof api.Recipes.getAll === "function")
+    ? api.Recipes.getAll()
+    : (typeof api.getRows === "function" ? api.getRows("Recipes").then(function(rows){ return { data: rows }; }) : Promise.resolve({ data: [] }));
 
-  recipePromise.then(function() {
-    return api.Orders.getAll();
-  }).then(function(res) {
+  recipeFetch.then(function(res) {
+    var rows = (res && res.data) ? res.data : (Array.isArray(res) ? res : []);
+    rows.forEach(function(r) {
+      var dName = (r.DishName || r.Dish || r.Name || r.ItemName || r.dish || r.name || "").trim().toLowerCase();
+      if (dName) {
+        STATE.recipesCache[dName] = r;
+        STATE.recipesCache[cleanDishName(dName)] = r;
+      }
+    });
+  }).catch(function(){});
+
+  // Fetch Orders
+  api.Orders.getAll().then(function(res) {
     var orders = (res && res.data) ? res.data : [];
     
-    // Only load active orders
+    // Filter active orders
     var activeOrders = orders.filter(function(o) {
       var st = (o.Status || o.status || "").toLowerCase().trim();
       return st === "new" || st === "preparing";
@@ -610,12 +598,12 @@ function buildQueueFromOrders(orders) {
           return;
         }
 
-        // 3. HIDE ITEM if another chef has claimed / is cooking it
+        // 3. Hide item if another chef is preparing it
         if (itemStatus === "preparing" && item.chef && item.chef !== STATE.currentChef) {
           return;
         }
 
-        // 4. HIDE ONLY IF EXPLICITLY MARKED "Bypass Prep"
+        // 4. Hide ONLY if explicitly marked "Bypass Prep"
         var prepTime = (item.prepTime || item.PrepTime || "").trim();
         if (prepTime.toLowerCase() === "bypass prep") {
           return;
@@ -685,6 +673,7 @@ function renderQueue() {
   }).join("");
 }
 
+// ── FETCH & RENDER EXACT RECIPE FROM GOOGLE SHEET ──
 function selectDish(idx) {
   var item = STATE.queue[idx];
   if (!item) return;
@@ -708,74 +697,79 @@ function selectDish(idx) {
     '<div class="loading-recipe"><div class="loading-spin">⚙️</div>' +
     '<div>Loading recipe for ' + item.dish + '…</div></div>';
 
-  var matched = findRecipeForDish(item.dish);
-  if (matched && (matched.Steps || matched.steps)) {
-    var steps = typeof matched.Steps === "string" ? JSON.parse(matched.Steps) : (matched.Steps || matched.steps || []);
-    var ings  = typeof matched.Ingredients === "string" ? JSON.parse(matched.Ingredients) : (matched.Ingredients || matched.ingredients || []);
+  var api = getPosApi();
+  var normName = item.dish.trim().toLowerCase();
+  var cleanName = cleanDishName(item.dish);
+
+  function applyRecipeData(r) {
+    if (!r) {
+      STATE.recipe = buildDefaultRecipe(item.dish);
+      renderRecipe();
+      return;
+    }
     
+    var rawSteps = r.Steps || r.steps || r.Recipe || r.Instructions || r.Directions || [];
+    var rawIngs = r.Ingredients || r.ingredients || r.Items || [];
+    
+    var parsedSteps = safeParseSteps(rawSteps);
+    var parsedIngs = safeParseIngredients(rawIngs);
+
+    if (!parsedSteps.length) {
+      parsedSteps = buildDefaultRecipe(item.dish).steps;
+    }
+
     STATE.recipe = {
-      prepTime   : matched.PrepTime || matched.prepTime || "—",
-      cookTime   : matched.CookTime || matched.cookTime || "—",
-      difficulty : matched.Difficulty || matched.difficulty || "Standard",
-      ingredients: ings,
-      steps      : steps.map(function(s) {
+      prepTime   : r.PrepTime || r.prepTime || "—",
+      cookTime   : r.CookTime || r.cookTime || "—",
+      difficulty : r.Difficulty || r.difficulty || "Standard",
+      ingredients: parsedIngs,
+      steps      : parsedSteps.map(function(s, sIdx) {
         return {
-          title: s.title || s.Title || "Step",
-          description: s.description || s.Description || "",
-          timerSec: parseInt(s.timerSec || s.TimerSec || 0, 10),
+          title: s.title || s.Title || ("Step " + (sIdx + 1)),
+          description: s.description || s.Description || s.desc || s.text || (typeof s === "string" ? s : ""),
+          timerSec: parseInt(s.timerSec || s.TimerSec || s.timer || s.time || 0, 10),
           tip: s.tip || s.Tip || ""
         };
       })
     };
     renderRecipe();
+  }
+
+  // 1. Check pre-cached recipes first
+  if (STATE.recipesCache[normName] || STATE.recipesCache[cleanName]) {
+    applyRecipeData(STATE.recipesCache[normName] || STATE.recipesCache[cleanName]);
     return;
   }
 
-  var api = getPosApi();
-  if (api && api.Recipes && typeof api.Recipes.get === "function") {
-    api.Recipes.get(item.dish).then(function(res) {
-      if (res && res.data && (res.data.Steps || res.data.steps)) {
-        var r = res.data;
-        var steps = typeof r.Steps === "string" ? JSON.parse(r.Steps) : (r.Steps || r.steps || []);
-        var ings  = typeof r.Ingredients === "string" ? JSON.parse(r.Ingredients) : (r.Ingredients || r.ingredients || []);
-        
-        STATE.recipe = {
-          prepTime   : r.PrepTime || r.prepTime || "—",
-          cookTime   : r.CookTime || r.cookTime || "—",
-          difficulty : r.Difficulty || r.difficulty || "Standard",
-          ingredients: ings,
-          steps      : steps.map(function(s) {
-            return {
-              title: s.title || s.Title || "Step",
-              description: s.description || s.Description || "",
-              timerSec: parseInt(s.timerSec || s.TimerSec || 0, 10),
-              tip: s.tip || s.Tip || ""
-            };
-          })
-        };
-      } else {
-        STATE.recipe = buildDefaultRecipe(item.dish);
-      }
-      renderRecipe();
-    }).catch(function() {
-      STATE.recipe = buildDefaultRecipe(item.dish);
-      renderRecipe();
-    });
-  } else {
-    STATE.recipe = buildDefaultRecipe(item.dish);
-    renderRecipe();
-  }
+  // 2. Query Google Sheet Recipes Tab
+  var recipePromise = (api && api.Recipes && typeof api.Recipes.get === "function")
+    ? api.Recipes.get(item.dish)
+    : (typeof api.getRows === "function" ? api.getRows("Recipes").then(function(rows){
+        var found = (rows || []).find(function(row) {
+          var rName = (row.DishName || row.Dish || row.Name || row.ItemName || "").trim().toLowerCase();
+          return rName === normName || rName === cleanName || cleanDishName(rName) === cleanName;
+        });
+        return { data: found };
+      }) : Promise.resolve(null));
+
+  recipePromise.then(function(res) {
+    var r = (res && res.data) ? res.data : null;
+    applyRecipeData(r);
+  }).catch(function(err) {
+    console.warn("Failed fetching recipe from sheet:", err);
+    applyRecipeData(null);
+  });
 }
 
 function buildDefaultRecipe(dishName) {
   return {
-    prepTime: "5 min",
-    cookTime: "10 min",
+    prepTime: "2 min",
+    cookTime: "5 min",
     difficulty: "Standard",
-    ingredients: [{ name: dishName + " base ingredients", amount: "1 portion" }],
+    ingredients: [{ name: dishName + " Ingredients", amount: "1 portion" }],
     steps: [
-      { title: "Mise En Place", description: "Prepare all necessary ingredients and station tools for " + dishName + ".", timerSec: 60, tip: null },
-      { title: "Cook & Plate", description: "Cook and plate " + dishName + " according to kitchen standards.", timerSec: 300, tip: "Check seasoning and garnish before serving." }
+      { title: "Mise En Place", description: "Prepare all necessary ingredients and station tools for " + dishName + ".", timerSec: 30, tip: null },
+      { title: "Cook & Prepare", description: "Prepare and serve " + dishName + " according to station standards.", timerSec: 120, tip: "Check presentation before serving." }
     ]
   };
 }
