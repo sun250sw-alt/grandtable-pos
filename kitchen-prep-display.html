@@ -316,7 +316,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
         <div id="queue-list">
           <div class="queue-empty">
             <div style="font-size:32px;margin-bottom:8px">⏳</div>
-            Loading orders…
+            Loading orders from database…
           </div>
         </div>
       </div>
@@ -336,7 +336,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 <div id="loading-placeholder" style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:sans-serif;background:#0d1117;color:#e6edf3;">
   <div style="font-size:40px">👨‍🍳</div>
   <div style="font-size:16px;font-weight:700">Prep Display</div>
-  <div style="font-size:13px;color:#888">Verifying chef station...</div>
+  <div style="font-size:13px;color:#888">Verifying station…</div>
 </div>
 
 <script>
@@ -509,6 +509,10 @@ function loadChefSelection() {
   if (!container) return;
 
   function renderGrid(names) {
+    if (!names || !names.length) {
+      container.innerHTML = '<div style="grid-column: 1 / -1; color:#8b949e; padding:30px; font-size:14px;">No active kitchen staff found in Google Sheets database.<br><span style="font-size:12px; color:#f39c12; margin-top:6px; display:inline-block;">Add staff in the Staff sheet tab or Manager Portal.</span></div>';
+      return;
+    }
     container.innerHTML = names.map(function(name) {
       return '<div class="chef-card" onclick="selectChef(\'' + name.replace(/'/g, "\\'") + '\')">' +
         '<div class="chef-avatar">' + name.charAt(0).toUpperCase() + '</div>' +
@@ -524,16 +528,28 @@ function loadChefSelection() {
           var role = (s.Role || s.role || "").toLowerCase();
           var status = (s.Status || s.status || "active").toLowerCase();
           return status === "active" && role !== "driver";
-        }).map(function(s){ return s.Name || s.StaffName || s.ChefName || s.name; });
-        renderGrid(chefs.length > 0 ? chefs : ["Head Chef", "Line Cook 1", "Line Cook 2"]);
+        }).map(function(s){ return s.Name || s.StaffName || s.ChefName || s.name; }).filter(Boolean);
+        renderGrid(chefs);
       } else {
-        renderGrid(["Head Chef", "Line Cook 1", "Line Cook 2"]);
+        renderGrid([]);
       }
+    }).catch(function(err) {
+      console.error("Kitchen Prep: Staff fetch error", err);
+      renderGrid([]);
+    });
+  } else if (api && typeof api.getRows === "function") {
+    api.getRows("Staff").then(function(rows) {
+      var chefs = (rows || []).filter(function(s) {
+        var role = (s.Role || s.role || "").toLowerCase();
+        var status = (s.Status || s.status || "active").toLowerCase();
+        return status === "active" && role !== "driver";
+      }).map(function(s){ return s.Name || s.StaffName || s.ChefName || s.name; }).filter(Boolean);
+      renderGrid(chefs);
     }).catch(function() {
-      renderGrid(["Head Chef", "Line Cook 1", "Line Cook 2"]);
+      renderGrid([]);
     });
   } else {
-    renderGrid(["Head Chef", "Line Cook 1", "Line Cook 2"]);
+    renderGrid([]);
   }
 }
 
@@ -555,6 +571,7 @@ function selectChef(name) {
 function loadQueue() {
   var api = getPosApi();
   if (!api || !api.Orders || typeof api.Orders.getAll !== "function") {
+    STATE.queue = [];
     renderQueue();
     return;
   }
@@ -588,10 +605,12 @@ function loadQueue() {
     renderQueue();
   }).catch(function(err) {
     console.error("Kitchen Prep: error loading queue from sheet:", err);
+    STATE.queue = [];
     renderQueue();
   });
 }
 
+// ── SMART QUEUE BUILDER ──
 function buildQueueFromOrders(orders) {
   var items = [];
   orders.forEach(function(order) {
@@ -665,7 +684,7 @@ function renderQueue() {
   document.getElementById("queue-count").textContent = STATE.queue.length + " dishes";
 
   if (!STATE.queue.length) {
-    el.innerHTML = '<div class="no-selection" style="padding:20px 10px;"><div style="font-size:32px;margin-bottom:8px">✅</div><div style="font-weight:700">All caught up!</div></div>';
+    el.innerHTML = '<div class="no-selection" style="padding:20px 10px;"><div style="font-size:32px;margin-bottom:8px">✅</div><div style="font-weight:700">All caught up!</div><div style="font-size:12px;color:#8b949e;margin-top:4px">No pending cook orders</div></div>';
     return;
   }
 
@@ -701,7 +720,7 @@ function renderQueue() {
   }).join("");
 }
 
-// ── FETCH & RENDER EXACT RECIPE ──
+// ── FETCH & RENDER EXACT RECIPE FROM GOOGLE SHEETS ──
 function selectDish(idx) {
   var item = STATE.queue[idx];
   if (!item) return;
@@ -731,7 +750,7 @@ function selectDish(idx) {
 
   function applyRecipeData(r) {
     if (!r) {
-      STATE.recipe = buildDefaultRecipe(item.dish);
+      STATE.recipe = null;
       renderRecipe();
       return;
     }
@@ -743,12 +762,14 @@ function selectDish(idx) {
     var parsedIngs = safeParseIngredients(rawIngs);
 
     if (!parsedSteps.length) {
-      parsedSteps = buildDefaultRecipe(item.dish).steps;
+      STATE.recipe = null;
+      renderRecipe();
+      return;
     }
 
     STATE.recipe = {
-      prepTime   : r.PrepTime || r.prepTime || "—",
-      cookTime   : r.CookTime || r.cookTime || "—",
+      prepTime   : r.PrepTime || r.prepTime || r.Prep || "—",
+      cookTime   : r.CookTime || r.cookTime || r.Cook || "—",
       difficulty : r.Difficulty || r.difficulty || "Standard",
       ingredients: parsedIngs,
       steps      : parsedSteps.map(function(s, sIdx) {
@@ -787,19 +808,6 @@ function selectDish(idx) {
     console.warn("Failed fetching recipe from sheet:", err);
     applyRecipeData(null);
   });
-}
-
-function buildDefaultRecipe(dishName) {
-  return {
-    prepTime: "2 min",
-    cookTime: "5 min",
-    difficulty: "Standard",
-    ingredients: [{ name: dishName + " Ingredients", amount: "1 portion" }],
-    steps: [
-      { title: "Mise En Place", description: "Prepare all necessary ingredients and station tools for " + dishName + ".", timerSec: 30, tip: null },
-      { title: "Cook & Prepare", description: "Prepare and serve " + dishName + " according to station standards.", timerSec: 120, tip: "Check presentation before serving." }
-    ]
-  };
 }
 
 function playTickChime() {
@@ -1050,13 +1058,14 @@ function renderRecipe() {
 
   if (!panel || !item) return;
 
+  // Real no-recipe state from Google Sheet
   if (!r || !r.steps || !r.steps.length) {
     panel.innerHTML =
       '<div class="no-selection">' +
         '<div class="ns-icon">📋</div>' +
-        '<div class="ns-title">No recipe found for ' + item.dish + '</div>' +
-        '<p style="font-size:13px;margin-top:8px;max-width:360px">This item can be prepared manually.</p>' +
-        '<button class="bt-confirm-finish" style="margin-top:20px; font-size:15px; padding:12px 28px;" onclick="confirmRecipeFinished()">✅ Confirm Finish</button>' +
+        '<div class="ns-title">No recipe found in database for ' + item.dish + '</div>' +
+        '<p style="font-size:13px;margin-top:8px;max-width:380px;color:#8b949e">Add step-by-step instructions in the Recipes tab of your Google Sheet.</p>' +
+        '<button class="bt-confirm-finish" style="margin-top:24px; font-size:14px; padding:12px 28px;" onclick="confirmRecipeFinished()">✅ Confirm Finish</button>' +
       '</div>';
     return;
   }
@@ -1104,7 +1113,7 @@ function renderRecipe() {
     return;
   }
 
-  // ── ACTIVE COOKING VIEW: "Confirm Finish" IS ALWAYS VISIBLE ──
+  // ── ACTIVE TIMED COOKING VIEW ──
   if (localGate === "focus_cooking" && backgroundTimer) {
     var stepIdx = backgroundTimer.currentStepIdx;
     var currentStep = r.steps[stepIdx] || r.steps[0];
@@ -1134,7 +1143,6 @@ function renderRecipe() {
               (isManualStep && !isTimerComplete ? "MANUAL" : isTimerComplete ? "🎉 DONE!" : bigTimeDisp) +
             '</div>' +
             '<div class="bt-controls">' +
-              // ALWAYS VISIBLE GREEN CONFIRM FINISH BUTTON
               '<button class="bt-confirm-finish" onclick="confirmRecipeFinished()">✅ Confirm Finish</button>' +
               (isManualStep && !isTimerComplete
                 ? '<button class="bt-ctrl" style="background:#f39c12; color:black; font-weight:800;" onclick="handleStepAdvance()">➡️ Next Step</button>'
