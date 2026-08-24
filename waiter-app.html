@@ -1750,4 +1750,148 @@
                                     <button className="btn btn-primary" onClick={confirmAndSendAddOnToKitchen}>
                                         ✅ Yes, Send to Kitchen
                                     </button>
-            
+                                    <button className="btn btn-ghost" onClick={() => setAddonConfirmData(null)}>
+                                        ✕ Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── PAYMENT SUCCESS & CHANGE MODAL ── */}
+                    {completedPaymentModal && (
+                        <div className="modal-overlay">
+                            <div className="modal-card" style={{ maxWidth: '420px', textAlign: 'center', padding: '24px' }}>
+                                <div style={{ fontSize: '48px', marginBottom: '8px' }}>🎉</div>
+                                <h3 style={{ fontSize: '20px', fontWeight: 900, color: '#1e1b4b' }}>Payment Complete!</h3>
+                                <div style={{ fontSize: '13px', color: '#64748b', marginTop: '2px' }}>
+                                    Order #{completedPaymentModal.orderId} · {completedPaymentModal.table}
+                                </div>
+
+                                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', margin: '16px 0', textAlign: 'left', fontSize: '13px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                        <span>Total Amount:</span>
+                                        <strong style={{ fontSize: '15px' }}>{currency} {completedPaymentModal.total.toFixed(2)}</strong>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                        <span>Tendered ({completedPaymentModal.method}):</span>
+                                        <span>{currency} {completedPaymentModal.tendered.toFixed(2)}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #cbd5e1', paddingTop: '8px', marginTop: '8px', color: '#047857', fontSize: '16px', fontWeight: 900 }}>
+                                        <span>CHANGE DUE:</span>
+                                        <span>{currency} {completedPaymentModal.change.toFixed(2)}</span>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button className="btn btn-primary" onClick={() => printReceipt(completedPaymentModal.rawOrder, { method: completedPaymentModal.method, tendered: completedPaymentModal.tendered, change: completedPaymentModal.change }, currency, taxRate)}>
+                                        🖨️ Re-Print Slip
+                                    </button>
+                                    <button className="btn btn-success" onClick={() => setCompletedPaymentModal(null)}>
+                                        ✓ Done / Next
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── SETTLED ORDERS HISTORY MODAL ── */}
+                    {showHistoryModal && (
+                        <div className="modal-overlay" onClick={() => setShowHistoryModal(false)}>
+                            <div className="modal-card" onClick={e => e.stopPropagation()}>
+                                <div className="modal-header">
+                                    <div className="modal-title">📋 Settled Transactions History</div>
+                                    <button className="modal-close" onClick={() => setShowHistoryModal(false)}>✕</button>
+                                </div>
+                                <div className="modal-body">
+                                    {(() => {
+                                        const settledOrders = liveOrders.filter(o => ["closed", "paid", "settled", "completed"].includes((o.Status || o.status || "").toLowerCase()));
+                                        if (settledOrders.length === 0) {
+                                            return <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>No settled orders recorded yet.</div>;
+                                        }
+
+                                        return (
+                                            <table className="history-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Order</th>
+                                                        <th>Table</th>
+                                                        <th>Total</th>
+                                                        <th>Time</th>
+                                                        <th>Receipt</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {settledOrders.slice().reverse().map((o, idx) => (
+                                                        <tr key={idx}>
+                                                            <td style={{ fontWeight: 700 }}>{o.OrderID || o.orderId}</td>
+                                                            <td>{parseInt(o.TableNumber) === 0 ? (o.CustomerName ? `${o.CustomerName} (Takeaway)` : 'Takeaway') : `Table ${o.TableNumber}`}</td>
+                                                            <td style={{ fontWeight: 800, color: '#1e1b4b' }}>{currency} {parseFloat(o.Total || o.total || 0).toFixed(2)}</td>
+                                                            <td style={{ color: '#64748b' }}>
+                                                                {o.OrderTime ? new Date(o.OrderTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
+                                                            </td>
+                                                            <td>
+                                                                <button 
+                                                                    className="btn btn-ghost" 
+                                                                    style={{ padding: '4px 8px', fontSize: '11px', width: 'auto' }}
+                                                                    onClick={() => printReceipt(o, { method: "PAID" }, currency, taxRate)}
+                                                                >
+                                                                    🖨️ Receipt
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        );
+                                    })()}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {notification && (
+                        <div className={`notification ${notification.type}`}>
+                            {notification.message}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        window.startWaiterApp = function() {
+            ReactDOM.render(<MainApp />, document.getElementById('root'));
+        };
+    </script>
+
+    <script>
+    (function initAuth() {
+      function start() {
+        var root = document.getElementById("root");
+        if (root) root.style.display = "block";
+        var loader = document.getElementById("loading-placeholder");
+        if (loader) loader.style.display = "none";
+        
+        if (typeof window.startWaiterApp === "function") {
+            window.startWaiterApp();
+        }
+
+        setTimeout(function() {
+          if (typeof POS_AUTH !== "undefined" && typeof POS_AUTH.renderUtilBar === "function") {
+            POS_AUTH.renderUtilBar("user-badge", "waiter-app");
+          }
+        }, 500);
+      }
+
+      if (typeof POS_AUTH !== "undefined") {
+        POS_AUTH.init("waiter-app", {
+          onReady: start,
+          onError: start
+        });
+      } else {
+        start();
+      }
+    })();
+    </script>
+</body>
+</html>
