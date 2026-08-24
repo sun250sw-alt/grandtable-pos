@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Waiter App - Restaurant POS</title>
+    <title>Waiter & Till Terminal - The Grand Table</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -12,82 +12,97 @@
     <script src="pos-gapi.js"></script>
     <script src="pos-auth.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1a1a2e; }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #f5f5f5;
-            color: #333;
-        }
+        .app-container { max-width: 1440px; margin: 0 auto; padding: 16px; }
 
-        .app-container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
+        /* HEADER & MODE SWITCHER */
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
             color: white;
-            padding: 20px;
-            border-radius: 12px;
-            margin-bottom: 20px;
+            padding: 14px 20px;
+            border-radius: 14px;
+            margin-bottom: 16px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         }
 
-        .header h1 {
-            font-size: 22px;
-            font-weight: 700;
-        }
+        .header h1 { font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
 
-        .header-info {
+        .mode-switcher {
             display: flex;
-            gap: 14px;
-            font-size: 13px;
-            align-items: center;
+            background: rgba(255,255,255,0.12);
+            padding: 4px;
+            border-radius: 12px;
+            gap: 4px;
         }
 
+        .mode-tab {
+            padding: 8px 18px;
+            border: none;
+            border-radius: 9px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            color: rgba(255,255,255,0.7);
+            background: transparent;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .mode-tab.active {
+            background: #f39c12;
+            color: #000;
+            box-shadow: 0 2px 8px rgba(243,156,18,0.3);
+        }
+
+        .header-info { display: flex; gap: 12px; font-size: 12px; align-items: center; }
+
+        /* MAIN LAYOUT */
         .main-layout {
             display: grid;
-            grid-template-columns: 300px 1fr 380px;
-            gap: 20px;
-            height: calc(100vh - 140px);
+            grid-template-columns: 320px 1fr 400px;
+            gap: 16px;
+            height: calc(100vh - 110px);
         }
 
         .panel {
             background: white;
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border-radius: 14px;
+            padding: 18px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
             overflow-y: auto;
+            display: flex;
+            flex-direction: column;
         }
 
         .panel h2 {
-            font-size: 18px;
-            margin-bottom: 16px;
-            color: #333;
-            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 14px;
+            color: #1a1a2e;
+            font-weight: 800;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
-        /* Server Selection Home Screen */
+        /* SERVER SELECTION SCREEN */
         .server-screen {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-height: calc(100vh - 140px);
+            min-height: calc(100vh - 120px);
             background: white;
-            border-radius: 12px;
+            border-radius: 16px;
             padding: 40px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             text-align: center;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.06);
         }
         .server-grid {
             display: grid;
@@ -98,436 +113,254 @@
             margin-top: 24px;
         }
         .server-card {
-            padding: 20px 16px;
-            border-radius: 12px;
-            border: 2px solid #e0e0e0;
-            background: #f9fafb;
+            padding: 22px 16px;
+            border-radius: 14px;
+            border: 2px solid #e2e8f0;
+            background: #f8fafc;
             cursor: pointer;
             text-align: center;
             transition: all 0.2s;
         }
         .server-card:hover {
-            border-color: #667eea;
-            background: #f0f4ff;
+            border-color: #6366f1;
+            background: #eef2ff;
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102,126,234,0.15);
+            box-shadow: 0 4px 12px rgba(99,102,241,0.15);
         }
         .server-avatar {
-            width: 50px;
-            height: 50px;
+            width: 52px; height: 52px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #667eea, #764ba2);
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
             color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; font-weight: 800;
             margin: 0 auto 12px;
         }
-        .server-name {
-            font-weight: 700;
-            font-size: 14px;
-            color: #333;
-        }
+        .server-name { font-weight: 700; font-size: 14px; color: #1e293b; }
 
-        /* Tables Panel */
+        /* TABLES GRID */
         .tables-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 16px;
-            padding-top: 8px;
+            gap: 12px;
         }
 
         .table-card {
             position: relative;
-            padding: 18px 16px;
+            padding: 16px 12px;
             border-radius: 12px;
             cursor: pointer;
             transition: all 0.2s;
-            border: 2px solid #e0e0e0;
+            border: 2px solid #e2e8f0;
             text-align: center;
+            background: white;
         }
+        .table-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .table-card.available { background: #f0fdf4; border-color: #86efac; }
+        .table-card.occupied { background: #fffbeb; border-color: #fcd34d; }
+        .table-card.delivered { background: #faf5ff; border-color: #d8b4fe; }
+        .table-card.paid { background: #ecfdf5; border-color: #34d399; }
+        .table-card.selected { box-shadow: 0 0 0 3px #6366f1; border-color: #6366f1; }
 
-        .table-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
+        .table-number { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+        .table-status { font-size: 11px; font-weight: 700; text-transform: uppercase; }
+        .table-amount { font-size: 13px; font-weight: 800; color: #1e1b4b; margin-top: 4px; }
 
-        .table-card.available {
-            background: #f0f9ff;
-            border-color: #3b82f6;
-        }
-
-        .table-card.occupied {
-            background: #fffbeb;
-            border-color: #f59e0b;
-        }
-
-        .table-card.delivered {
-            background: #faf5ff;
-            border-color: #a855f7;
-        }
-
-        .table-card.paid {
-            background: #ecfdf5;
-            border-color: #10b981;
-        }
-
-        .table-card.selected {
-            box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.4);
-            border-color: #7c3aed;
-        }
-
-        .table-number {
-            font-size: 20px;
-            font-weight: 700;
-            margin-bottom: 4px;
-        }
-
-        .table-status {
-            font-size: 12px;
-            color: #666;
-        }
-
-        .table-guests {
-            font-size: 11px;
-            margin-top: 4px;
-            color: #888;
-        }
-
-        /* Blinking Floating Ready Badge on Tables Grid */
         .ready-badge {
             position: absolute;
-            top: -10px;
-            right: -10px;
+            top: -8px; right: -8px;
             background: #ef4444;
             color: white;
-            font-weight: 800;
-            font-size: 11px;
-            padding: 4px 10px;
-            border-radius: 12px;
-            box-shadow: 0 4px 10px rgba(239, 68, 68, 0.4);
+            font-weight: 900;
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(239,68,68,0.4);
             animation: pulse-ready 1.5s infinite;
-            z-index: 50;
+            z-index: 20;
         }
-        @keyframes pulse-ready {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.08); }
-        }
+        @keyframes pulse-ready { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
 
-        /* Menu Panel */
-        .menu-categories {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 16px;
-            flex-wrap: wrap;
-        }
-
+        /* MENU SECTION */
+        .menu-categories { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
         .category-btn {
-            padding: 8px 16px;
-            border: 2px solid #e0e0e0;
+            padding: 6px 14px;
+            border: 1px solid #e2e8f0;
             background: white;
             border-radius: 20px;
             cursor: pointer;
-            font-size: 14px;
-            transition: all 0.2s;
-            font-weight: 500;
-        }
-
-        .category-btn:hover {
-            background: #f5f5f5;
-        }
-
-        .category-btn.active {
-            background: #667eea;
-            color: white;
-            border-color: #667eea;
-        }
-
-        .menu-items {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-            gap: 12px;
-        }
-
-        .menu-item {
-            padding: 16px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s;
-            background: white;
-        }
-
-        .menu-item:hover {
-            border-color: #667eea;
-            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
-        }
-
-        .menu-item-name {
+            font-size: 12px;
             font-weight: 600;
-            font-size: 14px;
-            margin-bottom: 4px;
+            color: #64748b;
+            transition: all 0.15s;
         }
+        .category-btn.active { background: #1e1b4b; color: white; border-color: #1e1b4b; }
 
-        .menu-item-price {
-            color: #667eea;
-            font-weight: 700;
-            font-size: 16px;
-        }
-
-        .menu-item-desc {
-            font-size: 11px;
-            color: #888;
-            margin-top: 4px;
-        }
-
-        /* Order Panel */
-        .order-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 16px;
-        }
-
-        .order-items {
-            margin-bottom: 20px;
-            max-height: 400px;
+        .menu-items-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 10px;
             overflow-y: auto;
         }
 
-        .order-item {
+        .menu-card-item {
+            padding: 14px 12px;
+            border: 2px solid #f1f5f9;
+            border-radius: 10px;
+            cursor: pointer;
+            background: white;
+            transition: all 0.15s;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .menu-card-item:hover { border-color: #6366f1; transform: translateY(-2px); box-shadow: 0 4px 10px rgba(99,102,241,0.1); }
+        .mci-name { font-weight: 700; font-size: 13px; margin-bottom: 4px; line-height: 1.3; }
+        .mci-price { color: #4338ca; font-weight: 800; font-size: 14px; }
+
+        /* ORDER PANEL */
+        .order-panel-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+        .order-items-list { flex: 1; overflow-y: auto; margin-bottom: 12px; }
+        .order-item-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px;
-            background: #f9fafb;
+            padding: 10px 12px;
+            background: #f8fafc;
             border-radius: 8px;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
+            border: 1px solid #e2e8f0;
         }
-
-        .order-item-info {
-            flex: 1;
-        }
-
-        .order-item-name {
-            font-weight: 600;
-            font-size: 14px;
-            margin-bottom: 4px;
-        }
-
-        .order-item-price {
-            color: #667eea;
-            font-size: 13px;
-        }
-
-        .order-item-qty {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
+        .oir-name { font-weight: 700; font-size: 13px; }
+        .oir-price { color: #64748b; font-size: 12px; margin-top: 2px; }
+        .oir-controls { display: flex; align-items: center; gap: 6px; }
         .qty-btn {
-            width: 28px;
-            height: 28px;
-            border: 1px solid #e0e0e0;
+            width: 26px; height: 26px;
+            border: 1px solid #cbd5e1;
             background: white;
             border-radius: 6px;
             cursor: pointer;
-            font-weight: 600;
-            transition: all 0.2s;
+            font-weight: 800;
+            font-size: 13px;
         }
+        .qty-btn:hover { background: #f1f5f9; border-color: #6366f1; }
 
-        .qty-btn:hover {
-            background: #f5f5f5;
-            border-color: #667eea;
-        }
-
-        .qty-number {
-            font-weight: 600;
-            min-width: 24px;
-            text-align: center;
-        }
-
-        /* Order Progress Status Card */
-        .progress-box {
+        /* TILL PAYMENT DRAWER */
+        .payment-box {
             background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 10px;
-            padding: 14px;
-            margin-bottom: 16px;
-        }
-        .progress-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-            border-bottom: 1px solid #e2e8f0;
-            padding-bottom: 8px;
-        }
-        .progress-timer {
-            font-size: 15px;
-            font-weight: 700;
-            font-family: monospace;
-            color: #ef4444;
-        }
-        .progress-status {
-            font-weight: 700;
-            text-transform: uppercase;
-            font-size: 11px;
-            padding: 4px 8px;
-            border-radius: 6px;
-        }
-        .status-cooking { background: #fef3c7; color: #d97706; }
-        .status-queue { background: #fee2e2; color: #ef4444; }
-        .status-ready { background: #d1fae5; color: #065f46; animation: blink-status 1.5s infinite; }
-        .status-delivered { background: #f3e8ff; color: #7e22ce; }
-        @keyframes blink-status { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-
-        .order-summary {
-            border-top: 2px solid #e0e0e0;
-            padding-top: 16px;
-            margin-top: 16px;
-        }
-
-        .summary-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
-
-        .summary-row.total {
-            font-size: 18px;
-            font-weight: 700;
-            color: #667eea;
+            border: 2px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 16px;
             margin-top: 12px;
-            padding-top: 12px;
-            border-top: 2px solid #e0e0e0;
         }
-
-        .action-buttons {
+        .tender-grid {
             display: grid;
-            gap: 8px;
-            margin-top: 16px;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            margin: 10px 0;
         }
+        .tender-btn {
+            padding: 8px;
+            background: white;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .tender-btn:hover { background: #e0e7ff; border-color: #6366f1; }
+
+        .totals-summary {
+            border-top: 2px solid #e2e8f0;
+            padding-top: 12px;
+            margin-top: 12px;
+            font-size: 13px;
+        }
+        .totals-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
+        .totals-row.grand-total { font-size: 18px; font-weight: 900; color: #1e1b4b; border-top: 1px solid #cbd5e1; padding-top: 8px; margin-top: 8px; }
 
         .btn {
-            padding: 14px;
+            padding: 12px 16px;
             border: none;
-            border-radius: 8px;
+            border-radius: 9px;
             cursor: pointer;
-            font-weight: 600;
-            font-size: 14px;
-            transition: all 0.2s;
+            font-weight: 800;
+            font-size: 13px;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            width: 100%;
         }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .btn:active { transform: scale(0.98); }
+        .btn-primary { background: #4f46e5; color: white; }
+        .btn-success { background: #10b981; color: white; }
+        .btn-warning { background: #f59e0b; color: white; }
+        .btn-danger  { background: #ef4444; color: white; }
+        .btn-ghost   { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+        .btn-dark    { background: #1e1b4b; color: white; }
 
-        .btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }
-
-        .btn-primary {
-            background: #667eea;
-            color: white;
-        }
-
-        .btn-secondary {
-            background: #f59e0b;
-            color: white;
-        }
-
-        .btn-danger {
-            background: #ef4444;
-            color: white;
-        }
-
-        .btn-success {
-            background: #10b981;
-            color: white;
-        }
-
-        .btn-ghost {
-            background: #f3f4f6;
-            color: #4b5563;
-            border: 1px solid #d1d5db;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 40px 20px;
-            color: #999;
-        }
-
-        .empty-state-icon {
-            font-size: 48px;
-            margin-bottom: 12px;
-        }
+        .action-stack { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 
         .search-box {
             width: 100%;
-            padding: 10px 16px;
-            border: 2px solid #e0e0e0;
+            padding: 10px 14px;
+            border: 1px solid #cbd5e1;
             border-radius: 8px;
-            font-size: 14px;
-            margin-bottom: 16px;
+            font-size: 13px;
+            margin-bottom: 12px;
         }
 
-        .search-box:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
-            margin-left: 8px;
-        }
-
-        .badge-available { background: #dbeafe; color: #1d4ed8; }
-        .badge-occupied { background: #fef3c7; color: #d97706; }
+        .badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 800; }
+        .badge-available { background: #dcfce7; color: #15803d; }
+        .badge-occupied  { background: #fef3c7; color: #b45309; }
         .badge-delivered { background: #f3e8ff; color: #7e22ce; }
-        .badge-paid { background: #ecfdf5; color: #047857; }
+        .badge-paid      { background: #d1fae5; color: #047857; }
 
         .notification {
             position: fixed;
-            top: 20px;
-            right: 20px;
+            top: 20px; right: 20px;
             background: white;
-            padding: 16px 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            z-index: 2000;
-            animation: slideIn 0.3s ease;
+            padding: 14px 20px;
+            border-radius: 10px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+            z-index: 9999;
+            font-size: 13px;
+            font-weight: 700;
         }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(400px);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
         .notification.success { border-left: 4px solid #10b981; }
-        .notification.error { border-left: 4px solid #ef4444; }
+        .notification.error   { border-left: 4px solid #ef4444; }
+
+        /* PRINTABLE THERMAL RECEIPT STYLES */
+        @media print {
+            body * { visibility: hidden; }
+            #printable-receipt-slip, #printable-receipt-slip * { visibility: visible; }
+            #printable-receipt-slip {
+                position: absolute;
+                left: 0; top: 0;
+                width: 78mm;
+                padding: 10px;
+                font-family: 'Courier New', monospace;
+                font-size: 11px;
+                color: black;
+                background: white;
+            }
+        }
     </style>
 </head>
 <body>
     <div id="root" style="display: none;"></div>
     
     <div id="loading-placeholder" style="display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; flex-direction: column; gap: 12px;">
-        <div style="font-size:40px">🧑‍💼</div>
-        <div style="font-size:16px;font-weight:700">Waiter Terminal</div>
-        <div style="font-size:13px;color:#888">Verifying terminal credentials...</div>
+        <div style="font-size:40px">🍽️</div>
+        <div style="font-size:16px;font-weight:700">The Grand Table POS</div>
+        <div style="font-size:13px;color:#888">Connecting to database...</div>
     </div>
+
+    <!-- Hidden Receipt Print Slip -->
+    <div id="printable-receipt-slip" style="display: none;"></div>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
@@ -536,9 +369,55 @@
             return window.POS_GAPI || window.POS_API || null;
         }
 
+        function printReceipt(orderData, paymentInfo, currency, taxRate) {
+            const slip = document.getElementById("printable-receipt-slip");
+            if (!slip) return;
+
+            let items = [];
+            try {
+                items = typeof orderData.Items === "string" ? JSON.parse(orderData.Items) : (orderData.Items || []);
+            } catch(e){}
+
+            const subtotal = parseFloat(orderData.Subtotal || orderData.subtotal || 0);
+            const tax = parseFloat(orderData.Tax || orderData.tax || (subtotal * taxRate));
+            const total = parseFloat(orderData.Total || orderData.total || (subtotal + tax));
+
+            slip.innerHTML = `
+                <div style="text-align:center; margin-bottom:10px;">
+                    <div style="font-size:16px; font-weight:bold;">THE GRAND TABLE</div>
+                    <div style="font-size:10px;">Restaurant & Bar</div>
+                    <div style="font-size:10px; margin-top:4px;">Date: ${new Date().toLocaleString()}</div>
+                    <div style="font-size:10px;">Order: #${orderData.OrderID || orderData.orderId} · Table: ${orderData.TableNumber || orderData.table || 'Takeaway'}</div>
+                    <div style="font-size:10px;">Server: ${orderData.WaiterName || orderData.waiter || 'Cashier'}</div>
+                </div>
+                <div style="border-top:1px dashed #000; border-bottom:1px dashed #000; padding:6px 0; margin-bottom:6px;">
+                    ${items.map(it => `
+                        <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
+                            <span>${it.qty || it.quantity}x ${it.name || it.Name}</span>
+                            <span>${currency} ${(parseFloat(it.price) * parseInt(it.qty || it.quantity || 1)).toFixed(2)}</span>
+                        </div>
+                    `).join("")}
+                </div>
+                <div style="margin-bottom:8px;">
+                    <div style="display:flex; justify-content:space-between;"><span>Subtotal:</span><span>${currency} ${subtotal.toFixed(2)}</span></div>
+                    <div style="display:flex; justify-content:space-between;"><span>Tax (${(taxRate*100).toFixed(0)}%):</span><span>${currency} ${tax.toFixed(2)}</span></div>
+                    <div style="display:flex; justify-content:space-between; font-weight:bold; font-size:13px; margin-top:4px;"><span>TOTAL:</span><span>${currency} ${total.toFixed(2)}</span></div>
+                </div>
+                <div style="border-top:1px dashed #000; padding-top:6px; font-size:10px;">
+                    <div>Payment: <strong>${paymentInfo.method || 'CASH'}</strong></div>
+                    ${paymentInfo.tendered ? `<div>Tendered: ${currency} ${parseFloat(paymentInfo.tendered).toFixed(2)}</div>` : ''}
+                    ${paymentInfo.change ? `<div>Change: ${currency} ${parseFloat(paymentInfo.change).toFixed(2)}</div>` : ''}
+                </div>
+                <div style="text-align:center; margin-top:14px; font-size:10px;">Thank you for dining with us!</div>
+            `;
+
+            slip.style.display = "block";
+            window.print();
+            setTimeout(() => { slip.style.display = "none"; }, 1000);
+        }
+
         function OrderTimer({ orderTime }) {
             const [elapsed, setElapsed] = useState(0);
-
             useEffect(() => {
                 const calculate = () => {
                     if (!orderTime) return;
@@ -549,11 +428,11 @@
                 const iv = setInterval(calculate, 10000);
                 return () => clearInterval(iv);
             }, [orderTime]);
-
-            return <span className="progress-timer">⏱ {elapsed} min</span>;
+            return <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#ef4444' }}>⏱ {elapsed}m</span>;
         }
 
-        function WaiterApp() {
+        function MainApp() {
+            const [activeAppMode, setActiveAppMode]         = useState("waiter"); // "waiter" | "till"
             const [staff, setStaff]                         = useState([]);
             const [currentServer, setCurrentServer]         = useState(null);
             const [tables, setTables]                       = useState([]);
@@ -567,13 +446,14 @@
             const [loading, setLoading]                     = useState(true);
             const [currency, setCurrency]                   = useState("Rs.");
             const [taxRate, setTaxRate]                     = useState(0.10);
+            
+            // Till Mode Specific State
+            const [tillCashTendered, setTillCashTendered]   = useState("");
+            const [paymentMethod, setPaymentMethod]         = useState("Cash"); // "Cash" | "Card"
 
             async function loadData() {
                 const api = getPosApi();
-                if (!api) {
-                    setLoading(false);
-                    return;
-                }
+                if (!api) { setLoading(false); return; }
 
                 try {
                     if (typeof api.getSettings === "function") {
@@ -645,7 +525,7 @@
                         setLiveOrders(ordersRes.data);
                     }
                 } catch(e) {
-                    console.error("Waiter App polling error:", e);
+                    console.error("Polling error:", e);
                 }
                 setLoading(false);
             }
@@ -674,14 +554,10 @@
                 const freshTable = tables.find(t => t.id === table.id) || table;
                 setSelectedTable(freshTable);
                 setOrderItems([]);
+                setTillCashTendered("");
             };
 
             const addToOrder = (item) => {
-                if (!selectedTable) {
-                    showNotification("Please select a table first!", "error");
-                    return;
-                }
-
                 const existing = orderItems.find(oi => oi.id === item.id);
                 if (existing) {
                     setOrderItems(orderItems.map(oi => 
@@ -706,17 +582,19 @@
                 return orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             };
 
+            // ── WAITER: SEND NEW ORDER TO KITCHEN ──
             const handleSendToKitchen = async () => {
+                if (!selectedTable) {
+                    showNotification("Please select a table first!", "error");
+                    return;
+                }
                 if (orderItems.length === 0) {
                     showNotification("Please add items to the order!", "error");
                     return;
                 }
 
                 const api = getPosApi();
-                if (!api) {
-                    showNotification("Database not connected!", "error");
-                    return;
-                }
+                if (!api) return;
 
                 try {
                     const subtotal = calculateTotal();
@@ -752,7 +630,6 @@
                     }
 
                     showNotification(`Order sent to kitchen for Table ${selectedTable.number}!`);
-                    
                     setSelectedTable(null);
                     setOrderItems([]);
                     loadData();
@@ -761,6 +638,7 @@
                 }
             };
 
+            // ── WAITER: ADD-ON ITEMS TO ACTIVE TABLE ──
             const handleSendAddOnToKitchen = async (orderId) => {
                 if (orderItems.length === 0) return;
                 const api = getPosApi();
@@ -772,9 +650,6 @@
                     if (api.Orders && typeof api.Orders.getAll === "function") {
                         const res = await api.Orders.getAll();
                         orderRow = (res && res.data ? res.data : []).find(r => (r.OrderID || r.orderId || r.id) === orderId);
-                    } else if (typeof api.getRows === "function") {
-                        const rows = await api.getRows("Orders");
-                        orderRow = (rows || []).find(r => (r.OrderID || r.orderId || r.id) === orderId);
                     }
 
                     if (orderRow) {
@@ -784,7 +659,6 @@
                             itemsArray = typeof raw === "string" ? JSON.parse(raw) : raw; 
                         } catch(e){}
                         
-                        // Append newly added items
                         orderItems.forEach(newItem => {
                             const existing = itemsArray.find(it => (it.name || it.Name) === newItem.name);
                             if (existing) {
@@ -826,132 +700,112 @@
                             });
                         }
 
-                        showNotification("Add-on successfully sent to kitchen!");
+                        showNotification("Add-on items sent to kitchen!");
                         setOrderItems([]);
                         loadData();
                     }
                 } catch(e) {
-                    showNotification("Failed to add to order: " + e.message, "error");
+                    showNotification("Failed to add items: " + e.message, "error");
                 }
                 setLoading(false);
             };
 
-            const handleDeliverOrder = async (orderId) => {
-                const api = getPosApi();
-                if (!api) return;
-                try {
-                    if (api.Orders && typeof api.Orders.update === "function") {
-                        await api.Orders.update({ orderId, status: "served" });
-                    }
-                    if (api.Tables && typeof api.Tables.update === "function") {
-                        await api.Tables.update({
-                            tableNumber: selectedTable.number,
-                            status: "delivered",
-                            currentWaiter: currentServer,
-                            guests: selectedTable.guests
-                        });
-                    }
-                    showNotification("Order marked as delivered!");
-                    setSelectedTable(prev => prev ? { ...prev, status: "delivered" } : null);
-                    loadData();
-                } catch(e) {
-                    showNotification("Failed to deliver order: " + e.message, "error");
+            // ── TILL: TAKEAWAY / QUICK POS SALE CHECKOUT ──
+            const handleTillQuickCheckout = async () => {
+                if (orderItems.length === 0) {
+                    showNotification("Add items to till cart first!", "error");
+                    return;
                 }
-            };
 
-            const handleProcessPayment = async (orderId) => {
-                const api = getPosApi();
-                if (!api) return;
-                try {
-                    if (api.Orders && typeof api.Orders.update === "function") {
-                        await api.Orders.update({ orderId, status: "closed" });
-                    }
-                    if (api.Tables && typeof api.Tables.update === "function") {
-                        await api.Tables.update({
-                            tableNumber: selectedTable.number,
-                            status: "paid",
-                            currentWaiter: currentServer,
-                            guests: selectedTable.guests
-                        });
-                    }
-                    showNotification("Payment processed successfully!");
-                    setSelectedTable(prev => prev ? { ...prev, status: "paid" } : null);
-                    loadData();
-                } catch(e) {
-                    showNotification("Failed to process payment: " + e.message, "error");
-                }
-            };
-
-            const handleClearTable = async () => {
-                if (!selectedTable) return;
                 const api = getPosApi();
                 if (!api) return;
 
+                const subtotal = calculateTotal();
+                const tax = parseFloat((subtotal * taxRate).toFixed(2));
+                const total = parseFloat((subtotal + tax).toFixed(2));
+                const tendered = parseFloat(tillCashTendered) || total;
+                const change = Math.max(0, tendered - total);
+
                 try {
-                    if (api.Tables && typeof api.Tables.update === "function") {
-                        await api.Tables.update({
-                            tableNumber  : selectedTable.number,
-                            status       : "available",
-                            currentWaiter: "",
-                            guests       : 0,
-                        });
+                    const generatedId = "ORD-" + Date.now().toString().slice(-6);
+                    const newOrder = {
+                        orderId     : generatedId,
+                        tableNumber : 0, // Takeaway
+                        waiterName  : currentServer + " (Till)",
+                        items       : orderItems.map(i => ({ 
+                            name: i.name, 
+                            qty: i.quantity, 
+                            price: i.price,
+                            category: i.category,
+                            prepTime: i.prepTime
+                        })),
+                        subtotal    : subtotal,
+                        tax         : tax,
+                        total       : total,
+                        status      : "closed",
+                        notes       : `[TAKEAWAY - PAID ${paymentMethod}]`
+                    };
+
+                    if (api.Orders && typeof api.Orders.create === "function") {
+                        await api.Orders.create(newOrder);
                     }
-                    showNotification(`Table ${selectedTable.number} cleared and ready!`);
+
+                    showNotification(`Takeaway Sale Paid (${currency}${total.toFixed(2)})!`);
                     
-                    setSelectedTable(null);
+                    // Trigger Print Receipt
+                    printReceipt(newOrder, { method: paymentMethod, tendered, change }, currency, taxRate);
+
                     setOrderItems([]);
+                    setTillCashTendered("");
                     loadData();
                 } catch(e) {
-                    showNotification("Failed to clean table: " + e.message, "error");
+                    showNotification("Checkout failed: " + e.message, "error");
                 }
             };
 
-            const handleCollectBypassedItem = async (orderId, itemName) => {
+            // ── TILL: SETTLE ACTIVE TABLE BILL & PRINT RECEIPT ──
+            const handleSettleTableBill = async (order) => {
                 const api = getPosApi();
                 if (!api) return;
 
+                const subtotal = parseFloat(order.Subtotal || order.subtotal || 0);
+                const tax = parseFloat(order.Tax || order.tax || (subtotal * taxRate));
+                const total = parseFloat(order.Total || order.total || (subtotal + tax));
+                const tendered = parseFloat(tillCashTendered) || total;
+                const change = Math.max(0, tendered - total);
+
                 try {
-                    let orderRow = null;
-                    if (api.Orders && typeof api.Orders.getAll === "function") {
-                        const res = await api.Orders.getAll();
-                        orderRow = (res && res.data ? res.data : []).find(r => (r.OrderID || r.orderId || r.id) === orderId);
+                    if (api.Orders && typeof api.Orders.update === "function") {
+                        await api.Orders.update({
+                            orderId: order.OrderID || order.orderId,
+                            status: "closed",
+                            notes: `[PAID ${paymentMethod} at Till]`
+                        });
                     }
 
-                    if (orderRow) {
-                        let itemsArray = [];
-                        try { 
-                            const raw = orderRow.Items || orderRow.items || [];
-                            itemsArray = typeof raw === "string" ? JSON.parse(raw) : raw; 
-                        } catch(e){}
-                        
-                        itemsArray = itemsArray.map(it => {
-                            if ((it.name || it.Name) === itemName) {
-                                it.status = "ready";
-                                it.chef = currentServer + " (Waiter)";
-                            }
-                            return it;
+                    if (api.Tables && typeof api.Tables.update === "function" && selectedTable) {
+                        await api.Tables.update({
+                            tableNumber: selectedTable.number,
+                            status: "available",
+                            currentWaiter: "",
+                            guests: 0
                         });
-
-                        const allReady = itemsArray.every(it => {
-                            return it.status === "ready" || it.prepTime === "Bypass Prep";
-                        });
-
-                        if (api.Orders && typeof api.Orders.update === "function") {
-                            await api.Orders.update({
-                                orderId: orderId,
-                                status: allReady ? "ready" : "preparing",
-                                items: itemsArray
-                            });
-                        }
-                        
-                        showNotification(`Marked ${itemName} as collected!`);
-                        loadData();
                     }
+
+                    showNotification(`Table ${order.TableNumber} bill settled!`);
+                    
+                    // Print Thermal Receipt Slip
+                    printReceipt(order, { method: paymentMethod, tendered, change }, currency, taxRate);
+
+                    setSelectedTable(null);
+                    setTillCashTendered("");
+                    loadData();
                 } catch(e) {
-                    showNotification("Failed to collect item: " + e.message, "error");
+                    showNotification("Failed to settle bill: " + e.message, "error");
                 }
             };
 
+            // Active order for the selected table
             const activeOrderForTable = selectedTable 
                 ? liveOrders.find(o => 
                     parseInt(o.TableNumber || o.table) === parseInt(selectedTable.number) && 
@@ -959,7 +813,7 @@
                   )
                 : null;
 
-            // ── SCREEN A: Server Selection Home Screen ──
+            // ── SERVER SELECTION HOME SCREEN ──
             if (!currentServer) {
                 const renderList = staff.map(s => s.Name || s.StaffName || s.name).filter(Boolean);
 
@@ -967,19 +821,18 @@
                     <div className="app-container">
                         <div className="header">
                             <h1>🍽️ The Grand Table POS</h1>
-                            <div id="user-badge"></div>
                         </div>
                         <div className="server-screen">
-                            <div style={{ fontSize: "52px" }}>🧑‍💼</div>
-                            <h2 style={{ fontSize: "24px", fontWeight: "800", marginTop: "12px" }}>Who is serving today?</h2>
-                            <p style={{ color: "#666", marginTop: "4px" }}>Select your name to access the terminal floorplan</p>
+                            <div style={{ fontSize: "56px" }}>🧑‍💼</div>
+                            <h2 style={{ fontSize: "24px", fontWeight: "800", marginTop: "12px" }}>Select Staff Profile</h2>
+                            <p style={{ color: "#666", marginTop: "4px" }}>Choose your name to access floor ordering and till payment terminal</p>
                             
                             {loading ? (
-                                <div style={{ color: "#888", marginTop: "30px" }}>Loading active staff from Google Sheets...</div>
+                                <div style={{ color: "#888", marginTop: "30px" }}>Loading staff profiles...</div>
                             ) : renderList.length === 0 ? (
                                 <div style={{ color: "#8b949e", marginTop: "30px", background: "#f8fafc", padding: "20px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
-                                    <div>No active servers found in database.</div>
-                                    <div style={{ fontSize: "12px", color: "#f59e0b", marginTop: "4px" }}>Please add staff in the Staff tab of your Google Sheet.</div>
+                                    <div>No active staff profiles found in Google Sheets database.</div>
+                                    <div style={{ fontSize: "12px", color: "#f59e0b", marginTop: "4px" }}>Add team members in the Staff sheet tab.</div>
                                 </div>
                             ) : (
                                 <div className="server-grid">
@@ -996,32 +849,55 @@
                 );
             }
 
-            // ── SCREEN B: Active Tables and Floorplan ──
+            // ── MAIN TERMINAL (WAITER MODE & TILL MODE) ──
             return (
                 <div className="app-container">
                     <div className="header">
-                        <div>
-                            <h1>🍽️ Waiter App</h1>
-                        </div>
-                        <div id="user-badge" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}></div>
-                        <div className="header-info">
-                            <button className="btn btn-ghost" style={{ padding: '8px 14px' }} onClick={() => { setCurrentServer(null); setSelectedTable(null); setOrderItems([]); }}>
-                                ↩ Switch Server
+                        <h1>🍽️ The Grand Table</h1>
+                        
+                        {/* MODE SWITCHER TABS */}
+                        <div className="mode-switcher">
+                            <button 
+                                className={`mode-tab ${activeAppMode === 'waiter' ? 'active' : ''}`}
+                                onClick={() => { setActiveAppMode('waiter'); setOrderItems([]); }}
+                            >
+                                🧑‍💼 Waiter Floor
                             </button>
-                            <div>Server: <strong>{currentServer}</strong></div>
-                            <div>{new Date().toLocaleDateString()}</div>
+                            <button 
+                                className={`mode-tab ${activeAppMode === 'till' ? 'active' : ''}`}
+                                onClick={() => { setActiveAppMode('till'); setOrderItems([]); }}
+                            >
+                                💳 Till & Reception
+                            </button>
+                        </div>
+
+                        <div className="header-info">
+                            <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '11px', color: 'white', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)' }} onClick={() => { setCurrentServer(null); setSelectedTable(null); setOrderItems([]); }}>
+                                ↩ Switch Staff
+                            </button>
+                            <div>Staff: <strong>{currentServer}</strong></div>
                         </div>
                     </div>
 
                     <div className="main-layout">
-                        {/* Tables Panel */}
+                        {/* ── COLUMN 1: TABLES (FLOOR OR TILL TABLE BILL SELECTOR) ── */}
                         <div className="panel">
-                            <h2>Tables</h2>
+                            <h2>
+                                <span>{activeAppMode === 'till' ? '🪑 Active Table Bills' : 'Tables'}</span>
+                                {activeAppMode === 'till' && (
+                                    <button 
+                                        className={`btn ${!selectedTable ? 'btn-primary' : 'btn-ghost'}`} 
+                                        style={{ width: 'auto', padding: '4px 10px', fontSize: '11px' }}
+                                        onClick={() => { setSelectedTable(null); setOrderItems([]); }}
+                                    >
+                                        🥡 Takeaway Sale
+                                    </button>
+                                )}
+                            </h2>
+
                             {tables.length === 0 ? (
-                                <div className="empty-state">
-                                    <div className="empty-state-icon">🪑</div>
-                                    <div>No tables configured</div>
-                                    <div style={{ fontSize: "12px", marginTop: "4px" }}>Check Tables tab in Google Sheet</div>
+                                <div style={{ textAlign: 'center', padding: '40px 10px', color: '#888' }}>
+                                    <div>No tables configured in database</div>
                                 </div>
                             ) : (
                                 <div className="tables-grid">
@@ -1046,16 +922,16 @@
                                                 className={`table-card ${statusClass} ${selectedTable?.id === table.id ? 'selected' : ''}`}
                                                 onClick={() => handleTableSelect(table)}
                                             >
-                                                {isFoodReady && <div className="ready-badge">🔔 Food Ready</div>}
+                                                {isFoodReady && <div className="ready-badge">🔔 Ready</div>}
                                                 <div className="table-number">Table {table.number}</div>
                                                 <div className="table-status">
-                                                    <span className={`badge badge-${statusClass}`}>
-                                                        {statusClass}
-                                                    </span>
+                                                    <span className={`badge badge-${statusClass}`}>{statusClass}</span>
                                                 </div>
-                                                <div className="table-guests">
-                                                    {table.guests ? `${table.guests} guests` : `Seats ${table.capacity}`}
-                                                </div>
+                                                {matchOrder ? (
+                                                    <div className="table-amount">{currency} {parseFloat(matchOrder.Total || matchOrder.total || 0).toFixed(2)}</div>
+                                                ) : (
+                                                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>{table.capacity} seats</div>
+                                                )}
                                             </div>
                                         );
                                     })}
@@ -1063,9 +939,9 @@
                             )}
                         </div>
 
-                        {/* Menu Panel */}
+                        {/* ── COLUMN 2: MENU DIRECTORY ── */}
                         <div className="panel">
-                            <h2>Menu</h2>
+                            <h2>Menu Directory</h2>
                             
                             <input
                                 type="text"
@@ -1088,262 +964,225 @@
                             </div>
 
                             {filteredMenu.length === 0 ? (
-                                <div className="empty-state">
-                                    <div className="empty-state-icon">📋</div>
+                                <div style={{ textAlign: 'center', padding: '40px 10px', color: '#888' }}>
                                     <div>No menu items found</div>
                                 </div>
                             ) : (
-                                <div className="menu-items">
+                                <div className="menu-items-grid">
                                     {filteredMenu.map(item => (
                                         <div
                                             key={item.id}
-                                            className="menu-item"
+                                            className="menu-card-item"
                                             onClick={() => addToOrder(item)}
                                         >
-                                            <div className="menu-item-name">{item.emoji ? item.emoji + ' ' : ''}{item.name}</div>
-                                            <div className="menu-item-price">{currency} {item.price.toFixed(2)}</div>
-                                            {item.description && <div className="menu-item-desc">{item.description}</div>}
+                                            <div>
+                                                <div style={{ fontSize: '24px', marginBottom: '6px' }}>{item.emoji || '🍽️'}</div>
+                                                <div className="mci-name">{item.name}</div>
+                                            </div>
+                                            <div className="mci-price">{currency} {item.price.toFixed(2)}</div>
                                         </div>
                                     ))}
                                 </div>
                             )}
                         </div>
 
-                        {/* Order Detail Panel */}
+                        {/* ── COLUMN 3: ORDER, BILLING & TILL PAYMENT PANEL ── */}
                         <div className="panel">
-                            <div className="order-header">
-                                <h2>Current Order</h2>
-                                {selectedTable && (
-                                    <span className="badge badge-occupied">
-                                        Table {selectedTable.number}
-                                    </span>
+                            <h2>
+                                <span>{activeAppMode === 'till' ? '💳 Till Payment & Bill' : 'Current Order'}</span>
+                                {selectedTable ? (
+                                    <span className="badge badge-occupied">Table {selectedTable.number}</span>
+                                ) : (
+                                    <span className="badge badge-available">Takeaway / Counter</span>
                                 )}
-                            </div>
+                            </h2>
 
-                            {!selectedTable ? (
-                                <div className="empty-state">
-                                    <div className="empty-state-icon">🍽️</div>
-                                    <div>Select a table to start</div>
-                                </div>
-                            ) : selectedTable.status === "paid" ? (
-                                <div>
-                                    <div className="progress-box" style={{ borderLeft: "4px solid #10b981", background: "#f0fdf4" }}>
-                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div className="order-panel-body">
+                                {/* ── MODE 1: TILL MODE WITH ACTIVE TABLE SELECTED (BILL SETTLEMENT) ── */}
+                                {activeAppMode === 'till' && selectedTable && activeOrderForTable ? (
+                                    (() => {
+                                        const sub = parseFloat(activeOrderForTable.Subtotal || activeOrderForTable.subtotal || 0);
+                                        const tx = parseFloat(activeOrderForTable.Tax || activeOrderForTable.tax || (sub * taxRate));
+                                        const tot = parseFloat(activeOrderForTable.Total || activeOrderForTable.total || (sub + tx));
+                                        const tendered = parseFloat(tillCashTendered) || tot;
+                                        const change = Math.max(0, tendered - tot);
+                                        let items = [];
+                                        try { items = JSON.parse(activeOrderForTable.Items); } catch(e){}
+
+                                        return (
                                             <div>
-                                                <strong style={{ fontSize: "16px", color: "#065f46" }}>💵 Table Paid</strong>
-                                                <div style={{ fontSize: "12px", color: "#047857", marginTop: "2px" }}>Paid. Ready for clean.</div>
+                                                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '12px' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '13px' }}>
+                                                        <span>Order #{activeOrderForTable.OrderID || activeOrderForTable.orderId}</span>
+                                                        <span>Table {selectedTable.number}</span>
+                                                    </div>
+                                                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>Server: {activeOrderForTable.WaiterName || 'Staff'}</div>
+                                                </div>
+
+                                                <div style={{ maxHeight: '180px', overflowY: 'auto', marginBottom: '12px' }}>
+                                                    {items.map((it, idx) => (
+                                                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '6px 0', borderBottom: '1px dashed #e2e8f0' }}>
+                                                            <span>{it.qty || it.quantity}× {it.name || it.Name}</span>
+                                                            <span style={{ fontWeight: 700 }}>{currency} {(parseFloat(it.price) * parseInt(it.qty || it.quantity || 1)).toFixed(2)}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                <div className="totals-summary" style={{ marginTop: 0 }}>
+                                                    <div className="totals-row"><span>Subtotal:</span><span>{currency} {sub.toFixed(2)}</span></div>
+                                                    <div className="totals-row"><span>Tax ({(taxRate * 100).toFixed(0)}%):</span><span>{currency} {tx.toFixed(2)}</span></div>
+                                                    <div className="totals-row grand-total"><span>Amount Due:</span><span>{currency} {tot.toFixed(2)}</span></div>
+                                                </div>
+
+                                                {/* Payment Form */}
+                                                <div className="payment-box">
+                                                    <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                                                        <button 
+                                                            className={`btn ${paymentMethod === 'Cash' ? 'btn-primary' : 'btn-ghost'}`} 
+                                                            style={{ padding: '8px', fontSize: '12px' }}
+                                                            onClick={() => setPaymentMethod('Cash')}
+                                                        >
+                                                            💵 Cash
+                                                        </button>
+                                                        <button 
+                                                            className={`btn ${paymentMethod === 'Card' ? 'btn-primary' : 'btn-ghost'}`} 
+                                                            style={{ padding: '8px', fontSize: '12px' }}
+                                                            onClick={() => setPaymentMethod('Card')}
+                                                        >
+                                                            💳 Card
+                                                        </button>
+                                                    </div>
+
+                                                    {paymentMethod === 'Cash' && (
+                                                        <div>
+                                                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>Cash Tendered:</div>
+                                                            <input 
+                                                                type="number" 
+                                                                className="search-box" 
+                                                                style={{ margin: 0, padding: '8px 12px', fontSize: '15px', fontWeight: 800 }}
+                                                                placeholder={tot.toFixed(2)}
+                                                                value={tillCashTendered}
+                                                                onChange={(e) => setTillCashTendered(e.target.value)}
+                                                            />
+                                                            <div className="tender-grid">
+                                                                <button className="tender-btn" onClick={() => setTillCashTendered(tot.toFixed(2))}>Exact</button>
+                                                                <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 100) * 100).toString())}>+100 Round</button>
+                                                                <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 500) * 500).toString())}>+500 Round</button>
+                                                            </div>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 800, color: '#047857', marginTop: '6px' }}>
+                                                                <span>Change Due:</span>
+                                                                <span>{currency} {change.toFixed(2)}</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div className="action-stack">
+                                                    <button className="btn btn-success" onClick={() => handleSettleTableBill(activeOrderForTable)}>
+                                                        ✅ Settle Bill & Print Receipt
+                                                    </button>
+                                                    <button className="btn btn-ghost" onClick={() => printReceipt(activeOrderForTable, { method: paymentMethod }, currency, taxRate)}>
+                                                        🖨️ Print Bill Only
+                                                    </button>
+                                                </div>
                                             </div>
-                                            <span className="progress-status" style={{ background: "#d1fae5", color: "#065f46" }}>Paid</span>
-                                        </div>
-                                    </div>
-                                    <div className="action-buttons" style={{ marginTop: "20px" }}>
-                                        <button className="btn btn-success" onClick={handleClearTable} style={{ fontSize: "15px", padding: "16px" }}>
-                                            🧹 Clear & Clean Table
-                                        </button>
-                                        <button className="btn btn-ghost" onClick={() => setSelectedTable(null)}>
-                                            ← Back to Tables
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : activeOrderForTable ? (
-                                <div>
-                                    <div className="progress-box">
-                                        <div className="progress-header">
-                                            <div>
-                                                <strong style={{ fontSize: "14px" }}>{activeOrderForTable.OrderID || activeOrderForTable.orderId}</strong>
-                                                <div style={{ fontSize: "11px", color: "#666", marginTop: "2px" }}>Order Status</div>
-                                            </div>
-                                            <div style={{ textAlign: "right" }}>
-                                                {activeOrderForTable.Status !== "served" && <OrderTimer orderTime={activeOrderForTable.OrderTime || activeOrderForTable.orderTime} />}
-                                                <div style={{ marginTop: "4px" }}>
-                                                    <span className={`progress-status ${
-                                                        activeOrderForTable.Status === 'ready' ? 'status-ready' : 
-                                                        activeOrderForTable.Status === 'preparing' ? 'status-cooking' : 
-                                                        activeOrderForTable.Status === 'served' ? 'status-delivered' : 'status-queue'
-                                                    }`}>
-                                                        {activeOrderForTable.Status === 'ready' ? 'Ready' : 
-                                                         activeOrderForTable.Status === 'preparing' ? 'Cooking' : 
-                                                         activeOrderForTable.Status === 'served' ? 'Served' : 'In Queue'}
+                                        );
+                                    })()
+                                ) : (
+                                    /* ── MODE 2: WAITER ORDERING OR TAKEAWAY CART ── */
+                                    <div>
+                                        {activeOrderForTable && activeAppMode === 'waiter' && (
+                                            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '12px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <strong style={{ fontSize: '13px' }}>{activeOrderForTable.OrderID}</strong>
+                                                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#4f46e5' }}>
+                                                        {activeOrderForTable.Status === 'ready' ? '✅ Ready' : activeOrderForTable.Status === 'preparing' ? '🔥 Cooking' : '⏳ In Queue'}
                                                     </span>
                                                 </div>
+                                                <div style={{ fontSize: '12px', marginTop: '4px' }}>Active Total: <strong>{currency} {parseFloat(activeOrderForTable.Total || 0).toFixed(2)}</strong></div>
                                             </div>
-                                        </div>
+                                        )}
 
-                                        <div style={{ margin: "12px 0 6px" }}>
-                                            <strong style={{ fontSize: "12px", textTransform: "uppercase", color: "#888" }}>Dishes Ordered:</strong>
-                                        </div>
-                                        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                                            {(() => {
-                                                let parsed = [];
-                                                try { 
-                                                    const raw = activeOrderForTable.Items || activeOrderForTable.items || [];
-                                                    parsed = typeof raw === "string" ? JSON.parse(raw) : raw; 
-                                                } catch(e){}
-                                                
-                                                return parsed.map((item, idx) => {
-                                                    const isBypassed = item.prepTime === "Bypass Prep";
-                                                    const isCollected = item.status === "ready";
-                                                    
-                                                    let itemStatusText = "⏳ Queued";
-                                                    let statusColor = "#667eea";
-                                                    let actionButtonHtml = null;
-                                                    
-                                                    if (activeOrderForTable.Status === 'served') {
-                                                        itemStatusText = "✓ Delivered";
-                                                        statusColor = "#7e22ce";
-                                                    } else if (isBypassed) {
-                                                        if (isCollected) {
-                                                            itemStatusText = "📥 Collected";
-                                                            statusColor = "#10b981";
-                                                        } else {
-                                                            itemStatusText = "⏳ Waiting Collection";
-                                                            statusColor = "#f59e0b";
-                                                            actionButtonHtml = (
-                                                                <button className="btn btn-primary" style={{ padding: '4px 10px', fontSize: '11px', width: 'auto', marginTop: '2px' }} onClick={() => handleCollectBypassedItem(activeOrderForTable.OrderID || activeOrderForTable.orderId, item.name || item.Name)}>
-                                                                    📥 Collect
-                                                                </button>
-                                                            );
-                                                        }
-                                                    } else if (item.status === "ready") {
-                                                        itemStatusText = "✅ Ready";
-                                                        statusColor = "#10b981";
-                                                    } else if (item.status === "preparing" || item.chef) {
-                                                        itemStatusText = `👨‍🍳 Cook (${item.chef || "Chef"})`;
-                                                        statusColor = "#f59e0b";
-                                                    }
-                                                    
-                                                    return (
-                                                        <div key={idx} style={{ display: "flex", flexDirection: "column", borderBottom: '1px solid #f3f4f6', paddingBottom: '6px' }}>
-                                                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "14px", alignItems: "center" }}>
-                                                                <span>{item.qty || item.quantity}× {item.name || item.Name}</span>
-                                                                <span style={{ fontWeight: "700", color: statusColor }}>
-                                                                    {itemStatusText}
-                                                                </span>
+                                        {orderItems.length === 0 ? (
+                                            <div style={{ textAlign: 'center', padding: '30px 10px', color: '#94a3b8' }}>
+                                                <div style={{ fontSize: '32px', marginBottom: '6px' }}>📝</div>
+                                                <div style={{ fontWeight: 700, fontSize: '14px', color: '#1e293b' }}>Cart is empty</div>
+                                                <div style={{ fontSize: '11px', marginTop: '4px' }}>Click items from menu to add</div>
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                <div className="order-items-list" style={{ maxHeight: '220px' }}>
+                                                    {orderItems.map(item => (
+                                                        <div key={item.id} className="order-item-row">
+                                                            <div>
+                                                                <div className="oir-name">{item.name}</div>
+                                                                <div className="oir-price">{currency} {item.price.toFixed(2)} × {item.quantity} = {currency} {(item.price * item.quantity).toFixed(2)}</div>
                                                             </div>
-                                                            {actionButtonHtml && <div style={{ display: "flex", justifyContent: "flex-end" }}>{actionButtonHtml}</div>}
-                                                        </div>
-                                                    );
-                                                });
-                                            })()}
-                                        </div>
-                                    </div>
-
-                                    {/* DYNAMIC ADD-ON CART VIEW */}
-                                    {orderItems.length > 0 ? (
-                                        <div style={{ marginTop: '16px', borderTop: '2px dashed #cbd5e1', paddingTop: '16px' }}>
-                                            <h3 style={{ fontSize: '15px', color: '#1a1a2e', marginBottom: '12px' }}>🛒 New Add-on Cart</h3>
-                                            <div className="order-items" style={{ maxHeight: '180px' }}>
-                                                {orderItems.map(item => (
-                                                    <div key={item.id} className="order-item" style={{ background: '#f1f5f9' }}>
-                                                        <div className="order-item-info">
-                                                            <div className="order-item-name" style={{ fontSize: '13px' }}>{item.name}</div>
-                                                            <div className="order-item-price" style={{ fontSize: '12px' }}>
-                                                                {currency} {item.price.toFixed(2)} × {item.quantity} = {currency} {(item.price * item.quantity).toFixed(2)}
+                                                            <div className="oir-controls">
+                                                                <button className="qty-btn" onClick={() => updateQuantity(item.id, -1)}>−</button>
+                                                                <span style={{ fontWeight: 800, minWidth: '18px', textAlign: 'center', fontSize: '13px' }}>{item.quantity}</span>
+                                                                <button className="qty-btn" onClick={() => updateQuantity(item.id, 1)}>+</button>
                                                             </div>
                                                         </div>
-                                                        <div className="order-item-qty">
-                                                            <button className="qty-btn" style={{ width: '22px', height: '22px', fontSize: '12px' }} onClick={() => updateQuantity(item.id, -1)}>−</button>
-                                                            <span className="qty-number" style={{ fontSize: '12px', minWidth: '18px' }}>{item.quantity}</span>
-                                                            <button className="qty-btn" style={{ width: '22px', height: '22px', fontSize: '12px' }} onClick={() => updateQuantity(item.id, 1)}>+</button>
+                                                    ))}
+                                                </div>
+
+                                                <div className="totals-summary">
+                                                    <div className="totals-row"><span>Subtotal:</span><span>{currency} {calculateTotal().toFixed(2)}</span></div>
+                                                    <div className="totals-row"><span>Tax ({(taxRate * 100).toFixed(0)}%):</span><span>{currency} {(calculateTotal() * taxRate).toFixed(2)}</span></div>
+                                                    <div className="totals-row grand-total"><span>Total:</span><span>{currency} {(calculateTotal() * (1 + taxRate)).toFixed(2)}</span></div>
+                                                </div>
+
+                                                {/* TILL TAKEAWAY PAYMENT CONTROLS */}
+                                                {activeAppMode === 'till' ? (
+                                                    <div>
+                                                        <div className="payment-box" style={{ padding: '10px', marginTop: '10px' }}>
+                                                            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                                                                <button className={`btn ${paymentMethod === 'Cash' ? 'btn-primary' : 'btn-ghost'}`} style={{ padding: '6px', fontSize: '11px' }} onClick={() => setPaymentMethod('Cash')}>💵 Cash</button>
+                                                                <button className={`btn ${paymentMethod === 'Card' ? 'btn-primary' : 'btn-ghost'}`} style={{ padding: '6px', fontSize: '11px' }} onClick={() => setPaymentMethod('Card')}>💳 Card</button>
+                                                            </div>
+                                                            {paymentMethod === 'Cash' && (
+                                                                <input 
+                                                                    type="number" 
+                                                                    className="search-box" 
+                                                                    style={{ margin: 0, padding: '6px 10px', fontSize: '13px' }}
+                                                                    placeholder={`Tendered: ${(calculateTotal() * (1 + taxRate)).toFixed(2)}`}
+                                                                    value={tillCashTendered}
+                                                                    onChange={(e) => setTillCashTendered(e.target.value)}
+                                                                />
+                                                            )}
+                                                        </div>
+                                                        <div className="action-stack">
+                                                            <button className="btn btn-success" onClick={handleTillQuickCheckout}>
+                                                                💰 Takeaway Payment & Print
+                                                            </button>
+                                                            <button className="btn btn-danger" style={{ padding: '8px' }} onClick={() => setOrderItems([])}>
+                                                                🗑️ Clear Cart
+                                                            </button>
                                                         </div>
                                                     </div>
-                                                ))}
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold', margin: '8px 0' }}>
-                                                <span>Subtotal of Add-ons:</span>
-                                                <span>{currency} {calculateTotal().toFixed(2)}</span>
-                                            </div>
-                                            <div className="action-buttons" style={{ marginTop: '12px' }}>
-                                                <button className="btn btn-primary" onClick={() => handleSendAddOnToKitchen(activeOrderForTable.OrderID || activeOrderForTable.orderId)}>
-                                                    📤 Send Add-on to Kitchen
-                                                </button>
-                                                <button className="btn btn-danger" style={{ padding: '8px' }} onClick={() => setOrderItems([])}>
-                                                    🗑️ Cancel Add-ons
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <div className="order-summary" style={{ borderTop: "none", marginTop: 0 }}>
-                                                <div className="summary-row" style={{ fontWeight: "700", fontSize: "16px", color: "#1a1a2e" }}>
-                                                    <span>Active Total:</span>
-                                                    <span>{currency} {parseFloat(activeOrderForTable.Total || activeOrderForTable.total || 0).toFixed(2)}</span>
-                                                </div>
-                                            </div>
-
-                                            <div className="action-buttons">
-                                                {activeOrderForTable.Status === "ready" && (
-                                                    <button className="btn btn-success" onClick={() => handleDeliverOrder(activeOrderForTable.OrderID || activeOrderForTable.orderId)}>
-                                                        🚀 Deliver Order to Table
-                                                    </button>
-                                                )}
-
-                                                {activeOrderForTable.Status === "served" && (
-                                                    <button className="btn btn-secondary" onClick={() => handleProcessPayment(activeOrderForTable.OrderID || activeOrderForTable.orderId)}>
-                                                        💷 Checkout & Pay Bill
-                                                    </button>
-                                                )}
-
-                                                <button className="btn btn-ghost" onClick={() => setSelectedTable(null)}>
-                                                    ← Back to Tables
-                                                </button>
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                            ) : orderItems.length === 0 ? (
-                                <div className="empty-state">
-                                    <div className="empty-state-icon">📝</div>
-                                    <div>No active order</div>
-                                    <div style={{ fontSize: '12px', marginTop: '8px' }}>
-                                        Click menu items on the left to build order
-                                    </div>
-                                </div>
-                            ) : (
-                                <>
-                                    <div className="order-items">
-                                        {orderItems.map(item => (
-                                            <div key={item.id} className="order-item">
-                                                <div className="order-item-info">
-                                                    <div className="order-item-name">{item.name}</div>
-                                                    <div className="order-item-price">
-                                                        {currency} {item.price.toFixed(2)} × {item.quantity} = {currency} {(item.price * item.quantity).toFixed(2)}
+                                                ) : (
+                                                    /* WAITER SEND BUTTONS */
+                                                    <div className="action-stack">
+                                                        {activeOrderForTable ? (
+                                                            <button className="btn btn-primary" onClick={() => handleSendAddOnToKitchen(activeOrderForTable.OrderID || activeOrderForTable.orderId)}>
+                                                                📤 Send Add-on to Kitchen
+                                                            </button>
+                                                        ) : (
+                                                            <button className="btn btn-primary" onClick={handleSendToKitchen}>
+                                                                📤 Send Order to Kitchen
+                                                            </button>
+                                                        )}
+                                                        <button className="btn btn-danger" style={{ padding: '8px' }} onClick={() => setOrderItems([])}>
+                                                            🗑️ Clear Cart
+                                                        </button>
                                                     </div>
-                                                </div>
-                                                <div className="order-item-qty">
-                                                    <button className="qty-btn" onClick={() => updateQuantity(item.id, -1)}>−</button>
-                                                    <span className="qty-number">{item.quantity}</span>
-                                                    <button className="qty-btn" onClick={() => updateQuantity(item.id, 1)}>+</button>
-                                                </div>
+                                                )}
                                             </div>
-                                        ))}
+                                        )}
                                     </div>
-
-                                    <div className="order-summary">
-                                        <div className="summary-row">
-                                            <span>Subtotal:</span>
-                                            <span>{currency} {calculateTotal().toFixed(2)}</span>
-                                        </div>
-                                        <div className="summary-row">
-                                            <span>Tax ({(taxRate * 100).toFixed(0)}%):</span>
-                                            <span>{currency} {(calculateTotal() * taxRate).toFixed(2)}</span>
-                                        </div>
-                                        <div className="summary-row total">
-                                            <span>Total:</span>
-                                            <span>{currency} {(calculateTotal() * (1 + taxRate)).toFixed(2)}</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="action-buttons">
-                                        <button className="btn btn-primary" onClick={handleSendToKitchen}>
-                                            📤 Send to Kitchen
-                                        </button>
-                                        <button className="btn btn-danger" onClick={() => setOrderItems([])}>
-                                            🗑️ Clear Cart
-                                        </button>
-                                    </div>
-                                </>
-                            )}
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -1357,7 +1196,7 @@
         }
 
         window.startWaiterApp = function() {
-            ReactDOM.render(<WaiterApp />, document.getElementById('root'));
+            ReactDOM.render(<MainApp />, document.getElementById('root'));
         };
     </script>
 
