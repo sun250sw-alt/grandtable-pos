@@ -66,7 +66,7 @@
         /* MAIN LAYOUT */
         .main-layout {
             display: grid;
-            grid-template-columns: 310px 1fr 420px;
+            grid-template-columns: 310px 1fr 440px;
             gap: 14px;
             height: calc(100vh - 96px);
         }
@@ -218,7 +218,45 @@
         .mci-name { font-weight: 700; font-size: 13px; margin-bottom: 4px; line-height: 1.3; }
         .mci-price { color: #4338ca; font-weight: 800; font-size: 14px; }
 
-        /* ORDER PANEL */
+        /* ORDER PROGRESS & DISHES ORDERED LIST */
+        .progress-box {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 8px;
+        }
+        .progress-status {
+            font-weight: 800;
+            text-transform: uppercase;
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: 6px;
+        }
+        .status-cooking { background: #fef3c7; color: #d97706; }
+        .status-queue { background: #fee2e2; color: #ef4444; }
+        .status-ready { background: #d1fae5; color: #065f46; animation: blink-status 1.5s infinite; }
+        .status-delivered { background: #f3e8ff; color: #7e22ce; }
+        @keyframes blink-status { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+        .dishes-list { display: flex; flex-direction: column; gap: 8px; }
+        .dish-row {
+            display: flex;
+            flex-direction: column;
+            border-bottom: 1px dashed #e2e8f0;
+            padding-bottom: 6px;
+        }
+        .dish-row-top { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; }
+
+        /* ORDER PANEL & ADD-ON CART */
         .order-panel-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
         .order-items-list { flex: 1; overflow-y: auto; margin-bottom: 10px; }
         .order-item-row {
@@ -245,7 +283,7 @@
         }
         .qty-btn:hover { background: #f1f5f9; border-color: #6366f1; }
 
-        /* TOUCH NUMPAD & TILL CASH TENDER DRAWER */
+        /* TOUCH NUMPAD & TILL PAYMENT DRAWER */
         .payment-box {
             background: #f8fafc;
             border: 1px solid #cbd5e1;
@@ -273,7 +311,7 @@
         }
         .tender-btn:hover { background: #6366f1; color: white; }
 
-        /* Touch On-Screen Numeric Keypad */
+        /* Touch Keypad */
         .touch-numpad {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -281,7 +319,7 @@
             margin-top: 6px;
         }
         .num-btn {
-            padding: 10px;
+            padding: 9px;
             background: white;
             border: 1px solid #cbd5e1;
             border-radius: 8px;
@@ -372,7 +410,7 @@
         .notification.success { border-left: 4px solid #10b981; }
         .notification.error   { border-left: 4px solid #ef4444; }
 
-        /* MODAL DIALOGS (PAYMENT SUCCESS & HISTORY) */
+        /* MODAL DIALOGS */
         .modal-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -387,7 +425,7 @@
         .modal-card {
             background: white;
             border-radius: 16px;
-            max-width: 640px;
+            max-width: 580px;
             width: 100%;
             max-height: 85vh;
             display: flex;
@@ -528,9 +566,12 @@
             
             // Till & Cash Tender State
             const [tillCashTendered, setTillCashTendered]   = useState("");
-            const [paymentMethod, setPaymentMethod]         = useState("Cash"); // "Cash" | "Card"
+            const [paymentMethod, setPaymentMethod]         = useState("Cash");
             const [completedPaymentModal, setCompletedPaymentModal] = useState(null);
             const [showHistoryModal, setShowHistoryModal]   = useState(false);
+
+            // Add-on Confirmation Dialog Modal State
+            const [addonConfirmData, setAddonConfirmData]   = useState(null);
 
             async function loadData() {
                 const api = getPosApi();
@@ -663,7 +704,6 @@
                 return orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             };
 
-            // Touch Numeric Keypad Handler
             const handleKeypadPress = (val, totalDue = 0) => {
                 if (val === "C") {
                     setTillCashTendered("");
@@ -680,7 +720,7 @@
                 }
             };
 
-            // ── WAITER: SEND ORDER TO KITCHEN ──
+            // ── SEND NEW ORDER TO KITCHEN ──
             const handleSendToKitchen = async () => {
                 if (!selectedTable) {
                     showNotification("Please select a table first!", "error");
@@ -736,18 +776,34 @@
                 }
             };
 
-            // ── WAITER: ADD-ON ITEMS TO ACTIVE TABLE ──
-            const handleSendAddOnToKitchen = async (orderId) => {
+            // ── ADD-ON CONFIRMATION & SEND TO KITCHEN ──
+            const triggerAddOnConfirmation = (orderId, tableNumber) => {
                 if (orderItems.length === 0) return;
+                setAddonConfirmData({
+                    orderId,
+                    tableNumber,
+                    items: [...orderItems],
+                    subtotal: calculateTotal()
+                });
+            };
+
+            const confirmAndSendAddOnToKitchen = async () => {
+                if (!addonConfirmData) return;
+                const { orderId, items } = addonConfirmData;
+                setAddonConfirmData(null);
+                setLoading(true);
+
                 const api = getPosApi();
                 if (!api) return;
 
-                setLoading(true);
                 try {
                     let orderRow = null;
                     if (api.Orders && typeof api.Orders.getAll === "function") {
                         const res = await api.Orders.getAll();
                         orderRow = (res && res.data ? res.data : []).find(r => (r.OrderID || r.orderId || r.id) === orderId);
+                    } else if (typeof api.getRows === "function") {
+                        const rows = await api.getRows("Orders");
+                        orderRow = (rows || []).find(r => (r.OrderID || r.orderId || r.id) === orderId);
                     }
 
                     if (orderRow) {
@@ -757,7 +813,7 @@
                             itemsArray = typeof raw === "string" ? JSON.parse(raw) : raw; 
                         } catch(e){}
                         
-                        orderItems.forEach(newItem => {
+                        items.forEach(newItem => {
                             const existing = itemsArray.find(it => (it.name || it.Name) === newItem.name);
                             if (existing) {
                                 existing.qty = (parseInt(existing.qty || existing.quantity || 1, 10) + newItem.quantity);
@@ -781,7 +837,7 @@
                         const nextTax = parseFloat((nextSubtotal * taxRate).toFixed(2));
                         const nextTotal = parseFloat((nextSubtotal + nextTax).toFixed(2));
 
-                        const needsNewPrep = orderItems.some(it => it.prepTime !== "Bypass Prep");
+                        const needsNewPrep = items.some(it => it.prepTime !== "Bypass Prep");
                         let nextStatus = orderRow.Status || orderRow.status;
                         if (needsNewPrep) {
                             nextStatus = "preparing";
@@ -798,7 +854,7 @@
                             });
                         }
 
-                        showNotification("Add-on items sent to kitchen!");
+                        showNotification("Add-on items sent to kitchen successfully!");
                         setOrderItems([]);
                         loadData();
                     }
@@ -808,7 +864,78 @@
                 setLoading(false);
             };
 
-            // ── TILL: TAKEAWAY / QUICK POS SALE CHECKOUT ──
+            // ── DELIVER ORDER ──
+            const handleDeliverOrder = async (orderId) => {
+                const api = getPosApi();
+                if (!api) return;
+                try {
+                    if (api.Orders && typeof api.Orders.update === "function") {
+                        await api.Orders.update({ orderId, status: "served" });
+                    }
+                    if (api.Tables && typeof api.Tables.update === "function" && selectedTable) {
+                        await api.Tables.update({
+                            tableNumber: selectedTable.number,
+                            status: "delivered",
+                            currentWaiter: currentServer,
+                            guests: selectedTable.guests
+                        });
+                    }
+                    showNotification("Order marked as delivered!");
+                    setSelectedTable(prev => prev ? { ...prev, status: "delivered" } : null);
+                    loadData();
+                } catch(e) {
+                    showNotification("Failed to deliver: " + e.message, "error");
+                }
+            };
+
+            // ── COLLECT BYPASS PREP ITEM ──
+            const handleCollectBypassedItem = async (orderId, itemName) => {
+                const api = getPosApi();
+                if (!api) return;
+
+                try {
+                    let orderRow = null;
+                    if (api.Orders && typeof api.Orders.getAll === "function") {
+                        const res = await api.Orders.getAll();
+                        orderRow = (res && res.data ? res.data : []).find(r => (r.OrderID || r.orderId || r.id) === orderId);
+                    }
+
+                    if (orderRow) {
+                        let itemsArray = [];
+                        try { 
+                            const raw = orderRow.Items || orderRow.items || [];
+                            itemsArray = typeof raw === "string" ? JSON.parse(raw) : raw; 
+                        } catch(e){}
+                        
+                        itemsArray = itemsArray.map(it => {
+                            if ((it.name || it.Name) === itemName) {
+                                it.status = "ready";
+                                it.chef = currentServer + " (Waiter)";
+                            }
+                            return it;
+                        });
+
+                        const allReady = itemsArray.every(it => {
+                            return it.status === "ready" || it.prepTime === "Bypass Prep";
+                        });
+
+                        if (api.Orders && typeof api.Orders.update === "function") {
+                            await api.Orders.update({
+                                orderId: orderId,
+                                status: allReady ? "ready" : "preparing",
+                                items: itemsArray
+                            });
+                        }
+                        
+                        showNotification(`Collected ${itemName}!`);
+                        loadData();
+                    }
+                } catch(e) {
+                    showNotification("Failed to collect: " + e.message, "error");
+                }
+            };
+
+            // ── TILL: TAKEAWAY / QUICK POS SALE ──
             const handleTillQuickCheckout = async () => {
                 if (orderItems.length === 0) {
                     showNotification("Add items to till cart first!", "error");
@@ -848,7 +975,6 @@
                         await api.Orders.create(newOrder);
                     }
 
-                    // Open Change Modal & Print Slip
                     setCompletedPaymentModal({
                         orderId: generatedId,
                         table: "Takeaway",
@@ -898,7 +1024,6 @@
                         });
                     }
 
-                    // Open Change Modal & Print Slip
                     setCompletedPaymentModal({
                         orderId: order.OrderID || order.orderId,
                         table: `Table ${order.TableNumber || selectedTable.number}`,
@@ -919,7 +1044,7 @@
                 }
             };
 
-            // Active order for the selected table
+            // Active order for selected table
             const activeOrderForTable = selectedTable 
                 ? liveOrders.find(o => 
                     parseInt(o.TableNumber || o.table) === parseInt(selectedTable.number) && 
@@ -927,7 +1052,7 @@
                   )
                 : null;
 
-            // ── SERVER SELECTION HOME SCREEN ──
+            // ── SERVER SELECTION SCREEN ──
             if (!currentServer) {
                 const renderList = staff.map(s => s.Name || s.StaffName || s.name).filter(Boolean);
 
@@ -969,7 +1094,7 @@
                     <div className="header">
                         <h1>🍽️ The Grand Table</h1>
                         
-                        {/* MODE SWITCHER TABS */}
+                        {/* MODE SWITCHER */}
                         <div className="mode-switcher">
                             <button 
                                 className={`mode-tab ${activeAppMode === 'waiter' ? 'active' : ''}`}
@@ -997,10 +1122,10 @@
                     </div>
 
                     <div className="main-layout">
-                        {/* ── COLUMN 1: TABLES (FLOOR OR TILL TABLE BILL SELECTOR) ── */}
+                        {/* ── COLUMN 1: TABLES ── */}
                         <div className="panel">
                             <h2>
-                                <span>{activeAppMode === 'till' ? '🪑 Active Table Bills' : 'Tables'}</span>
+                                <span>{activeAppMode === 'till' ? '🪑 Table Bills & Orders' : 'Tables'}</span>
                                 {activeAppMode === 'till' && (
                                     <button 
                                         className={`btn ${!selectedTable ? 'btn-primary' : 'btn-ghost'}`} 
@@ -1103,10 +1228,10 @@
                             )}
                         </div>
 
-                        {/* ── COLUMN 3: ORDER, BILLING & TOUCH KEYPAD TILL PANEL ── */}
+                        {/* ── COLUMN 3: ORDER DETAILS, LIVE DISH STATUS & BILLING ── */}
                         <div className="panel">
                             <h2>
-                                <span>{activeAppMode === 'till' ? '💳 Till Cashier Checkout' : 'Current Order'}</span>
+                                <span>{activeAppMode === 'till' ? '💳 Till Payment & Bill' : 'Current Order'}</span>
                                 {selectedTable ? (
                                     <span className="badge badge-occupied">Table {selectedTable.number}</span>
                                 ) : (
@@ -1115,228 +1240,341 @@
                             </h2>
 
                             <div className="order-panel-body">
-                                {/* ── A. TILL MODE WITH ACTIVE TABLE SELECTED (BILL SETTLEMENT) ── */}
-                                {activeAppMode === 'till' && selectedTable && activeOrderForTable ? (
+                                {!selectedTable && activeAppMode !== 'till' ? (
+                                    <div style={{ textAlign: 'center', padding: '40px 10px', color: '#94a3b8' }}>
+                                        <div style={{ fontSize: '40px', marginBottom: '8px' }}>🍽️</div>
+                                        <div style={{ fontWeight: 700, fontSize: '15px', color: '#1e293b' }}>Select a Table to start</div>
+                                        <div style={{ fontSize: '12px', marginTop: '4px' }}>Choose a table on the left to view dishes or create an order</div>
+                                    </div>
+                                ) : activeOrderForTable ? (
+                                    /* ── ACTIVE TABLE ORDER: FULL DISHES & KITCHEN STATUS BREAKDOWN ── */
                                     (() => {
+                                        let parsedItems = [];
+                                        try {
+                                            const raw = activeOrderForTable.Items || activeOrderForTable.items || [];
+                                            parsedItems = typeof raw === "string" ? JSON.parse(raw) : raw;
+                                        } catch(e){}
+
                                         const sub = parseFloat(activeOrderForTable.Subtotal || activeOrderForTable.subtotal || 0);
                                         const tx = parseFloat(activeOrderForTable.Tax || activeOrderForTable.tax || (sub * taxRate));
                                         const tot = parseFloat(activeOrderForTable.Total || activeOrderForTable.total || (sub + tx));
                                         const tendered = paymentMethod === "Cash" ? (parseFloat(tillCashTendered) || 0) : tot;
                                         const change = Math.max(0, tendered - tot);
-                                        let items = [];
-                                        try { items = JSON.parse(activeOrderForTable.Items); } catch(e){}
+
+                                        const ordStatus = (activeOrderForTable.Status || "").toLowerCase();
 
                                         return (
                                             <div>
-                                                <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '8px' }}>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '13px' }}>
-                                                        <span>Order #{activeOrderForTable.OrderID || activeOrderForTable.orderId}</span>
-                                                        <span>Table {selectedTable.number}</span>
-                                                    </div>
-                                                </div>
-
-                                                <div style={{ maxHeight: '120px', overflowY: 'auto', marginBottom: '8px' }}>
-                                                    {items.map((it, idx) => (
-                                                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '4px 0', borderBottom: '1px dashed #e2e8f0' }}>
-                                                            <span>{it.qty || it.quantity}× {it.name || it.Name}</span>
-                                                            <span style={{ fontWeight: 700 }}>{currency} {(parseFloat(it.price) * parseInt(it.qty || it.quantity || 1)).toFixed(2)}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-
-                                                <div className="totals-summary" style={{ marginTop: 0 }}>
-                                                    <div className="totals-row"><span>Subtotal:</span><span>{currency} {sub.toFixed(2)}</span></div>
-                                                    <div className="totals-row"><span>Tax ({(taxRate * 100).toFixed(0)}%):</span><span>{currency} {tx.toFixed(2)}</span></div>
-                                                    <div className="totals-row grand-total"><span>Amount Due:</span><span>{currency} {tot.toFixed(2)}</span></div>
-                                                </div>
-
-                                                {/* Till Payment Drawer with Touch Keypad */}
-                                                <div className="payment-box">
-                                                    <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
-                                                        <button 
-                                                            className={`btn ${paymentMethod === 'Cash' ? 'btn-primary' : 'btn-ghost'}`} 
-                                                            style={{ padding: '6px', fontSize: '12px' }}
-                                                            onClick={() => setPaymentMethod('Cash')}
-                                                        >
-                                                            💵 Cash
-                                                        </button>
-                                                        <button 
-                                                            className={`btn ${paymentMethod === 'Card' ? 'btn-primary' : 'btn-ghost'}`} 
-                                                            style={{ padding: '6px', fontSize: '12px' }}
-                                                            onClick={() => setPaymentMethod('Card')}
-                                                        >
-                                                            💳 Card
-                                                        </button>
-                                                    </div>
-
-                                                    {paymentMethod === 'Cash' && (
+                                                {/* Status Progress Header Card */}
+                                                <div className="progress-box">
+                                                    <div className="progress-header">
                                                         <div>
-                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
-                                                                <span>TENDERED AMOUNT:</span>
-                                                                <span style={{ color: '#4f46e5', fontSize: '14px' }}>{currency} {tillCashTendered || '0.00'}</span>
-                                                            </div>
-
-                                                            {/* Quick Denominations */}
-                                                            <div className="tender-grid">
-                                                                <button className="tender-btn" onClick={() => handleKeypadPress("Exact", tot)}>Exact</button>
-                                                                <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 100) * 100).toString())}>+100</button>
-                                                                <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 500) * 500).toString())}>+500</button>
-                                                                <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 1000) * 1000).toString())}>+1000</button>
-                                                            </div>
-
-                                                            {/* Touch Keypad */}
-                                                            <div className="touch-numpad">
-                                                                {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map(k => (
-                                                                    <button key={k} className={`num-btn ${k === "⌫" ? 'num-btn-action' : ''}`} onClick={() => handleKeypadPress(k, tot)}>
-                                                                        {k}
-                                                                    </button>
-                                                                ))}
-                                                            </div>
-                                                            <button className="num-btn num-btn-action" style={{ width: '100%', marginTop: '5px', padding: '6px' }} onClick={() => handleKeypadPress("C")}>
-                                                                Clear Amount (C)
-                                                            </button>
-
-                                                            {/* Live Change Indicator */}
-                                                            <div className="change-banner">
-                                                                <span>Change to Return:</span>
-                                                                <span style={{ fontSize: '16px' }}>{currency} {change.toFixed(2)}</span>
+                                                            <strong style={{ fontSize: '13px' }}>{activeOrderForTable.OrderID}</strong>
+                                                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '1px' }}>
+                                                                Server: {activeOrderForTable.WaiterName || 'Staff'}
                                                             </div>
                                                         </div>
-                                                    )}
+                                                        <div style={{ textAlign: 'right' }}>
+                                                            {ordStatus !== "served" && <OrderTimer orderTime={activeOrderForTable.OrderTime || activeOrderForTable.orderTime} />}
+                                                            <div style={{ marginTop: '3px' }}>
+                                                                <span className={`progress-status ${
+                                                                    ordStatus === 'ready' ? 'status-ready' : 
+                                                                    ordStatus === 'preparing' ? 'status-cooking' : 
+                                                                    ordStatus === 'served' ? 'status-delivered' : 'status-queue'
+                                                                }`}>
+                                                                    {ordStatus === 'ready' ? 'Ready' : 
+                                                                     ordStatus === 'preparing' ? 'Cooking' : 
+                                                                     ordStatus === 'served' ? 'Served' : 'In Queue'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Itemized Dishes List with Live Cooking Status */}
+                                                    <div style={{ margin: '8px 0 4px' }}>
+                                                        <strong style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b' }}>Dishes Ordered:</strong>
+                                                    </div>
+
+                                                    <div className="dishes-list">
+                                                        {parsedItems.map((item, idx) => {
+                                                            const isBypassed = item.prepTime === "Bypass Prep";
+                                                            const isCollected = item.status === "ready";
+                                                            
+                                                            let itemStatusText = "⏳ Queued";
+                                                            let statusColor = "#4f46e5";
+                                                            let actionButtonHtml = null;
+
+                                                            if (ordStatus === 'served') {
+                                                                itemStatusText = "✓ Delivered";
+                                                                statusColor = "#7e22ce";
+                                                            } else if (isBypassed) {
+                                                                if (isCollected) {
+                                                                    itemStatusText = "📥 Collected";
+                                                                    statusColor = "#10b981";
+                                                                } else {
+                                                                    itemStatusText = "⏳ Ready to Collect";
+                                                                    statusColor = "#f59e0b";
+                                                                    actionButtonHtml = (
+                                                                        <button 
+                                                                            className="btn btn-primary" 
+                                                                            style={{ padding: '3px 8px', fontSize: '10px', width: 'auto', marginTop: '2px' }} 
+                                                                            onClick={() => handleCollectBypassedItem(activeOrderForTable.OrderID, item.name || item.Name)}
+                                                                        >
+                                                                            📥 Collect
+                                                                        </button>
+                                                                    );
+                                                                }
+                                                            } else if (item.status === "ready") {
+                                                                itemStatusText = "✅ Ready";
+                                                                statusColor = "#10b981";
+                                                            } else if (item.status === "preparing" || item.chef) {
+                                                                itemStatusText = `👨‍🍳 Cook (${item.chef || "Chef"})`;
+                                                                statusColor = "#d97706";
+                                                            }
+
+                                                            return (
+                                                                <div key={idx} className="dish-row">
+                                                                    <div className="dish-row-top">
+                                                                        <span>{item.qty || item.quantity}× {item.name || item.Name}</span>
+                                                                        <span style={{ fontWeight: 800, fontSize: '11px', color: statusColor }}>{itemStatusText}</span>
+                                                                    </div>
+                                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px' }}>
+                                                                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                                                                            {currency} {(parseFloat(item.price || 0) * parseInt(item.qty || 1)).toFixed(2)}
+                                                                        </span>
+                                                                        {actionButtonHtml}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 </div>
 
-                                                <div className="action-stack">
-                                                    <button className="btn btn-success" onClick={() => handleSettleTableBill(activeOrderForTable)}>
-                                                        ✅ Settle Bill & Print Receipt
-                                                    </button>
-                                                    <button className="btn btn-ghost" onClick={() => printReceipt(activeOrderForTable, { method: paymentMethod }, currency, taxRate)}>
-                                                        🖨️ Print Bill Only
-                                                    </button>
-                                                </div>
+                                                {/* ── ADD-ON CART VIEW (WHEN MENU ITEMS ARE CLICKED) ── */}
+                                                {orderItems.length > 0 ? (
+                                                    <div style={{ border: '2px dashed #cbd5e1', padding: '10px', borderRadius: '10px', background: '#f8fafc', marginBottom: '10px' }}>
+                                                        <h3 style={{ fontSize: '13px', color: '#1e1b4b', marginBottom: '8px' }}>🛒 New Add-on Cart</h3>
+                                                        <div className="order-items-list" style={{ maxHeight: '120px' }}>
+                                                            {orderItems.map(item => (
+                                                                <div key={item.id} className="order-item-row" style={{ background: 'white' }}>
+                                                                    <div>
+                                                                        <div className="oir-name">{item.name}</div>
+                                                                        <div className="oir-price">{currency} {item.price.toFixed(2)} × {item.quantity} = {currency} {(item.price * item.quantity).toFixed(2)}</div>
+                                                                    </div>
+                                                                    <div className="oir-controls">
+                                                                        <button className="qty-btn" onClick={() => updateQuantity(item.id, -1)}>−</button>
+                                                                        <span style={{ fontWeight: 800, minWidth: '18px', textAlign: 'center', fontSize: '13px' }}>{item.quantity}</span>
+                                                                        <button className="qty-btn" onClick={() => updateQuantity(item.id, 1)}>+</button>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 800, margin: '6px 0' }}>
+                                                            <span>Add-ons Subtotal:</span>
+                                                            <span>{currency} {calculateTotal().toFixed(2)}</span>
+                                                        </div>
+                                                        <div className="action-stack">
+                                                            <button 
+                                                                className="btn btn-primary" 
+                                                                onClick={() => triggerAddOnConfirmation(activeOrderForTable.OrderID, selectedTable.number)}
+                                                            >
+                                                                📤 Send Add-on to Kitchen
+                                                            </button>
+                                                            <button className="btn btn-danger" style={{ padding: '7px' }} onClick={() => setOrderItems([])}>
+                                                                🗑️ Clear Add-ons
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    /* ── FINANCIAL TOTALS & ACTIONS ── */
+                                                    <div>
+                                                        <div className="totals-summary" style={{ marginTop: 0 }}>
+                                                            <div className="totals-row"><span>Subtotal:</span><span>{currency} {sub.toFixed(2)}</span></div>
+                                                            <div className="totals-row"><span>Tax ({(taxRate * 100).toFixed(0)}%):</span><span>{currency} {tx.toFixed(2)}</span></div>
+                                                            <div className="totals-row grand-total"><span>Active Total:</span><span>{currency} {tot.toFixed(2)}</span></div>
+                                                        </div>
+
+                                                        {/* ── TILL SETTLEMENT PAYMENT DRAWER ── */}
+                                                        {activeAppMode === 'till' ? (
+                                                            <div className="payment-box">
+                                                                <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                                                                    <button 
+                                                                        className={`btn ${paymentMethod === 'Cash' ? 'btn-primary' : 'btn-ghost'}`} 
+                                                                        style={{ padding: '6px', fontSize: '12px' }}
+                                                                        onClick={() => setPaymentMethod('Cash')}
+                                                                    >
+                                                                        💵 Cash
+                                                                    </button>
+                                                                    <button 
+                                                                        className={`btn ${paymentMethod === 'Card' ? 'btn-primary' : 'btn-ghost'}`} 
+                                                                        style={{ padding: '6px', fontSize: '12px' }}
+                                                                        onClick={() => setPaymentMethod('Card')}
+                                                                    >
+                                                                        💳 Card
+                                                                    </button>
+                                                                </div>
+
+                                                                {paymentMethod === 'Cash' && (
+                                                                    <div>
+                                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                                                                            <span>TENDERED:</span>
+                                                                            <span style={{ color: '#4f46e5', fontSize: '14px' }}>{currency} {tillCashTendered || '0.00'}</span>
+                                                                        </div>
+
+                                                                        <div className="tender-grid">
+                                                                            <button className="tender-btn" onClick={() => handleKeypadPress("Exact", tot)}>Exact</button>
+                                                                            <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 100) * 100).toString())}>+100</button>
+                                                                            <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 500) * 500).toString())}>+500</button>
+                                                                            <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 1000) * 1000).toString())}>+1000</button>
+                                                                        </div>
+
+                                                                        <div className="touch-numpad">
+                                                                            {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map(k => (
+                                                                                <button key={k} className={`num-btn ${k === "⌫" ? 'num-btn-action' : ''}`} onClick={() => handleKeypadPress(k, tot)}>
+                                                                                    {k}
+                                                                                </button>
+                                                                            ))}
+                                                                        </div>
+                                                                        <button className="num-btn num-btn-action" style={{ width: '100%', marginTop: '5px', padding: '5px' }} onClick={() => handleKeypadPress("C")}>
+                                                                            Clear (C)
+                                                                        </button>
+
+                                                                        <div className="change-banner">
+                                                                            <span>Change Due:</span>
+                                                                            <span style={{ fontSize: '15px' }}>{currency} {change.toFixed(2)}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+
+                                                                <div className="action-stack">
+                                                                    <button className="btn btn-success" onClick={() => handleSettleTableBill(activeOrderForTable)}>
+                                                                        ✅ Settle Bill & Print Receipt
+                                                                    </button>
+                                                                    <button className="btn btn-ghost" onClick={() => printReceipt(activeOrderForTable, { method: paymentMethod }, currency, taxRate)}>
+                                                                        🖨️ Print Bill Only
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            /* ── WAITER FLOOR ACTION BUTTONS ── */
+                                                            <div className="action-stack">
+                                                                {ordStatus === "ready" && (
+                                                                    <button className="btn btn-success" onClick={() => handleDeliverOrder(activeOrderForTable.OrderID)}>
+                                                                        🚀 Deliver Order to Table
+                                                                    </button>
+                                                                )}
+                                                                <button className="btn btn-ghost" onClick={() => setSelectedTable(null)}>
+                                                                    ← Back to Tables
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     })()
+                                ) : orderItems.length === 0 ? (
+                                    /* ── EMPTY STATE FOR NEW ORDERS ── */
+                                    <div style={{ textAlign: 'center', padding: '30px 10px', color: '#94a3b8' }}>
+                                        <div style={{ fontSize: '32px', marginBottom: '6px' }}>📝</div>
+                                        <div style={{ fontWeight: 700, fontSize: '14px', color: '#1e293b' }}>
+                                            {selectedTable ? `Table ${selectedTable.number} is Empty` : 'Takeaway Cart is Empty'}
+                                        </div>
+                                        <div style={{ fontSize: '11px', marginTop: '4px' }}>Click items from menu to start order</div>
+                                    </div>
                                 ) : (
-                                    /* ── B. WAITER ORDERING OR TAKEAWAY CART ── */
+                                    /* ── NEW ORDER CART BUILDING ── */
                                     <div>
-                                        {activeOrderForTable && activeAppMode === 'waiter' && (
-                                            <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '8px' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                    <strong style={{ fontSize: '13px' }}>{activeOrderForTable.OrderID}</strong>
-                                                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#4f46e5' }}>
-                                                        {activeOrderForTable.Status === 'ready' ? '✅ Ready' : activeOrderForTable.Status === 'preparing' ? '🔥 Cooking' : '⏳ In Queue'}
-                                                    </span>
+                                        <div className="order-items-list" style={{ maxHeight: '160px' }}>
+                                            {orderItems.map(item => (
+                                                <div key={item.id} className="order-item-row">
+                                                    <div>
+                                                        <div className="oir-name">{item.name}</div>
+                                                        <div className="oir-price">{currency} {item.price.toFixed(2)} × {item.quantity} = {currency} {(item.price * item.quantity).toFixed(2)}</div>
+                                                    </div>
+                                                    <div className="oir-controls">
+                                                        <button className="qty-btn" onClick={() => updateQuantity(item.id, -1)}>−</button>
+                                                        <span style={{ fontWeight: 800, minWidth: '18px', textAlign: 'center', fontSize: '13px' }}>{item.quantity}</span>
+                                                        <button className="qty-btn" onClick={() => updateQuantity(item.id, 1)}>+</button>
+                                                    </div>
                                                 </div>
-                                                <div style={{ fontSize: '12px', marginTop: '4px' }}>Active Total: <strong>{currency} {parseFloat(activeOrderForTable.Total || 0).toFixed(2)}</strong></div>
-                                            </div>
-                                        )}
+                                            ))}
+                                        </div>
 
-                                        {orderItems.length === 0 ? (
-                                            <div style={{ textAlign: 'center', padding: '30px 10px', color: '#94a3b8' }}>
-                                                <div style={{ fontSize: '32px', marginBottom: '6px' }}>📝</div>
-                                                <div style={{ fontWeight: 700, fontSize: '14px', color: '#1e293b' }}>Cart is empty</div>
-                                                <div style={{ fontSize: '11px', marginTop: '4px' }}>Click items from menu to add</div>
-                                            </div>
-                                        ) : (
-                                            <div>
-                                                <div className="order-items-list" style={{ maxHeight: '160px' }}>
-                                                    {orderItems.map(item => (
-                                                        <div key={item.id} className="order-item-row">
-                                                            <div>
-                                                                <div className="oir-name">{item.name}</div>
-                                                                <div className="oir-price">{currency} {item.price.toFixed(2)} × {item.quantity} = {currency} {(item.price * item.quantity).toFixed(2)}</div>
+                                        <div className="totals-summary">
+                                            <div className="totals-row"><span>Subtotal:</span><span>{currency} {calculateTotal().toFixed(2)}</span></div>
+                                            <div className="totals-row"><span>Tax ({(taxRate * 100).toFixed(0)}%):</span><span>{currency} {(calculateTotal() * taxRate).toFixed(2)}</span></div>
+                                            <div className="totals-row grand-total"><span>Total:</span><span>{currency} {(calculateTotal() * (1 + taxRate)).toFixed(2)}</span></div>
+                                        </div>
+
+                                        {activeAppMode === 'till' ? (
+                                            /* TILL TAKEAWAY PAYMENT */
+                                            (() => {
+                                                const tot = calculateTotal() * (1 + taxRate);
+                                                const tendered = paymentMethod === "Cash" ? (parseFloat(tillCashTendered) || 0) : tot;
+                                                const change = Math.max(0, tendered - tot);
+
+                                                return (
+                                                    <div>
+                                                        <div className="payment-box">
+                                                            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                                                                <button className={`btn ${paymentMethod === 'Cash' ? 'btn-primary' : 'btn-ghost'}`} style={{ padding: '6px', fontSize: '11px' }} onClick={() => setPaymentMethod('Cash')}>💵 Cash</button>
+                                                                <button className={`btn ${paymentMethod === 'Card' ? 'btn-primary' : 'btn-ghost'}`} style={{ padding: '6px', fontSize: '11px' }} onClick={() => setPaymentMethod('Card')}>💳 Card</button>
                                                             </div>
-                                                            <div className="oir-controls">
-                                                                <button className="qty-btn" onClick={() => updateQuantity(item.id, -1)}>−</button>
-                                                                <span style={{ fontWeight: 800, minWidth: '18px', textAlign: 'center', fontSize: '13px' }}>{item.quantity}</span>
-                                                                <button className="qty-btn" onClick={() => updateQuantity(item.id, 1)}>+</button>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
 
-                                                <div className="totals-summary">
-                                                    <div className="totals-row"><span>Subtotal:</span><span>{currency} {calculateTotal().toFixed(2)}</span></div>
-                                                    <div className="totals-row"><span>Tax ({(taxRate * 100).toFixed(0)}%):</span><span>{currency} {(calculateTotal() * taxRate).toFixed(2)}</span></div>
-                                                    <div className="totals-row grand-total"><span>Total:</span><span>{currency} {(calculateTotal() * (1 + taxRate)).toFixed(2)}</span></div>
-                                                </div>
-
-                                                {/* TILL TAKEAWAY PAYMENT DRAWER */}
-                                                {activeAppMode === 'till' ? (
-                                                    (() => {
-                                                        const tot = calculateTotal() * (1 + taxRate);
-                                                        const tendered = paymentMethod === "Cash" ? (parseFloat(tillCashTendered) || 0) : tot;
-                                                        const change = Math.max(0, tendered - tot);
-
-                                                        return (
-                                                            <div>
-                                                                <div className="payment-box">
-                                                                    <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
-                                                                        <button className={`btn ${paymentMethod === 'Cash' ? 'btn-primary' : 'btn-ghost'}`} style={{ padding: '6px', fontSize: '11px' }} onClick={() => setPaymentMethod('Cash')}>💵 Cash</button>
-                                                                        <button className={`btn ${paymentMethod === 'Card' ? 'btn-primary' : 'btn-ghost'}`} style={{ padding: '6px', fontSize: '11px' }} onClick={() => setPaymentMethod('Card')}>💳 Card</button>
+                                                            {paymentMethod === 'Cash' && (
+                                                                <div>
+                                                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                                                                        <span>TENDERED:</span>
+                                                                        <span style={{ color: '#4f46e5', fontSize: '14px' }}>{currency} {tillCashTendered || '0.00'}</span>
                                                                     </div>
 
-                                                                    {paymentMethod === 'Cash' && (
-                                                                        <div>
-                                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
-                                                                                <span>TENDERED:</span>
-                                                                                <span style={{ color: '#4f46e5', fontSize: '14px' }}>{currency} {tillCashTendered || '0.00'}</span>
-                                                                            </div>
+                                                                    <div className="tender-grid">
+                                                                        <button className="tender-btn" onClick={() => handleKeypadPress("Exact", tot)}>Exact</button>
+                                                                        <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 100) * 100).toString())}>+100</button>
+                                                                        <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 500) * 500).toString())}>+500</button>
+                                                                        <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 1000) * 1000).toString())}>+1000</button>
+                                                                    </div>
 
-                                                                            <div className="tender-grid">
-                                                                                <button className="tender-btn" onClick={() => handleKeypadPress("Exact", tot)}>Exact</button>
-                                                                                <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 100) * 100).toString())}>+100</button>
-                                                                                <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 500) * 500).toString())}>+500</button>
-                                                                                <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 1000) * 1000).toString())}>+1000</button>
-                                                                            </div>
-
-                                                                            <div className="touch-numpad">
-                                                                                {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map(k => (
-                                                                                    <button key={k} className={`num-btn ${k === "⌫" ? 'num-btn-action' : ''}`} onClick={() => handleKeypadPress(k, tot)}>
-                                                                                        {k}
-                                                                                    </button>
-                                                                                ))}
-                                                                            </div>
-                                                                            <button className="num-btn num-btn-action" style={{ width: '100%', marginTop: '5px', padding: '5px' }} onClick={() => handleKeypadPress("C")}>
-                                                                                Clear (C)
+                                                                    <div className="touch-numpad">
+                                                                        {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map(k => (
+                                                                            <button key={k} className={`num-btn ${k === "⌫" ? 'num-btn-action' : ''}`} onClick={() => handleKeypadPress(k, tot)}>
+                                                                                {k}
                                                                             </button>
-
-                                                                            <div className="change-banner">
-                                                                                <span>Change Due:</span>
-                                                                                <span style={{ fontSize: '16px' }}>{currency} {change.toFixed(2)}</span>
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-
-                                                                <div className="action-stack">
-                                                                    <button className="btn btn-success" onClick={handleTillQuickCheckout}>
-                                                                        💰 Takeaway Payment & Print
+                                                                        ))}
+                                                                    </div>
+                                                                    <button className="num-btn num-btn-action" style={{ width: '100%', marginTop: '5px', padding: '5px' }} onClick={() => handleKeypadPress("C")}>
+                                                                        Clear (C)
                                                                     </button>
-                                                                    <button className="btn btn-danger" style={{ padding: '7px' }} onClick={() => setOrderItems([])}>
-                                                                        🗑️ Clear Cart
-                                                                    </button>
+
+                                                                    <div className="change-banner">
+                                                                        <span>Change Due:</span>
+                                                                        <span style={{ fontSize: '15px' }}>{currency} {change.toFixed(2)}</span>
+                                                                    </div>
                                                                 </div>
-                                                            </div>
-                                                        );
-                                                    })()
-                                                ) : (
-                                                    /* WAITER SEND BUTTONS */
-                                                    <div className="action-stack">
-                                                        {activeOrderForTable ? (
-                                                            <button className="btn btn-primary" onClick={() => handleSendAddOnToKitchen(activeOrderForTable.OrderID || activeOrderForTable.orderId)}>
-                                                                📤 Send Add-on to Kitchen
+                                                            )}
+                                                        </div>
+
+                                                        <div className="action-stack">
+                                                            <button className="btn btn-success" onClick={handleTillQuickCheckout}>
+                                                                💰 Takeaway Payment & Print
                                                             </button>
-                                                        ) : (
-                                                            <button className="btn btn-primary" onClick={handleSendToKitchen}>
-                                                                📤 Send Order to Kitchen
+                                                            <button className="btn btn-danger" style={{ padding: '7px' }} onClick={() => setOrderItems([])}>
+                                                                🗑️ Clear Cart
                                                             </button>
-                                                        )}
-                                                        <button className="btn btn-danger" style={{ padding: '7px' }} onClick={() => setOrderItems([])}>
-                                                            🗑️ Clear Cart
-                                                        </button>
+                                                        </div>
                                                     </div>
-                                                )}
+                                                );
+                                            })()
+                                        ) : (
+                                            /* WAITER SEND ORDER */
+                                            <div className="action-stack">
+                                                <button className="btn btn-primary" onClick={handleSendToKitchen}>
+                                                    📤 Send Order to Kitchen
+                                                </button>
+                                                <button className="btn btn-danger" style={{ padding: '7px' }} onClick={() => setOrderItems([])}>
+                                                    🗑️ Clear Cart
+                                                </button>
                                             </div>
                                         )}
                                     </div>
@@ -1344,6 +1582,43 @@
                             </div>
                         </div>
                     </div>
+
+                    {/* ── ADD-ON CONFIRMATION MODAL ── */}
+                    {addonConfirmData && (
+                        <div className="modal-overlay">
+                            <div className="modal-card" style={{ maxWidth: '440px', padding: '22px' }}>
+                                <div style={{ fontSize: '36px', textAlign: 'center', marginBottom: '8px' }}>📤</div>
+                                <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#1e1b4b', textAlign: 'center' }}>
+                                    Confirm Add-on Items
+                                </h3>
+                                <p style={{ fontSize: '13px', color: '#64748b', textAlign: 'center', marginTop: '4px' }}>
+                                    Are you sure you want to add the following items to <strong>Table {addonConfirmData.tableNumber}</strong>?
+                                </p>
+
+                                <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px', margin: '14px 0', border: '1px solid #e2e8f0', maxHeight: '160px', overflowY: 'auto' }}>
+                                    {addonConfirmData.items.map((it, idx) => (
+                                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '4px 0', borderBottom: '1px dashed #e2e8f0' }}>
+                                            <span>{it.quantity}× {it.name}</span>
+                                            <strong style={{ color: '#1e1b4b' }}>{currency} {(it.price * it.quantity).toFixed(2)}</strong>
+                                        </div>
+                                    ))}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 800, marginTop: '8px', paddingTop: '6px', borderTop: '1px solid #cbd5e1' }}>
+                                        <span>Add-ons Total:</span>
+                                        <span>{currency} {addonConfirmData.subtotal.toFixed(2)}</span>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button className="btn btn-primary" onClick={confirmAndSendAddOnToKitchen}>
+                                        ✅ Yes, Send to Kitchen
+                                    </button>
+                                    <button className="btn btn-ghost" onClick={() => setAddonConfirmData(null)}>
+                                        ✕ Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* ── PAYMENT SUCCESS & CHANGE MODAL ── */}
                     {completedPaymentModal && (
@@ -1430,55 +1705,3 @@
                                                     ))}
                                                 </tbody>
                                             </table>
-                                        );
-                                    })()}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {notification && (
-                        <div className={`notification ${notification.type}`}>
-                            {notification.message}
-                        </div>
-                    )}
-                </div>
-            );
-        }
-
-        window.startWaiterApp = function() {
-            ReactDOM.render(<MainApp />, document.getElementById('root'));
-        };
-    </script>
-
-    <script>
-    (function initAuth() {
-      function start() {
-        var root = document.getElementById("root");
-        if (root) root.style.display = "block";
-        var loader = document.getElementById("loading-placeholder");
-        if (loader) loader.style.display = "none";
-        
-        if (typeof window.startWaiterApp === "function") {
-            window.startWaiterApp();
-        }
-
-        setTimeout(function() {
-          if (typeof POS_AUTH !== "undefined" && typeof POS_AUTH.renderUtilBar === "function") {
-            POS_AUTH.renderUtilBar("user-badge", "waiter-app");
-          }
-        }, 500);
-      }
-
-      if (typeof POS_AUTH !== "undefined") {
-        POS_AUTH.init("waiter-app", {
-          onReady: start,
-          onError: start
-        });
-      } else {
-        start();
-      }
-    })();
-    </script>
-</body>
-</html>
