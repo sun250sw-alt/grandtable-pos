@@ -15,22 +15,22 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1a1a2e; }
 
-        .app-container { max-width: 1440px; margin: 0 auto; padding: 16px; }
+        .app-container { max-width: 1440px; margin: 0 auto; padding: 14px; }
 
         /* HEADER & MODE SWITCHER */
         .header {
             background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
             color: white;
-            padding: 14px 20px;
+            padding: 12px 18px;
             border-radius: 14px;
-            margin-bottom: 16px;
+            margin-bottom: 14px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         }
 
-        .header h1 { font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+        .header h1 { font-size: 19px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
 
         .mode-switcher {
             display: flex;
@@ -41,7 +41,7 @@
         }
 
         .mode-tab {
-            padding: 8px 18px;
+            padding: 7px 16px;
             border: none;
             border-radius: 9px;
             font-size: 13px;
@@ -61,20 +61,20 @@
             box-shadow: 0 2px 8px rgba(243,156,18,0.3);
         }
 
-        .header-info { display: flex; gap: 12px; font-size: 12px; align-items: center; }
+        .header-info { display: flex; gap: 10px; font-size: 12px; align-items: center; }
 
         /* MAIN LAYOUT */
         .main-layout {
             display: grid;
-            grid-template-columns: 320px 1fr 400px;
-            gap: 16px;
-            height: calc(100vh - 110px);
+            grid-template-columns: 310px 1fr 420px;
+            gap: 14px;
+            height: calc(100vh - 96px);
         }
 
         .panel {
             background: white;
             border-radius: 14px;
-            padding: 18px;
+            padding: 16px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.06);
             overflow-y: auto;
             display: flex;
@@ -82,8 +82,8 @@
         }
 
         .panel h2 {
-            font-size: 16px;
-            margin-bottom: 14px;
+            font-size: 15px;
+            margin-bottom: 12px;
             color: #1a1a2e;
             font-weight: 800;
             display: flex;
@@ -91,7 +91,7 @@
             align-items: center;
         }
 
-        /* SERVER SELECTION SCREEN */
+        /* SERVER SELECTION HOME SCREEN */
         .server-screen {
             display: flex;
             flex-direction: column;
@@ -142,12 +142,12 @@
         .tables-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
+            gap: 10px;
         }
 
         .table-card {
             position: relative;
-            padding: 16px 12px;
+            padding: 14px 10px;
             border-radius: 12px;
             cursor: pointer;
             transition: all 0.2s;
@@ -162,9 +162,9 @@
         .table-card.paid { background: #ecfdf5; border-color: #34d399; }
         .table-card.selected { box-shadow: 0 0 0 3px #6366f1; border-color: #6366f1; }
 
-        .table-number { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
-        .table-status { font-size: 11px; font-weight: 700; text-transform: uppercase; }
-        .table-amount { font-size: 13px; font-weight: 800; color: #1e1b4b; margin-top: 4px; }
+        .table-number { font-size: 17px; font-weight: 800; margin-bottom: 3px; }
+        .table-status { font-size: 10px; font-weight: 700; text-transform: uppercase; }
+        .table-amount { font-size: 12px; font-weight: 800; color: #1e1b4b; margin-top: 3px; }
 
         .ready-badge {
             position: absolute;
@@ -181,10 +181,10 @@
         }
         @keyframes pulse-ready { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
 
-        /* MENU SECTION */
+        /* MENU DIRECTORY */
         .menu-categories { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
         .category-btn {
-            padding: 6px 14px;
+            padding: 6px 12px;
             border: 1px solid #e2e8f0;
             background: white;
             border-radius: 20px;
@@ -198,13 +198,13 @@
 
         .menu-items-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
             gap: 10px;
             overflow-y: auto;
         }
 
         .menu-card-item {
-            padding: 14px 12px;
+            padding: 12px 10px;
             border: 2px solid #f1f5f9;
             border-radius: 10px;
             cursor: pointer;
@@ -220,19 +220,19 @@
 
         /* ORDER PANEL */
         .order-panel-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
-        .order-items-list { flex: 1; overflow-y: auto; margin-bottom: 12px; }
+        .order-items-list { flex: 1; overflow-y: auto; margin-bottom: 10px; }
         .order-item-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 10px 12px;
+            padding: 8px 10px;
             background: #f8fafc;
             border-radius: 8px;
-            margin-bottom: 6px;
+            margin-bottom: 5px;
             border: 1px solid #e2e8f0;
         }
         .oir-name { font-weight: 700; font-size: 13px; }
-        .oir-price { color: #64748b; font-size: 12px; margin-top: 2px; }
+        .oir-price { color: #64748b; font-size: 11px; margin-top: 2px; }
         .oir-controls { display: flex; align-items: center; gap: 6px; }
         .qty-btn {
             width: 26px; height: 26px;
@@ -245,44 +245,84 @@
         }
         .qty-btn:hover { background: #f1f5f9; border-color: #6366f1; }
 
-        /* TILL PAYMENT DRAWER */
+        /* TOUCH NUMPAD & TILL CASH TENDER DRAWER */
         .payment-box {
             background: #f8fafc;
-            border: 2px solid #cbd5e1;
+            border: 1px solid #cbd5e1;
             border-radius: 12px;
-            padding: 16px;
-            margin-top: 12px;
+            padding: 12px;
+            margin-top: 8px;
         }
+
         .tender-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 6px;
-            margin: 10px 0;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 5px;
+            margin-bottom: 8px;
         }
         .tender-btn {
-            padding: 8px;
+            padding: 7px 4px;
+            background: #eef2ff;
+            border: 1px solid #c7d2fe;
+            color: #3730a3;
+            border-radius: 6px;
+            font-weight: 800;
+            font-size: 11px;
+            cursor: pointer;
+            text-align: center;
+        }
+        .tender-btn:hover { background: #6366f1; color: white; }
+
+        /* Touch On-Screen Numeric Keypad */
+        .touch-numpad {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 5px;
+            margin-top: 6px;
+        }
+        .num-btn {
+            padding: 10px;
             background: white;
             border: 1px solid #cbd5e1;
-            border-radius: 6px;
-            font-weight: 700;
-            font-size: 12px;
+            border-radius: 8px;
+            font-weight: 800;
+            font-size: 15px;
+            color: #1e1b4b;
             cursor: pointer;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            transition: all 0.1s;
         }
-        .tender-btn:hover { background: #e0e7ff; border-color: #6366f1; }
+        .num-btn:active { background: #e0e7ff; transform: scale(0.96); }
+        .num-btn-action { background: #f1f5f9; color: #475569; }
+
+        .change-banner {
+            background: #ecfdf5;
+            border: 1px solid #6ee7b7;
+            padding: 8px 12px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 8px;
+            color: #047857;
+            font-size: 13px;
+            font-weight: 800;
+        }
 
         .totals-summary {
             border-top: 2px solid #e2e8f0;
-            padding-top: 12px;
-            margin-top: 12px;
-            font-size: 13px;
+            padding-top: 10px;
+            margin-top: 10px;
+            font-size: 12px;
         }
-        .totals-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
-        .totals-row.grand-total { font-size: 18px; font-weight: 900; color: #1e1b4b; border-top: 1px solid #cbd5e1; padding-top: 8px; margin-top: 8px; }
+        .totals-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .totals-row.grand-total { font-size: 17px; font-weight: 900; color: #1e1b4b; border-top: 1px solid #cbd5e1; padding-top: 6px; margin-top: 6px; }
 
         .btn {
-            padding: 12px 16px;
+            padding: 11px 14px;
             border: none;
-            border-radius: 9px;
+            border-radius: 8px;
             cursor: pointer;
             font-weight: 800;
             font-size: 13px;
@@ -300,17 +340,16 @@
         .btn-warning { background: #f59e0b; color: white; }
         .btn-danger  { background: #ef4444; color: white; }
         .btn-ghost   { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
-        .btn-dark    { background: #1e1b4b; color: white; }
 
-        .action-stack { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+        .action-stack { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 
         .search-box {
             width: 100%;
-            padding: 10px 14px;
+            padding: 9px 12px;
             border: 1px solid #cbd5e1;
             border-radius: 8px;
             font-size: 13px;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
         }
 
         .badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 800; }
@@ -333,7 +372,47 @@
         .notification.success { border-left: 4px solid #10b981; }
         .notification.error   { border-left: 4px solid #ef4444; }
 
-        /* PRINTABLE THERMAL RECEIPT STYLES */
+        /* MODAL DIALOGS (PAYMENT SUCCESS & HISTORY) */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.75);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            padding: 16px;
+        }
+        .modal-card {
+            background: white;
+            border-radius: 16px;
+            max-width: 640px;
+            width: 100%;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+            overflow: hidden;
+        }
+        .modal-header {
+            padding: 16px 20px;
+            background: #1e1b4b;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-title { font-size: 16px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+        .modal-close { background: transparent; border: none; color: white; font-size: 20px; cursor: pointer; }
+        .modal-body { padding: 18px 20px; overflow-y: auto; flex: 1; }
+
+        .history-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .history-table th { padding: 8px 10px; color: #64748b; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; font-weight: 700; text-align: left; }
+        .history-table td { padding: 10px; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
+        .history-table tr:hover { background: #f8fafc; }
+
+        /* PRINTABLE THERMAL RECEIPT */
         @media print {
             body * { visibility: hidden; }
             #printable-receipt-slip, #printable-receipt-slip * { visibility: visible; }
@@ -406,7 +485,7 @@
                 <div style="border-top:1px dashed #000; padding-top:6px; font-size:10px;">
                     <div>Payment: <strong>${paymentInfo.method || 'CASH'}</strong></div>
                     ${paymentInfo.tendered ? `<div>Tendered: ${currency} ${parseFloat(paymentInfo.tendered).toFixed(2)}</div>` : ''}
-                    ${paymentInfo.change ? `<div>Change: ${currency} ${parseFloat(paymentInfo.change).toFixed(2)}</div>` : ''}
+                    ${paymentInfo.change !== undefined ? `<div>Change: ${currency} ${parseFloat(paymentInfo.change).toFixed(2)}</div>` : ''}
                 </div>
                 <div style="text-align:center; margin-top:14px; font-size:10px;">Thank you for dining with us!</div>
             `;
@@ -447,9 +526,11 @@
             const [currency, setCurrency]                   = useState("Rs.");
             const [taxRate, setTaxRate]                     = useState(0.10);
             
-            // Till Mode Specific State
+            // Till & Cash Tender State
             const [tillCashTendered, setTillCashTendered]   = useState("");
             const [paymentMethod, setPaymentMethod]         = useState("Cash"); // "Cash" | "Card"
+            const [completedPaymentModal, setCompletedPaymentModal] = useState(null);
+            const [showHistoryModal, setShowHistoryModal]   = useState(false);
 
             async function loadData() {
                 const api = getPosApi();
@@ -582,7 +663,24 @@
                 return orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             };
 
-            // ── WAITER: SEND NEW ORDER TO KITCHEN ──
+            // Touch Numeric Keypad Handler
+            const handleKeypadPress = (val, totalDue = 0) => {
+                if (val === "C") {
+                    setTillCashTendered("");
+                } else if (val === "⌫") {
+                    setTillCashTendered(prev => prev.slice(0, -1));
+                } else if (val === "Exact") {
+                    setTillCashTendered(totalDue.toFixed(2));
+                } else if (val === ".") {
+                    if (!tillCashTendered.includes(".")) {
+                        setTillCashTendered(prev => (prev || "0") + ".");
+                    }
+                } else {
+                    setTillCashTendered(prev => prev + val);
+                }
+            };
+
+            // ── WAITER: SEND ORDER TO KITCHEN ──
             const handleSendToKitchen = async () => {
                 if (!selectedTable) {
                     showNotification("Please select a table first!", "error");
@@ -723,14 +821,14 @@
                 const subtotal = calculateTotal();
                 const tax = parseFloat((subtotal * taxRate).toFixed(2));
                 const total = parseFloat((subtotal + tax).toFixed(2));
-                const tendered = parseFloat(tillCashTendered) || total;
+                const tendered = paymentMethod === "Cash" ? (parseFloat(tillCashTendered) || total) : total;
                 const change = Math.max(0, tendered - total);
 
                 try {
                     const generatedId = "ORD-" + Date.now().toString().slice(-6);
                     const newOrder = {
                         orderId     : generatedId,
-                        tableNumber : 0, // Takeaway
+                        tableNumber : 0,
                         waiterName  : currentServer + " (Till)",
                         items       : orderItems.map(i => ({ 
                             name: i.name, 
@@ -750,9 +848,17 @@
                         await api.Orders.create(newOrder);
                     }
 
-                    showNotification(`Takeaway Sale Paid (${currency}${total.toFixed(2)})!`);
-                    
-                    // Trigger Print Receipt
+                    // Open Change Modal & Print Slip
+                    setCompletedPaymentModal({
+                        orderId: generatedId,
+                        table: "Takeaway",
+                        total,
+                        tendered,
+                        change,
+                        method: paymentMethod,
+                        rawOrder: newOrder
+                    });
+
                     printReceipt(newOrder, { method: paymentMethod, tendered, change }, currency, taxRate);
 
                     setOrderItems([]);
@@ -763,7 +869,7 @@
                 }
             };
 
-            // ── TILL: SETTLE ACTIVE TABLE BILL & PRINT RECEIPT ──
+            // ── TILL: SETTLE ACTIVE TABLE BILL ──
             const handleSettleTableBill = async (order) => {
                 const api = getPosApi();
                 if (!api) return;
@@ -771,7 +877,7 @@
                 const subtotal = parseFloat(order.Subtotal || order.subtotal || 0);
                 const tax = parseFloat(order.Tax || order.tax || (subtotal * taxRate));
                 const total = parseFloat(order.Total || order.total || (subtotal + tax));
-                const tendered = parseFloat(tillCashTendered) || total;
+                const tendered = paymentMethod === "Cash" ? (parseFloat(tillCashTendered) || total) : total;
                 const change = Math.max(0, tendered - total);
 
                 try {
@@ -792,9 +898,17 @@
                         });
                     }
 
-                    showNotification(`Table ${order.TableNumber} bill settled!`);
-                    
-                    // Print Thermal Receipt Slip
+                    // Open Change Modal & Print Slip
+                    setCompletedPaymentModal({
+                        orderId: order.OrderID || order.orderId,
+                        table: `Table ${order.TableNumber || selectedTable.number}`,
+                        total,
+                        tendered,
+                        change,
+                        method: paymentMethod,
+                        rawOrder: order
+                    });
+
                     printReceipt(order, { method: paymentMethod, tendered, change }, currency, taxRate);
 
                     setSelectedTable(null);
@@ -849,7 +963,7 @@
                 );
             }
 
-            // ── MAIN TERMINAL (WAITER MODE & TILL MODE) ──
+            // ── MAIN TERMINAL VIEW ──
             return (
                 <div className="app-container">
                     <div className="header">
@@ -872,6 +986,9 @@
                         </div>
 
                         <div className="header-info">
+                            <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '11px', color: 'white', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)' }} onClick={() => setShowHistoryModal(true)}>
+                                📋 History
+                            </button>
                             <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '11px', color: 'white', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)' }} onClick={() => { setCurrentServer(null); setSelectedTable(null); setOrderItems([]); }}>
                                 ↩ Switch Staff
                             </button>
@@ -976,7 +1093,7 @@
                                             onClick={() => addToOrder(item)}
                                         >
                                             <div>
-                                                <div style={{ fontSize: '24px', marginBottom: '6px' }}>{item.emoji || '🍽️'}</div>
+                                                <div style={{ fontSize: '22px', marginBottom: '4px' }}>{item.emoji || '🍽️'}</div>
                                                 <div className="mci-name">{item.name}</div>
                                             </div>
                                             <div className="mci-price">{currency} {item.price.toFixed(2)}</div>
@@ -986,10 +1103,10 @@
                             )}
                         </div>
 
-                        {/* ── COLUMN 3: ORDER, BILLING & TILL PAYMENT PANEL ── */}
+                        {/* ── COLUMN 3: ORDER, BILLING & TOUCH KEYPAD TILL PANEL ── */}
                         <div className="panel">
                             <h2>
-                                <span>{activeAppMode === 'till' ? '💳 Till Payment & Bill' : 'Current Order'}</span>
+                                <span>{activeAppMode === 'till' ? '💳 Till Cashier Checkout' : 'Current Order'}</span>
                                 {selectedTable ? (
                                     <span className="badge badge-occupied">Table {selectedTable.number}</span>
                                 ) : (
@@ -998,30 +1115,29 @@
                             </h2>
 
                             <div className="order-panel-body">
-                                {/* ── MODE 1: TILL MODE WITH ACTIVE TABLE SELECTED (BILL SETTLEMENT) ── */}
+                                {/* ── A. TILL MODE WITH ACTIVE TABLE SELECTED (BILL SETTLEMENT) ── */}
                                 {activeAppMode === 'till' && selectedTable && activeOrderForTable ? (
                                     (() => {
                                         const sub = parseFloat(activeOrderForTable.Subtotal || activeOrderForTable.subtotal || 0);
                                         const tx = parseFloat(activeOrderForTable.Tax || activeOrderForTable.tax || (sub * taxRate));
                                         const tot = parseFloat(activeOrderForTable.Total || activeOrderForTable.total || (sub + tx));
-                                        const tendered = parseFloat(tillCashTendered) || tot;
+                                        const tendered = paymentMethod === "Cash" ? (parseFloat(tillCashTendered) || 0) : tot;
                                         const change = Math.max(0, tendered - tot);
                                         let items = [];
                                         try { items = JSON.parse(activeOrderForTable.Items); } catch(e){}
 
                                         return (
                                             <div>
-                                                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '12px' }}>
+                                                <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '8px' }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '13px' }}>
                                                         <span>Order #{activeOrderForTable.OrderID || activeOrderForTable.orderId}</span>
                                                         <span>Table {selectedTable.number}</span>
                                                     </div>
-                                                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>Server: {activeOrderForTable.WaiterName || 'Staff'}</div>
                                                 </div>
 
-                                                <div style={{ maxHeight: '180px', overflowY: 'auto', marginBottom: '12px' }}>
+                                                <div style={{ maxHeight: '120px', overflowY: 'auto', marginBottom: '8px' }}>
                                                     {items.map((it, idx) => (
-                                                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '6px 0', borderBottom: '1px dashed #e2e8f0' }}>
+                                                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '4px 0', borderBottom: '1px dashed #e2e8f0' }}>
                                                             <span>{it.qty || it.quantity}× {it.name || it.Name}</span>
                                                             <span style={{ fontWeight: 700 }}>{currency} {(parseFloat(it.price) * parseInt(it.qty || it.quantity || 1)).toFixed(2)}</span>
                                                         </div>
@@ -1034,19 +1150,19 @@
                                                     <div className="totals-row grand-total"><span>Amount Due:</span><span>{currency} {tot.toFixed(2)}</span></div>
                                                 </div>
 
-                                                {/* Payment Form */}
+                                                {/* Till Payment Drawer with Touch Keypad */}
                                                 <div className="payment-box">
-                                                    <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                                                    <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
                                                         <button 
                                                             className={`btn ${paymentMethod === 'Cash' ? 'btn-primary' : 'btn-ghost'}`} 
-                                                            style={{ padding: '8px', fontSize: '12px' }}
+                                                            style={{ padding: '6px', fontSize: '12px' }}
                                                             onClick={() => setPaymentMethod('Cash')}
                                                         >
                                                             💵 Cash
                                                         </button>
                                                         <button 
                                                             className={`btn ${paymentMethod === 'Card' ? 'btn-primary' : 'btn-ghost'}`} 
-                                                            style={{ padding: '8px', fontSize: '12px' }}
+                                                            style={{ padding: '6px', fontSize: '12px' }}
                                                             onClick={() => setPaymentMethod('Card')}
                                                         >
                                                             💳 Card
@@ -1055,23 +1171,35 @@
 
                                                     {paymentMethod === 'Cash' && (
                                                         <div>
-                                                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>Cash Tendered:</div>
-                                                            <input 
-                                                                type="number" 
-                                                                className="search-box" 
-                                                                style={{ margin: 0, padding: '8px 12px', fontSize: '15px', fontWeight: 800 }}
-                                                                placeholder={tot.toFixed(2)}
-                                                                value={tillCashTendered}
-                                                                onChange={(e) => setTillCashTendered(e.target.value)}
-                                                            />
-                                                            <div className="tender-grid">
-                                                                <button className="tender-btn" onClick={() => setTillCashTendered(tot.toFixed(2))}>Exact</button>
-                                                                <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 100) * 100).toString())}>+100 Round</button>
-                                                                <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 500) * 500).toString())}>+500 Round</button>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                                                                <span>TENDERED AMOUNT:</span>
+                                                                <span style={{ color: '#4f46e5', fontSize: '14px' }}>{currency} {tillCashTendered || '0.00'}</span>
                                                             </div>
-                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 800, color: '#047857', marginTop: '6px' }}>
-                                                                <span>Change Due:</span>
-                                                                <span>{currency} {change.toFixed(2)}</span>
+
+                                                            {/* Quick Denominations */}
+                                                            <div className="tender-grid">
+                                                                <button className="tender-btn" onClick={() => handleKeypadPress("Exact", tot)}>Exact</button>
+                                                                <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 100) * 100).toString())}>+100</button>
+                                                                <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 500) * 500).toString())}>+500</button>
+                                                                <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 1000) * 1000).toString())}>+1000</button>
+                                                            </div>
+
+                                                            {/* Touch Keypad */}
+                                                            <div className="touch-numpad">
+                                                                {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map(k => (
+                                                                    <button key={k} className={`num-btn ${k === "⌫" ? 'num-btn-action' : ''}`} onClick={() => handleKeypadPress(k, tot)}>
+                                                                        {k}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                            <button className="num-btn num-btn-action" style={{ width: '100%', marginTop: '5px', padding: '6px' }} onClick={() => handleKeypadPress("C")}>
+                                                                Clear Amount (C)
+                                                            </button>
+
+                                                            {/* Live Change Indicator */}
+                                                            <div className="change-banner">
+                                                                <span>Change to Return:</span>
+                                                                <span style={{ fontSize: '16px' }}>{currency} {change.toFixed(2)}</span>
                                                             </div>
                                                         </div>
                                                     )}
@@ -1089,10 +1217,10 @@
                                         );
                                     })()
                                 ) : (
-                                    /* ── MODE 2: WAITER ORDERING OR TAKEAWAY CART ── */
+                                    /* ── B. WAITER ORDERING OR TAKEAWAY CART ── */
                                     <div>
                                         {activeOrderForTable && activeAppMode === 'waiter' && (
-                                            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '12px' }}>
+                                            <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '8px' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                     <strong style={{ fontSize: '13px' }}>{activeOrderForTable.OrderID}</strong>
                                                     <span style={{ fontSize: '11px', fontWeight: 800, color: '#4f46e5' }}>
@@ -1111,7 +1239,7 @@
                                             </div>
                                         ) : (
                                             <div>
-                                                <div className="order-items-list" style={{ maxHeight: '220px' }}>
+                                                <div className="order-items-list" style={{ maxHeight: '160px' }}>
                                                     {orderItems.map(item => (
                                                         <div key={item.id} className="order-item-row">
                                                             <div>
@@ -1133,34 +1261,65 @@
                                                     <div className="totals-row grand-total"><span>Total:</span><span>{currency} {(calculateTotal() * (1 + taxRate)).toFixed(2)}</span></div>
                                                 </div>
 
-                                                {/* TILL TAKEAWAY PAYMENT CONTROLS */}
+                                                {/* TILL TAKEAWAY PAYMENT DRAWER */}
                                                 {activeAppMode === 'till' ? (
-                                                    <div>
-                                                        <div className="payment-box" style={{ padding: '10px', marginTop: '10px' }}>
-                                                            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
-                                                                <button className={`btn ${paymentMethod === 'Cash' ? 'btn-primary' : 'btn-ghost'}`} style={{ padding: '6px', fontSize: '11px' }} onClick={() => setPaymentMethod('Cash')}>💵 Cash</button>
-                                                                <button className={`btn ${paymentMethod === 'Card' ? 'btn-primary' : 'btn-ghost'}`} style={{ padding: '6px', fontSize: '11px' }} onClick={() => setPaymentMethod('Card')}>💳 Card</button>
+                                                    (() => {
+                                                        const tot = calculateTotal() * (1 + taxRate);
+                                                        const tendered = paymentMethod === "Cash" ? (parseFloat(tillCashTendered) || 0) : tot;
+                                                        const change = Math.max(0, tendered - tot);
+
+                                                        return (
+                                                            <div>
+                                                                <div className="payment-box">
+                                                                    <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                                                                        <button className={`btn ${paymentMethod === 'Cash' ? 'btn-primary' : 'btn-ghost'}`} style={{ padding: '6px', fontSize: '11px' }} onClick={() => setPaymentMethod('Cash')}>💵 Cash</button>
+                                                                        <button className={`btn ${paymentMethod === 'Card' ? 'btn-primary' : 'btn-ghost'}`} style={{ padding: '6px', fontSize: '11px' }} onClick={() => setPaymentMethod('Card')}>💳 Card</button>
+                                                                    </div>
+
+                                                                    {paymentMethod === 'Cash' && (
+                                                                        <div>
+                                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                                                                                <span>TENDERED:</span>
+                                                                                <span style={{ color: '#4f46e5', fontSize: '14px' }}>{currency} {tillCashTendered || '0.00'}</span>
+                                                                            </div>
+
+                                                                            <div className="tender-grid">
+                                                                                <button className="tender-btn" onClick={() => handleKeypadPress("Exact", tot)}>Exact</button>
+                                                                                <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 100) * 100).toString())}>+100</button>
+                                                                                <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 500) * 500).toString())}>+500</button>
+                                                                                <button className="tender-btn" onClick={() => setTillCashTendered((Math.ceil(tot / 1000) * 1000).toString())}>+1000</button>
+                                                                            </div>
+
+                                                                            <div className="touch-numpad">
+                                                                                {["1","2","3","4","5","6","7","8","9",".","0","⌫"].map(k => (
+                                                                                    <button key={k} className={`num-btn ${k === "⌫" ? 'num-btn-action' : ''}`} onClick={() => handleKeypadPress(k, tot)}>
+                                                                                        {k}
+                                                                                    </button>
+                                                                                ))}
+                                                                            </div>
+                                                                            <button className="num-btn num-btn-action" style={{ width: '100%', marginTop: '5px', padding: '5px' }} onClick={() => handleKeypadPress("C")}>
+                                                                                Clear (C)
+                                                                            </button>
+
+                                                                            <div className="change-banner">
+                                                                                <span>Change Due:</span>
+                                                                                <span style={{ fontSize: '16px' }}>{currency} {change.toFixed(2)}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+
+                                                                <div className="action-stack">
+                                                                    <button className="btn btn-success" onClick={handleTillQuickCheckout}>
+                                                                        💰 Takeaway Payment & Print
+                                                                    </button>
+                                                                    <button className="btn btn-danger" style={{ padding: '7px' }} onClick={() => setOrderItems([])}>
+                                                                        🗑️ Clear Cart
+                                                                    </button>
+                                                                </div>
                                                             </div>
-                                                            {paymentMethod === 'Cash' && (
-                                                                <input 
-                                                                    type="number" 
-                                                                    className="search-box" 
-                                                                    style={{ margin: 0, padding: '6px 10px', fontSize: '13px' }}
-                                                                    placeholder={`Tendered: ${(calculateTotal() * (1 + taxRate)).toFixed(2)}`}
-                                                                    value={tillCashTendered}
-                                                                    onChange={(e) => setTillCashTendered(e.target.value)}
-                                                                />
-                                                            )}
-                                                        </div>
-                                                        <div className="action-stack">
-                                                            <button className="btn btn-success" onClick={handleTillQuickCheckout}>
-                                                                💰 Takeaway Payment & Print
-                                                            </button>
-                                                            <button className="btn btn-danger" style={{ padding: '8px' }} onClick={() => setOrderItems([])}>
-                                                                🗑️ Clear Cart
-                                                            </button>
-                                                        </div>
-                                                    </div>
+                                                        );
+                                                    })()
                                                 ) : (
                                                     /* WAITER SEND BUTTONS */
                                                     <div className="action-stack">
@@ -1173,7 +1332,7 @@
                                                                 📤 Send Order to Kitchen
                                                             </button>
                                                         )}
-                                                        <button className="btn btn-danger" style={{ padding: '8px' }} onClick={() => setOrderItems([])}>
+                                                        <button className="btn btn-danger" style={{ padding: '7px' }} onClick={() => setOrderItems([])}>
                                                             🗑️ Clear Cart
                                                         </button>
                                                     </div>
@@ -1185,6 +1344,98 @@
                             </div>
                         </div>
                     </div>
+
+                    {/* ── PAYMENT SUCCESS & CHANGE MODAL ── */}
+                    {completedPaymentModal && (
+                        <div className="modal-overlay">
+                            <div className="modal-card" style={{ maxWidth: '420px', textAlign: 'center', padding: '24px' }}>
+                                <div style={{ fontSize: '48px', marginBottom: '8px' }}>🎉</div>
+                                <h3 style={{ fontSize: '20px', fontWeight: 900, color: '#1e1b4b' }}>Payment Complete!</h3>
+                                <div style={{ fontSize: '13px', color: '#64748b', marginTop: '2px' }}>
+                                    Order #{completedPaymentModal.orderId} · {completedPaymentModal.table}
+                                </div>
+
+                                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', margin: '16px 0', textAlign: 'left', fontSize: '13px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                        <span>Total Amount:</span>
+                                        <strong style={{ fontSize: '15px' }}>{currency} {completedPaymentModal.total.toFixed(2)}</strong>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                        <span>Tendered ({completedPaymentModal.method}):</span>
+                                        <span>{currency} {completedPaymentModal.tendered.toFixed(2)}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #cbd5e1', paddingTop: '8px', marginTop: '8px', color: '#047857', fontSize: '16px', fontWeight: 900 }}>
+                                        <span>CHANGE DUE:</span>
+                                        <span>{currency} {completedPaymentModal.change.toFixed(2)}</span>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button className="btn btn-primary" onClick={() => printReceipt(completedPaymentModal.rawOrder, { method: completedPaymentModal.method, tendered: completedPaymentModal.tendered, change: completedPaymentModal.change }, currency, taxRate)}>
+                                        🖨️ Re-Print Slip
+                                    </button>
+                                    <button className="btn btn-success" onClick={() => setCompletedPaymentModal(null)}>
+                                        ✓ Done / Next
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── SETTLED ORDERS HISTORY MODAL ── */}
+                    {showHistoryModal && (
+                        <div className="modal-overlay" onClick={() => setShowHistoryModal(false)}>
+                            <div className="modal-card" onClick={e => e.stopPropagation()}>
+                                <div className="modal-header">
+                                    <div className="modal-title">📋 Settled Transactions History</div>
+                                    <button className="modal-close" onClick={() => setShowHistoryModal(false)}>✕</button>
+                                </div>
+                                <div className="modal-body">
+                                    {(() => {
+                                        const settledOrders = liveOrders.filter(o => ["closed", "paid", "settled", "completed"].includes((o.Status || o.status || "").toLowerCase()));
+                                        if (settledOrders.length === 0) {
+                                            return <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>No settled orders recorded yet.</div>;
+                                        }
+
+                                        return (
+                                            <table className="history-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Order</th>
+                                                        <th>Table</th>
+                                                        <th>Total</th>
+                                                        <th>Time</th>
+                                                        <th>Receipt</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {settledOrders.slice().reverse().map((o, idx) => (
+                                                        <tr key={idx}>
+                                                            <td style={{ fontWeight: 700 }}>{o.OrderID || o.orderId}</td>
+                                                            <td>{parseInt(o.TableNumber) === 0 ? 'Takeaway' : `Table ${o.TableNumber}`}</td>
+                                                            <td style={{ fontWeight: 800, color: '#1e1b4b' }}>{currency} {parseFloat(o.Total || o.total || 0).toFixed(2)}</td>
+                                                            <td style={{ color: '#64748b' }}>
+                                                                {o.OrderTime ? new Date(o.OrderTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
+                                                            </td>
+                                                            <td>
+                                                                <button 
+                                                                    className="btn btn-ghost" 
+                                                                    style={{ padding: '4px 8px', fontSize: '11px', width: 'auto' }}
+                                                                    onClick={() => printReceipt(o, { method: "PAID" }, currency, taxRate)}
+                                                                >
+                                                                    🖨️ Receipt
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        );
+                                    })()}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {notification && (
                         <div className={`notification ${notification.type}`}>
