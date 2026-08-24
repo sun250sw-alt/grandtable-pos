@@ -1549,7 +1549,7 @@
 
                                                                     <div className="change-banner">
                                                                         <span>Change Due:</span>
-                                                                        <span style={{ fontSize: '15px' }}>{currency} {change.toFixed(2)}</span>
+                                                                        <span style={{ fontSize: '16px' }}>{currency} {change.toFixed(2)}</span>
                                                                     </div>
                                                                 </div>
                                                             )}
@@ -1705,3 +1705,55 @@
                                                     ))}
                                                 </tbody>
                                             </table>
+                                        );
+                                    })()}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {notification && (
+                        <div className={`notification ${notification.type}`}>
+                            {notification.message}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        window.startWaiterApp = function() {
+            ReactDOM.render(<MainApp />, document.getElementById('root'));
+        };
+    </script>
+
+    <script>
+    (function initAuth() {
+      function start() {
+        var root = document.getElementById("root");
+        if (root) root.style.display = "block";
+        var loader = document.getElementById("loading-placeholder");
+        if (loader) loader.style.display = "none";
+        
+        if (typeof window.startWaiterApp === "function") {
+            window.startWaiterApp();
+        }
+
+        setTimeout(function() {
+          if (typeof POS_AUTH !== "undefined" && typeof POS_AUTH.renderUtilBar === "function") {
+            POS_AUTH.renderUtilBar("user-badge", "waiter-app");
+          }
+        }, 500);
+      }
+
+      if (typeof POS_AUTH !== "undefined") {
+        POS_AUTH.init("waiter-app", {
+          onReady: start,
+          onError: start
+        });
+      } else {
+        start();
+      }
+    })();
+    </script>
+</body>
+</html>
