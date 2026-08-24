@@ -66,7 +66,7 @@
         /* MAIN LAYOUT */
         .main-layout {
             display: grid;
-            grid-template-columns: 310px 1fr 440px;
+            grid-template-columns: 280px 1fr 450px;
             gap: 14px;
             height: calc(100vh - 96px);
         }
@@ -91,7 +91,7 @@
             align-items: center;
         }
 
-        /* SERVER SELECTION HOME SCREEN */
+        /* SERVER SELECTION SCREEN */
         .server-screen {
             display: flex;
             flex-direction: column;
@@ -138,48 +138,98 @@
         }
         .server-name { font-weight: 700; font-size: 14px; color: #1e293b; }
 
-        /* TABLES GRID */
-        .tables-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
+        /* LEFT SIDEBAR SELECTOR (TABLES & TAKEAWAYS) */
+        .left-tab-bar {
+            display: flex;
+            gap: 4px;
+            background: #f1f5f9;
+            padding: 3px;
+            border-radius: 9px;
+            margin-bottom: 10px;
         }
-
-        .table-card {
-            position: relative;
-            padding: 14px 10px;
-            border-radius: 12px;
+        .lt-btn {
+            flex: 1;
+            padding: 6px;
+            border: none;
+            border-radius: 7px;
+            font-size: 11px;
+            font-weight: 700;
             cursor: pointer;
-            transition: all 0.2s;
-            border: 2px solid #e2e8f0;
+            color: #64748b;
+            background: transparent;
+            transition: all 0.15s;
             text-align: center;
-            background: white;
         }
-        .table-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-        .table-card.available { background: #f0fdf4; border-color: #86efac; }
-        .table-card.occupied { background: #fffbeb; border-color: #fcd34d; }
-        .table-card.delivered { background: #faf5ff; border-color: #d8b4fe; }
-        .table-card.paid { background: #ecfdf5; border-color: #34d399; }
-        .table-card.selected { box-shadow: 0 0 0 3px #6366f1; border-color: #6366f1; }
+        .lt-btn.active {
+            background: white;
+            color: #1e1b4b;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+        }
 
-        .table-number { font-size: 17px; font-weight: 800; margin-bottom: 3px; }
-        .table-status { font-size: 10px; font-weight: 700; text-transform: uppercase; }
-        .table-amount { font-size: 12px; font-weight: 800; color: #1e1b4b; margin-top: 3px; }
+        /* COMPACT SINGLE-COLUMN TABLES LIST */
+        .tables-list-compact {
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+            overflow-y: auto;
+        }
+
+        .table-row-card {
+            position: relative;
+            padding: 10px 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.15s;
+            border: 2px solid #e2e8f0;
+            background: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .table-row-card:hover { transform: translateY(-1px); border-color: #6366f1; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .table-row-card.available { background: #f0fdf4; border-color: #bbf7d0; }
+        .table-row-card.occupied { background: #fffbeb; border-color: #fde68a; }
+        .table-row-card.delivered { background: #faf5ff; border-color: #e9d5ff; }
+        .table-row-card.paid { background: #ecfdf5; border-color: #6ee7b7; }
+        .table-row-card.selected { box-shadow: 0 0 0 3px #6366f1 !important; border-color: #6366f1 !important; }
+
+        .tr-left { display: flex; align-items: center; gap: 8px; }
+        .tr-num { font-size: 15px; font-weight: 800; }
+        .tr-amount { font-size: 13px; font-weight: 800; color: #1e1b4b; text-align: right; }
 
         .ready-badge {
             position: absolute;
-            top: -8px; right: -8px;
+            top: -6px; right: -6px;
             background: #ef4444;
             color: white;
             font-weight: 900;
-            font-size: 10px;
-            padding: 3px 8px;
-            border-radius: 10px;
-            box-shadow: 0 2px 8px rgba(239,68,68,0.4);
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(239,68,68,0.4);
             animation: pulse-ready 1.5s infinite;
             z-index: 20;
         }
         @keyframes pulse-ready { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
+
+        /* TAKEAWAY ORDER CARDS */
+        .takeaway-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow-y: auto;
+        }
+        .takeaway-card {
+            position: relative;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 2px solid #e2e8f0;
+            background: white;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .takeaway-card:hover { border-color: #6366f1; transform: translateY(-1px); }
+        .takeaway-card.selected { box-shadow: 0 0 0 3px #6366f1 !important; border-color: #6366f1 !important; }
 
         /* MENU DIRECTORY */
         .menu-categories { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -218,7 +268,7 @@
         .mci-name { font-weight: 700; font-size: 13px; margin-bottom: 4px; line-height: 1.3; }
         .mci-price { color: #4338ca; font-weight: 800; font-size: 14px; }
 
-        /* ORDER PROGRESS & DISHES ORDERED LIST */
+        /* PROGRESS & DISHES ORDERED LIST */
         .progress-box {
             background: #f8fafc;
             border: 1px solid #e2e8f0;
@@ -311,7 +361,6 @@
         }
         .tender-btn:hover { background: #6366f1; color: white; }
 
-        /* Touch Keypad */
         .touch-numpad {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -504,8 +553,8 @@
                     <div style="font-size:16px; font-weight:bold;">THE GRAND TABLE</div>
                     <div style="font-size:10px;">Restaurant & Bar</div>
                     <div style="font-size:10px; margin-top:4px;">Date: ${new Date().toLocaleString()}</div>
-                    <div style="font-size:10px;">Order: #${orderData.OrderID || orderData.orderId} · Table: ${orderData.TableNumber || orderData.table || 'Takeaway'}</div>
-                    <div style="font-size:10px;">Server: ${orderData.WaiterName || orderData.waiter || 'Cashier'}</div>
+                    <div style="font-size:10px;">Order: #${orderData.OrderID || orderData.orderId} · ${parseInt(orderData.TableNumber) > 0 ? 'Table ' + orderData.TableNumber : 'Takeaway / Counter'}</div>
+                    <div style="font-size:10px;">Server: ${orderData.WaiterName || orderData.waiter || 'Staff'}</div>
                 </div>
                 <div style="border-top:1px dashed #000; border-bottom:1px dashed #000; padding:6px 0; margin-bottom:6px;">
                     ${items.map(it => `
@@ -550,10 +599,12 @@
 
         function MainApp() {
             const [activeAppMode, setActiveAppMode]         = useState("waiter"); // "waiter" | "till"
+            const [leftSidebarTab, setLeftSidebarTab]       = useState("tables"); // "tables" | "takeaway"
             const [staff, setStaff]                         = useState([]);
             const [currentServer, setCurrentServer]         = useState(null);
             const [tables, setTables]                       = useState([]);
             const [selectedTable, setSelectedTable]         = useState(null);
+            const [selectedTakeawayOrder, setSelectedTakeawayOrder] = useState(null);
             const [menuItems, setMenuItems]                 = useState([]);
             const [selectedCategory, setSelectedCategory]   = useState("All");
             const [orderItems, setOrderItems]               = useState([]);
@@ -675,6 +726,14 @@
             const handleTableSelect = (table) => {
                 const freshTable = tables.find(t => t.id === table.id) || table;
                 setSelectedTable(freshTable);
+                setSelectedTakeawayOrder(null);
+                setOrderItems([]);
+                setTillCashTendered("");
+            };
+
+            const handleTakeawaySelect = (order) => {
+                setSelectedTakeawayOrder(order);
+                setSelectedTable(null);
                 setOrderItems([]);
                 setTillCashTendered("");
             };
@@ -777,11 +836,11 @@
             };
 
             // ── ADD-ON CONFIRMATION & SEND TO KITCHEN ──
-            const triggerAddOnConfirmation = (orderId, tableNumber) => {
+            const triggerAddOnConfirmation = (orderId, targetLabel) => {
                 if (orderItems.length === 0) return;
                 setAddonConfirmData({
                     orderId,
-                    tableNumber,
+                    targetLabel,
                     items: [...orderItems],
                     subtotal: calculateTotal()
                 });
@@ -910,7 +969,7 @@
                         itemsArray = itemsArray.map(it => {
                             if ((it.name || it.Name) === itemName) {
                                 it.status = "ready";
-                                it.chef = currentServer + " (Waiter)";
+                                it.chef = currentServer + " (Staff)";
                             }
                             return it;
                         });
@@ -995,8 +1054,8 @@
                 }
             };
 
-            // ── TILL: SETTLE ACTIVE TABLE BILL ──
-            const handleSettleTableBill = async (order) => {
+            // ── TILL: SETTLE BILL (FOR TABLE OR TAKEAWAY) ──
+            const handleSettleOrderBill = async (order) => {
                 const api = getPosApi();
                 if (!api) return;
 
@@ -1024,9 +1083,11 @@
                         });
                     }
 
+                    const label = parseInt(order.TableNumber) > 0 ? `Table ${order.TableNumber}` : (order.CustomerName ? `${order.CustomerName} (Takeaway)` : 'Takeaway');
+
                     setCompletedPaymentModal({
                         orderId: order.OrderID || order.orderId,
-                        table: `Table ${order.TableNumber || selectedTable.number}`,
+                        table: label,
                         total,
                         tendered,
                         change,
@@ -1037,6 +1098,7 @@
                     printReceipt(order, { method: paymentMethod, tendered, change }, currency, taxRate);
 
                     setSelectedTable(null);
+                    setSelectedTakeawayOrder(null);
                     setTillCashTendered("");
                     loadData();
                 } catch(e) {
@@ -1044,13 +1106,22 @@
                 }
             };
 
-            // Active order for selected table
-            const activeOrderForTable = selectedTable 
+            // Active Takeaway Orders (Table 0 or 99 and not closed)
+            const activeTakeawayOrders = liveOrders.filter(o => {
+                const tbl = parseInt(o.TableNumber || o.table || 0);
+                const st = (o.Status || o.status || "").toLowerCase();
+                return (tbl === 0 || tbl >= 90) && !["closed", "cancelled", "void"].includes(st);
+            });
+
+            // Currently focused active order (from table OR selected takeaway)
+            const activeOrderInFocus = selectedTable 
                 ? liveOrders.find(o => 
                     parseInt(o.TableNumber || o.table) === parseInt(selectedTable.number) && 
                     !["closed", "cancelled", "void"].includes((o.Status || o.status || "").toLowerCase())
                   )
-                : null;
+                : selectedTakeawayOrder 
+                    ? liveOrders.find(o => (o.OrderID || o.orderId) === (selectedTakeawayOrder.OrderID || selectedTakeawayOrder.orderId) && !["closed", "cancelled", "void"].includes((o.Status || o.status || "").toLowerCase())) || selectedTakeawayOrder
+                    : null;
 
             // ── SERVER SELECTION SCREEN ──
             if (!currentServer) {
@@ -1114,7 +1185,7 @@
                             <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '11px', color: 'white', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)' }} onClick={() => setShowHistoryModal(true)}>
                                 📋 History
                             </button>
-                            <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '11px', color: 'white', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)' }} onClick={() => { setCurrentServer(null); setSelectedTable(null); setOrderItems([]); }}>
+                            <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '11px', color: 'white', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)' }} onClick={() => { setCurrentServer(null); setSelectedTable(null); setSelectedTakeawayOrder(null); setOrderItems([]); }}>
                                 ↩ Switch Staff
                             </button>
                             <div>Staff: <strong>{currentServer}</strong></div>
@@ -1122,62 +1193,126 @@
                     </div>
 
                     <div className="main-layout">
-                        {/* ── COLUMN 1: TABLES ── */}
+                        {/* ── COLUMN 1: LEFT SIDEBAR SELECTOR (COMPACT TABLES & TAKEAWAYS) ── */}
                         <div className="panel">
                             <h2>
-                                <span>{activeAppMode === 'till' ? '🪑 Table Bills & Orders' : 'Tables'}</span>
+                                <span>{leftSidebarTab === 'tables' ? '🪑 Floor Tables' : '🥡 Takeaways'}</span>
                                 {activeAppMode === 'till' && (
                                     <button 
-                                        className={`btn ${!selectedTable ? 'btn-primary' : 'btn-ghost'}`} 
+                                        className={`btn ${(!selectedTable && !selectedTakeawayOrder) ? 'btn-primary' : 'btn-ghost'}`} 
                                         style={{ width: 'auto', padding: '4px 10px', fontSize: '11px' }}
-                                        onClick={() => { setSelectedTable(null); setOrderItems([]); }}
+                                        onClick={() => { setSelectedTable(null); setSelectedTakeawayOrder(null); setOrderItems([]); }}
                                     >
-                                        🥡 Takeaway Sale
+                                        + New Sale
                                     </button>
                                 )}
                             </h2>
 
-                            {tables.length === 0 ? (
-                                <div style={{ textAlign: 'center', padding: '40px 10px', color: '#888' }}>
-                                    <div>No tables configured in database</div>
-                                </div>
-                            ) : (
-                                <div className="tables-grid">
-                                    {tables.map(table => {
-                                        const matchOrder = liveOrders.find(o => parseInt(o.TableNumber || o.table) === parseInt(table.number) && !["closed", "cancelled", "void"].includes((o.Status || o.status || "").toLowerCase()));
-                                        const isFoodReady = matchOrder && (matchOrder.Status || matchOrder.status || "").toLowerCase() === "ready";
-                                        
-                                        let statusClass = "available";
-                                        const ordStatus = (matchOrder ? (matchOrder.Status || matchOrder.status || "") : "").toLowerCase();
+                            {/* Left View Switcher Tabs */}
+                            <div className="left-tab-bar">
+                                <button 
+                                    className={`lt-btn ${leftSidebarTab === 'tables' ? 'active' : ''}`}
+                                    onClick={() => setLeftSidebarTab('tables')}
+                                >
+                                    🪑 Tables ({tables.length})
+                                </button>
+                                <button 
+                                    className={`lt-btn ${leftSidebarTab === 'takeaway' ? 'active' : ''}`}
+                                    onClick={() => setLeftSidebarTab('takeaway')}
+                                >
+                                    🥡 Takeaways ({activeTakeawayOrders.length})
+                                </button>
+                            </div>
 
-                                        if (table.status === "occupied" || ["new", "preparing"].includes(ordStatus)) {
-                                            statusClass = "occupied";
-                                        } else if (table.status === "delivered" || ordStatus === "served") {
-                                            statusClass = "delivered";
-                                        } else if (table.status === "paid") {
-                                            statusClass = "paid";
-                                        }
+                            {/* COMPACT SINGLE-COLUMN TABLES LIST */}
+                            {leftSidebarTab === 'tables' ? (
+                                tables.length === 0 ? (
+                                    <div style={{ textAlign: 'center', padding: '30px 10px', color: '#888' }}>No tables configured</div>
+                                ) : (
+                                    <div className="tables-list-compact">
+                                        {tables.map(table => {
+                                            const matchOrder = liveOrders.find(o => parseInt(o.TableNumber || o.table) === parseInt(table.number) && !["closed", "cancelled", "void"].includes((o.Status || o.status || "").toLowerCase()));
+                                            const isFoodReady = matchOrder && (matchOrder.Status || matchOrder.status || "").toLowerCase() === "ready";
+                                            
+                                            let statusClass = "available";
+                                            const ordStatus = (matchOrder ? (matchOrder.Status || matchOrder.status || "") : "").toLowerCase();
 
-                                        return (
-                                            <div
-                                                key={table.id}
-                                                className={`table-card ${statusClass} ${selectedTable?.id === table.id ? 'selected' : ''}`}
-                                                onClick={() => handleTableSelect(table)}
-                                            >
-                                                {isFoodReady && <div className="ready-badge">🔔 Ready</div>}
-                                                <div className="table-number">Table {table.number}</div>
-                                                <div className="table-status">
-                                                    <span className={`badge badge-${statusClass}`}>{statusClass}</span>
+                                            if (table.status === "occupied" || ["new", "preparing"].includes(ordStatus)) {
+                                                statusClass = "occupied";
+                                            } else if (table.status === "delivered" || ordStatus === "served") {
+                                                statusClass = "delivered";
+                                            } else if (table.status === "paid") {
+                                                statusClass = "paid";
+                                            }
+
+                                            return (
+                                                <div
+                                                    key={table.id}
+                                                    className={`table-row-card ${statusClass} ${selectedTable?.id === table.id ? 'selected' : ''}`}
+                                                    onClick={() => handleTableSelect(table)}
+                                                >
+                                                    {isFoodReady && <div className="ready-badge">🔔 Ready</div>}
+                                                    <div className="tr-left">
+                                                        <span className="tr-num">Table {table.number}</span>
+                                                        <span className={`badge badge-${statusClass}`}>{statusClass}</span>
+                                                    </div>
+                                                    <div>
+                                                        {matchOrder ? (
+                                                            <div className="tr-amount">{currency} {parseFloat(matchOrder.Total || matchOrder.total || 0).toFixed(2)}</div>
+                                                        ) : (
+                                                            <span style={{ fontSize: '11px', color: '#94a3b8' }}>{table.capacity}p</span>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                {matchOrder ? (
-                                                    <div className="table-amount">{currency} {parseFloat(matchOrder.Total || matchOrder.total || 0).toFixed(2)}</div>
-                                                ) : (
-                                                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>{table.capacity} seats</div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )
+                            ) : (
+                                /* ACTIVE TAKEAWAY / ONLINE ORDERS LIST */
+                                activeTakeawayOrders.length === 0 ? (
+                                    <div style={{ textAlign: 'center', padding: '30px 10px', color: '#94a3b8' }}>
+                                        <div style={{ fontSize: '28px', marginBottom: '4px' }}>🥡</div>
+                                        <div style={{ fontWeight: 700, fontSize: '13px' }}>No active takeaway orders</div>
+                                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>Tap "+ New Sale" to start a takeaway order</div>
+                                    </div>
+                                ) : (
+                                    <div className="takeaway-list">
+                                        {activeTakeawayOrders.map((order, idx) => {
+                                            const st = (order.Status || "new").toLowerCase();
+                                            const isSelected = selectedTakeawayOrder && (selectedTakeawayOrder.OrderID || selectedTakeawayOrder.orderId) === (order.OrderID || order.orderId);
+                                            const isReady = st === "ready";
+                                            let itemsCount = 0;
+                                            try {
+                                                const its = JSON.parse(order.Items);
+                                                itemsCount = its.reduce((acc, it) => acc + parseInt(it.qty || it.quantity || 1), 0);
+                                            } catch(e){}
+
+                                            return (
+                                                <div 
+                                                    key={idx}
+                                                    className={`takeaway-card ${isSelected ? 'selected' : ''}`}
+                                                    onClick={() => handleTakeawaySelect(order)}
+                                                >
+                                                    {isReady && <div className="ready-badge">🔔 Ready</div>}
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <strong style={{ fontSize: '13px' }}>#{order.OrderID || order.orderId}</strong>
+                                                        <span className={`badge ${isReady ? 'badge-available' : 'badge-occupied'}`}>
+                                                            {isReady ? '✅ Ready' : st === 'preparing' ? '🔥 Cooking' : '⏳ Queued'}
+                                                        </span>
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#475569', marginTop: '3px' }}>
+                                                        {order.CustomerName ? `👤 ${order.CustomerName}` : '🥡 Takeaway / Counter'}
+                                                    </div>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', fontWeight: 800 }}>
+                                                        <span style={{ color: '#64748b' }}>{itemsCount} items</span>
+                                                        <span style={{ color: '#1e1b4b' }}>{currency} {parseFloat(order.Total || order.total || 0).toFixed(2)}</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )
                             )}
                         </div>
 
@@ -1234,34 +1369,37 @@
                                 <span>{activeAppMode === 'till' ? '💳 Till Payment & Bill' : 'Current Order'}</span>
                                 {selectedTable ? (
                                     <span className="badge badge-occupied">Table {selectedTable.number}</span>
+                                ) : selectedTakeawayOrder ? (
+                                    <span className="badge badge-available">Takeaway #{selectedTakeawayOrder.OrderID || selectedTakeawayOrder.orderId}</span>
                                 ) : (
-                                    <span className="badge badge-available">Takeaway / Counter</span>
+                                    <span className="badge badge-available">New Counter Sale</span>
                                 )}
                             </h2>
 
                             <div className="order-panel-body">
-                                {!selectedTable && activeAppMode !== 'till' ? (
+                                {!selectedTable && !selectedTakeawayOrder && activeAppMode !== 'till' ? (
                                     <div style={{ textAlign: 'center', padding: '40px 10px', color: '#94a3b8' }}>
                                         <div style={{ fontSize: '40px', marginBottom: '8px' }}>🍽️</div>
                                         <div style={{ fontWeight: 700, fontSize: '15px', color: '#1e293b' }}>Select a Table to start</div>
-                                        <div style={{ fontSize: '12px', marginTop: '4px' }}>Choose a table on the left to view dishes or create an order</div>
+                                        <div style={{ fontSize: '12px', marginTop: '4px' }}>Choose a table or takeaway order on the left</div>
                                     </div>
-                                ) : activeOrderForTable ? (
-                                    /* ── ACTIVE TABLE ORDER: FULL DISHES & KITCHEN STATUS BREAKDOWN ── */
+                                ) : activeOrderInFocus ? (
+                                    /* ── ACTIVE ORDER (TABLE OR TAKEAWAY): FULL DISHES & KITCHEN STATUS BREAKDOWN ── */
                                     (() => {
                                         let parsedItems = [];
                                         try {
-                                            const raw = activeOrderForTable.Items || activeOrderForTable.items || [];
+                                            const raw = activeOrderInFocus.Items || activeOrderInFocus.items || [];
                                             parsedItems = typeof raw === "string" ? JSON.parse(raw) : raw;
                                         } catch(e){}
 
-                                        const sub = parseFloat(activeOrderForTable.Subtotal || activeOrderForTable.subtotal || 0);
-                                        const tx = parseFloat(activeOrderForTable.Tax || activeOrderForTable.tax || (sub * taxRate));
-                                        const tot = parseFloat(activeOrderForTable.Total || activeOrderForTable.total || (sub + tx));
+                                        const sub = parseFloat(activeOrderInFocus.Subtotal || activeOrderInFocus.subtotal || 0);
+                                        const tx = parseFloat(activeOrderInFocus.Tax || activeOrderInFocus.tax || (sub * taxRate));
+                                        const tot = parseFloat(activeOrderInFocus.Total || activeOrderInFocus.total || (sub + tx));
                                         const tendered = paymentMethod === "Cash" ? (parseFloat(tillCashTendered) || 0) : tot;
                                         const change = Math.max(0, tendered - tot);
 
-                                        const ordStatus = (activeOrderForTable.Status || "").toLowerCase();
+                                        const ordStatus = (activeOrderInFocus.Status || "").toLowerCase();
+                                        const labelText = parseInt(activeOrderInFocus.TableNumber) > 0 ? `Table ${activeOrderInFocus.TableNumber}` : (activeOrderInFocus.CustomerName ? `${activeOrderInFocus.CustomerName} (Takeaway)` : 'Takeaway Order');
 
                                         return (
                                             <div>
@@ -1269,13 +1407,13 @@
                                                 <div className="progress-box">
                                                     <div className="progress-header">
                                                         <div>
-                                                            <strong style={{ fontSize: '13px' }}>{activeOrderForTable.OrderID}</strong>
+                                                            <strong style={{ fontSize: '13px' }}>{activeOrderInFocus.OrderID}</strong>
                                                             <div style={{ fontSize: '11px', color: '#64748b', marginTop: '1px' }}>
-                                                                Server: {activeOrderForTable.WaiterName || 'Staff'}
+                                                                {labelText} · Server: {activeOrderInFocus.WaiterName || 'Staff'}
                                                             </div>
                                                         </div>
                                                         <div style={{ textAlign: 'right' }}>
-                                                            {ordStatus !== "served" && <OrderTimer orderTime={activeOrderForTable.OrderTime || activeOrderForTable.orderTime} />}
+                                                            {ordStatus !== "served" && <OrderTimer orderTime={activeOrderInFocus.OrderTime || activeOrderInFocus.orderTime} />}
                                                             <div style={{ marginTop: '3px' }}>
                                                                 <span className={`progress-status ${
                                                                     ordStatus === 'ready' ? 'status-ready' : 
@@ -1318,7 +1456,7 @@
                                                                         <button 
                                                                             className="btn btn-primary" 
                                                                             style={{ padding: '3px 8px', fontSize: '10px', width: 'auto', marginTop: '2px' }} 
-                                                                            onClick={() => handleCollectBypassedItem(activeOrderForTable.OrderID, item.name || item.Name)}
+                                                                            onClick={() => handleCollectBypassedItem(activeOrderInFocus.OrderID, item.name || item.Name)}
                                                                         >
                                                                             📥 Collect
                                                                         </button>
@@ -1376,7 +1514,7 @@
                                                         <div className="action-stack">
                                                             <button 
                                                                 className="btn btn-primary" 
-                                                                onClick={() => triggerAddOnConfirmation(activeOrderForTable.OrderID, selectedTable.number)}
+                                                                onClick={() => triggerAddOnConfirmation(activeOrderInFocus.OrderID, labelText)}
                                                             >
                                                                 📤 Send Add-on to Kitchen
                                                             </button>
@@ -1447,10 +1585,10 @@
                                                                 )}
 
                                                                 <div className="action-stack">
-                                                                    <button className="btn btn-success" onClick={() => handleSettleTableBill(activeOrderForTable)}>
+                                                                    <button className="btn btn-success" onClick={() => handleSettleOrderBill(activeOrderInFocus)}>
                                                                         ✅ Settle Bill & Print Receipt
                                                                     </button>
-                                                                    <button className="btn btn-ghost" onClick={() => printReceipt(activeOrderForTable, { method: paymentMethod }, currency, taxRate)}>
+                                                                    <button className="btn btn-ghost" onClick={() => printReceipt(activeOrderInFocus, { method: paymentMethod }, currency, taxRate)}>
                                                                         🖨️ Print Bill Only
                                                                     </button>
                                                                 </div>
@@ -1459,12 +1597,12 @@
                                                             /* ── WAITER FLOOR ACTION BUTTONS ── */
                                                             <div className="action-stack">
                                                                 {ordStatus === "ready" && (
-                                                                    <button className="btn btn-success" onClick={() => handleDeliverOrder(activeOrderForTable.OrderID)}>
+                                                                    <button className="btn btn-success" onClick={() => handleDeliverOrder(activeOrderInFocus.OrderID)}>
                                                                         🚀 Deliver Order to Table
                                                                     </button>
                                                                 )}
-                                                                <button className="btn btn-ghost" onClick={() => setSelectedTable(null)}>
-                                                                    ← Back to Tables
+                                                                <button className="btn btn-ghost" onClick={() => { setSelectedTable(null); setSelectedTakeawayOrder(null); }}>
+                                                                    ← Back to List
                                                                 </button>
                                                             </div>
                                                         )}
@@ -1549,7 +1687,7 @@
 
                                                                     <div className="change-banner">
                                                                         <span>Change Due:</span>
-                                                                        <span style={{ fontSize: '16px' }}>{currency} {change.toFixed(2)}</span>
+                                                                        <span style={{ fontSize: '15px' }}>{currency} {change.toFixed(2)}</span>
                                                                     </div>
                                                                 </div>
                                                             )}
@@ -1592,7 +1730,7 @@
                                     Confirm Add-on Items
                                 </h3>
                                 <p style={{ fontSize: '13px', color: '#64748b', textAlign: 'center', marginTop: '4px' }}>
-                                    Are you sure you want to add the following items to <strong>Table {addonConfirmData.tableNumber}</strong>?
+                                    Are you sure you want to add the following items to <strong>{addonConfirmData.targetLabel}</strong>?
                                 </p>
 
                                 <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px', margin: '14px 0', border: '1px solid #e2e8f0', maxHeight: '160px', overflowY: 'auto' }}>
@@ -1603,7 +1741,7 @@
                                         </div>
                                     ))}
                                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 800, marginTop: '8px', paddingTop: '6px', borderTop: '1px solid #cbd5e1' }}>
-                                        <span>Add-ons Total:</span>
+                                        <span>Add-ons Subtotal:</span>
                                         <span>{currency} {addonConfirmData.subtotal.toFixed(2)}</span>
                                     </div>
                                 </div>
@@ -1612,148 +1750,4 @@
                                     <button className="btn btn-primary" onClick={confirmAndSendAddOnToKitchen}>
                                         ✅ Yes, Send to Kitchen
                                     </button>
-                                    <button className="btn btn-ghost" onClick={() => setAddonConfirmData(null)}>
-                                        ✕ Cancel
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* ── PAYMENT SUCCESS & CHANGE MODAL ── */}
-                    {completedPaymentModal && (
-                        <div className="modal-overlay">
-                            <div className="modal-card" style={{ maxWidth: '420px', textAlign: 'center', padding: '24px' }}>
-                                <div style={{ fontSize: '48px', marginBottom: '8px' }}>🎉</div>
-                                <h3 style={{ fontSize: '20px', fontWeight: 900, color: '#1e1b4b' }}>Payment Complete!</h3>
-                                <div style={{ fontSize: '13px', color: '#64748b', marginTop: '2px' }}>
-                                    Order #{completedPaymentModal.orderId} · {completedPaymentModal.table}
-                                </div>
-
-                                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', margin: '16px 0', textAlign: 'left', fontSize: '13px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                                        <span>Total Amount:</span>
-                                        <strong style={{ fontSize: '15px' }}>{currency} {completedPaymentModal.total.toFixed(2)}</strong>
-                                    </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                                        <span>Tendered ({completedPaymentModal.method}):</span>
-                                        <span>{currency} {completedPaymentModal.tendered.toFixed(2)}</span>
-                                    </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #cbd5e1', paddingTop: '8px', marginTop: '8px', color: '#047857', fontSize: '16px', fontWeight: 900 }}>
-                                        <span>CHANGE DUE:</span>
-                                        <span>{currency} {completedPaymentModal.change.toFixed(2)}</span>
-                                    </div>
-                                </div>
-
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                    <button className="btn btn-primary" onClick={() => printReceipt(completedPaymentModal.rawOrder, { method: completedPaymentModal.method, tendered: completedPaymentModal.tendered, change: completedPaymentModal.change }, currency, taxRate)}>
-                                        🖨️ Re-Print Slip
-                                    </button>
-                                    <button className="btn btn-success" onClick={() => setCompletedPaymentModal(null)}>
-                                        ✓ Done / Next
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* ── SETTLED ORDERS HISTORY MODAL ── */}
-                    {showHistoryModal && (
-                        <div className="modal-overlay" onClick={() => setShowHistoryModal(false)}>
-                            <div className="modal-card" onClick={e => e.stopPropagation()}>
-                                <div className="modal-header">
-                                    <div className="modal-title">📋 Settled Transactions History</div>
-                                    <button className="modal-close" onClick={() => setShowHistoryModal(false)}>✕</button>
-                                </div>
-                                <div className="modal-body">
-                                    {(() => {
-                                        const settledOrders = liveOrders.filter(o => ["closed", "paid", "settled", "completed"].includes((o.Status || o.status || "").toLowerCase()));
-                                        if (settledOrders.length === 0) {
-                                            return <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>No settled orders recorded yet.</div>;
-                                        }
-
-                                        return (
-                                            <table className="history-table">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Order</th>
-                                                        <th>Table</th>
-                                                        <th>Total</th>
-                                                        <th>Time</th>
-                                                        <th>Receipt</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {settledOrders.slice().reverse().map((o, idx) => (
-                                                        <tr key={idx}>
-                                                            <td style={{ fontWeight: 700 }}>{o.OrderID || o.orderId}</td>
-                                                            <td>{parseInt(o.TableNumber) === 0 ? 'Takeaway' : `Table ${o.TableNumber}`}</td>
-                                                            <td style={{ fontWeight: 800, color: '#1e1b4b' }}>{currency} {parseFloat(o.Total || o.total || 0).toFixed(2)}</td>
-                                                            <td style={{ color: '#64748b' }}>
-                                                                {o.OrderTime ? new Date(o.OrderTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
-                                                            </td>
-                                                            <td>
-                                                                <button 
-                                                                    className="btn btn-ghost" 
-                                                                    style={{ padding: '4px 8px', fontSize: '11px', width: 'auto' }}
-                                                                    onClick={() => printReceipt(o, { method: "PAID" }, currency, taxRate)}
-                                                                >
-                                                                    🖨️ Receipt
-                                                                </button>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        );
-                                    })()}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {notification && (
-                        <div className={`notification ${notification.type}`}>
-                            {notification.message}
-                        </div>
-                    )}
-                </div>
-            );
-        }
-
-        window.startWaiterApp = function() {
-            ReactDOM.render(<MainApp />, document.getElementById('root'));
-        };
-    </script>
-
-    <script>
-    (function initAuth() {
-      function start() {
-        var root = document.getElementById("root");
-        if (root) root.style.display = "block";
-        var loader = document.getElementById("loading-placeholder");
-        if (loader) loader.style.display = "none";
-        
-        if (typeof window.startWaiterApp === "function") {
-            window.startWaiterApp();
-        }
-
-        setTimeout(function() {
-          if (typeof POS_AUTH !== "undefined" && typeof POS_AUTH.renderUtilBar === "function") {
-            POS_AUTH.renderUtilBar("user-badge", "waiter-app");
-          }
-        }, 500);
-      }
-
-      if (typeof POS_AUTH !== "undefined") {
-        POS_AUTH.init("waiter-app", {
-          onReady: start,
-          onError: start
-        });
-      } else {
-        start();
-      }
-    })();
-    </script>
-</body>
-</html>
+            
