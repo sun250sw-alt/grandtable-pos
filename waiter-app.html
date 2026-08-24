@@ -66,7 +66,7 @@
         /* MAIN LAYOUT */
         .main-layout {
             display: grid;
-            grid-template-columns: 280px 1fr 450px;
+            grid-template-columns: 310px 1fr 450px;
             gap: 14px;
             height: calc(100vh - 96px);
         }
@@ -138,7 +138,7 @@
         }
         .server-name { font-weight: 700; font-size: 14px; color: #1e293b; }
 
-        /* LEFT SIDEBAR SELECTOR (TABLES & TAKEAWAYS) */
+        /* LEFT SIDEBAR SELECTOR */
         .left-tab-bar {
             display: flex;
             gap: 4px;
@@ -166,46 +166,44 @@
             box-shadow: 0 1px 4px rgba(0,0,0,0.08);
         }
 
-        /* COMPACT SINGLE-COLUMN TABLES LIST */
-        .tables-list-compact {
-            display: flex;
-            flex-direction: column;
-            gap: 7px;
+        /* 2-COLUMN TABLE GRID TILES */
+        .tables-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
             overflow-y: auto;
         }
 
-        .table-row-card {
+        .table-card {
             position: relative;
-            padding: 10px 12px;
-            border-radius: 10px;
+            padding: 14px 10px;
+            border-radius: 12px;
             cursor: pointer;
-            transition: all 0.15s;
+            transition: all 0.2s;
             border: 2px solid #e2e8f0;
+            text-align: center;
             background: white;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
         }
-        .table-row-card:hover { transform: translateY(-1px); border-color: #6366f1; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-        .table-row-card.available { background: #f0fdf4; border-color: #bbf7d0; }
-        .table-row-card.occupied { background: #fffbeb; border-color: #fde68a; }
-        .table-row-card.delivered { background: #faf5ff; border-color: #e9d5ff; }
-        .table-row-card.paid { background: #ecfdf5; border-color: #6ee7b7; }
-        .table-row-card.selected { box-shadow: 0 0 0 3px #6366f1 !important; border-color: #6366f1 !important; }
+        .table-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .table-card.available { background: #f0fdf4; border-color: #86efac; }
+        .table-card.occupied { background: #fffbeb; border-color: #fcd34d; }
+        .table-card.delivered { background: #faf5ff; border-color: #d8b4fe; }
+        .table-card.paid { background: #ecfdf5; border-color: #34d399; }
+        .table-card.selected { box-shadow: 0 0 0 3px #6366f1 !important; border-color: #6366f1 !important; }
 
-        .tr-left { display: flex; align-items: center; gap: 8px; }
-        .tr-num { font-size: 15px; font-weight: 800; }
-        .tr-amount { font-size: 13px; font-weight: 800; color: #1e1b4b; text-align: right; }
+        .table-number { font-size: 17px; font-weight: 800; margin-bottom: 3px; }
+        .table-status { font-size: 10px; font-weight: 700; text-transform: uppercase; }
+        .table-amount { font-size: 12px; font-weight: 800; color: #1e1b4b; margin-top: 3px; }
 
         .ready-badge {
             position: absolute;
-            top: -6px; right: -6px;
+            top: -7px; right: -7px;
             background: #ef4444;
             color: white;
             font-weight: 900;
-            font-size: 9px;
-            padding: 2px 6px;
-            border-radius: 8px;
+            font-size: 10px;
+            padding: 2px 7px;
+            border-radius: 9px;
             box-shadow: 0 2px 6px rgba(239,68,68,0.4);
             animation: pulse-ready 1.5s infinite;
             z-index: 20;
@@ -221,7 +219,7 @@
         }
         .takeaway-card {
             position: relative;
-            padding: 10px 12px;
+            padding: 12px;
             border-radius: 10px;
             border: 2px solid #e2e8f0;
             background: white;
@@ -1026,7 +1024,7 @@
                         subtotal    : subtotal,
                         tax         : tax,
                         total       : total,
-                        status      : "closed",
+                        status      : "preparing",
                         notes       : `[TAKEAWAY - PAID ${paymentMethod}]`
                     };
 
@@ -1054,7 +1052,28 @@
                 }
             };
 
-            // ── TILL: SETTLE BILL (FOR TABLE OR TAKEAWAY) ──
+            // ── HAND OVER COMPLETED TAKEAWAY TO CUSTOMER ──
+            const handleHandoverTakeaway = async (order) => {
+                const api = getPosApi();
+                if (!api) return;
+
+                try {
+                    if (api.Orders && typeof api.Orders.update === "function") {
+                        await api.Orders.update({
+                            orderId: order.OrderID || order.orderId,
+                            status: "closed"
+                        });
+                    }
+
+                    showNotification(`Order #${order.OrderID || order.orderId} handed over to customer!`);
+                    setSelectedTakeawayOrder(null);
+                    loadData();
+                } catch(e) {
+                    showNotification("Handover failed: " + e.message, "error");
+                }
+            };
+
+            // ── TILL: SETTLE BILL (FOR TABLE OR UNPAID TAKEAWAY) ──
             const handleSettleOrderBill = async (order) => {
                 const api = getPosApi();
                 if (!api) return;
@@ -1113,7 +1132,7 @@
                 return (tbl === 0 || tbl >= 90) && !["closed", "cancelled", "void"].includes(st);
             });
 
-            // Currently focused active order (from table OR selected takeaway)
+            // Currently focused active order
             const activeOrderInFocus = selectedTable 
                 ? liveOrders.find(o => 
                     parseInt(o.TableNumber || o.table) === parseInt(selectedTable.number) && 
@@ -1193,7 +1212,7 @@
                     </div>
 
                     <div className="main-layout">
-                        {/* ── COLUMN 1: LEFT SIDEBAR SELECTOR (COMPACT TABLES & TAKEAWAYS) ── */}
+                        {/* ── COLUMN 1: LEFT SIDEBAR (2-COLUMN TABLE GRID / TAKEAWAYS) ── */}
                         <div className="panel">
                             <h2>
                                 <span>{leftSidebarTab === 'tables' ? '🪑 Floor Tables' : '🥡 Takeaways'}</span>
@@ -1224,12 +1243,12 @@
                                 </button>
                             </div>
 
-                            {/* COMPACT SINGLE-COLUMN TABLES LIST */}
+                            {/* 2-COLUMN TABLES GRID TILES */}
                             {leftSidebarTab === 'tables' ? (
                                 tables.length === 0 ? (
                                     <div style={{ textAlign: 'center', padding: '30px 10px', color: '#888' }}>No tables configured</div>
                                 ) : (
-                                    <div className="tables-list-compact">
+                                    <div className="tables-grid">
                                         {tables.map(table => {
                                             const matchOrder = liveOrders.find(o => parseInt(o.TableNumber || o.table) === parseInt(table.number) && !["closed", "cancelled", "void"].includes((o.Status || o.status || "").toLowerCase()));
                                             const isFoodReady = matchOrder && (matchOrder.Status || matchOrder.status || "").toLowerCase() === "ready";
@@ -1248,21 +1267,19 @@
                                             return (
                                                 <div
                                                     key={table.id}
-                                                    className={`table-row-card ${statusClass} ${selectedTable?.id === table.id ? 'selected' : ''}`}
+                                                    className={`table-card ${statusClass} ${selectedTable?.id === table.id ? 'selected' : ''}`}
                                                     onClick={() => handleTableSelect(table)}
                                                 >
                                                     {isFoodReady && <div className="ready-badge">🔔 Ready</div>}
-                                                    <div className="tr-left">
-                                                        <span className="tr-num">Table {table.number}</span>
+                                                    <div className="table-number">Table {table.number}</div>
+                                                    <div className="table-status">
                                                         <span className={`badge badge-${statusClass}`}>{statusClass}</span>
                                                     </div>
-                                                    <div>
-                                                        {matchOrder ? (
-                                                            <div className="tr-amount">{currency} {parseFloat(matchOrder.Total || matchOrder.total || 0).toFixed(2)}</div>
-                                                        ) : (
-                                                            <span style={{ fontSize: '11px', color: '#94a3b8' }}>{table.capacity}p</span>
-                                                        )}
-                                                    </div>
+                                                    {matchOrder ? (
+                                                        <div className="table-amount">{currency} {parseFloat(matchOrder.Total || matchOrder.total || 0).toFixed(2)}</div>
+                                                    ) : (
+                                                        <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>{table.capacity} seats</div>
+                                                    )}
                                                 </div>
                                             );
                                         })}
@@ -1384,7 +1401,7 @@
                                         <div style={{ fontSize: '12px', marginTop: '4px' }}>Choose a table or takeaway order on the left</div>
                                     </div>
                                 ) : activeOrderInFocus ? (
-                                    /* ── ACTIVE ORDER (TABLE OR TAKEAWAY): FULL DISHES & KITCHEN STATUS BREAKDOWN ── */
+                                    /* ── ACTIVE ORDER: FULL DISHES & KITCHEN STATUS BREAKDOWN ── */
                                     (() => {
                                         let parsedItems = [];
                                         try {
@@ -1399,7 +1416,10 @@
                                         const change = Math.max(0, tendered - tot);
 
                                         const ordStatus = (activeOrderInFocus.Status || "").toLowerCase();
-                                        const labelText = parseInt(activeOrderInFocus.TableNumber) > 0 ? `Table ${activeOrderInFocus.TableNumber}` : (activeOrderInFocus.CustomerName ? `${activeOrderInFocus.CustomerName} (Takeaway)` : 'Takeaway Order');
+                                        const isTakeaway = parseInt(activeOrderInFocus.TableNumber || 0) === 0 || parseInt(activeOrderInFocus.TableNumber || 0) >= 90;
+                                        const labelText = isTakeaway ? (activeOrderInFocus.CustomerName ? `${activeOrderInFocus.CustomerName} (Takeaway)` : 'Takeaway Order') : `Table ${activeOrderInFocus.TableNumber}`;
+                                        
+                                        const isAlreadyPaid = (activeOrderInFocus.Notes || "").includes("PAID") || ["closed", "paid"].includes(ordStatus);
 
                                         return (
                                             <div>
@@ -1532,8 +1552,39 @@
                                                             <div className="totals-row grand-total"><span>Active Total:</span><span>{currency} {tot.toFixed(2)}</span></div>
                                                         </div>
 
-                                                        {/* ── TILL SETTLEMENT PAYMENT DRAWER ── */}
-                                                        {activeAppMode === 'till' ? (
+                                                        {/* ── BUTTON LOGIC: HAND OVER READY TAKEAWAY vs TILL SETTLEMENT ── */}
+                                                        {isTakeaway && ordStatus === "ready" ? (
+                                                            /* READY TAKEAWAY: HAND OVER TO CUSTOMER */
+                                                            <div className="action-stack" style={{ marginTop: '14px' }}>
+                                                                <button 
+                                                                    className="btn btn-success" 
+                                                                    style={{ padding: '14px', fontSize: '15px', background: '#059669' }} 
+                                                                    onClick={() => handleHandoverTakeaway(activeOrderInFocus)}
+                                                                >
+                                                                    📦 Hand Over to Customer
+                                                                </button>
+                                                                <button 
+                                                                    className="btn btn-ghost" 
+                                                                    onClick={() => printReceipt(activeOrderInFocus, { method: "PAID" }, currency, taxRate)}
+                                                                >
+                                                                    🖨️ Re-Print Slip
+                                                                </button>
+                                                            </div>
+                                                        ) : isTakeaway && isAlreadyPaid && ordStatus !== "ready" ? (
+                                                            /* PAID TAKEAWAY COOKING IN PROGRESS */
+                                                            <div className="action-stack" style={{ marginTop: '14px' }}>
+                                                                <div style={{ background: '#fef3c7', border: '1px solid #fde68a', color: '#b45309', padding: '12px', borderRadius: '8px', textAlign: 'center', fontSize: '13px', fontWeight: 800 }}>
+                                                                    🔥 Cooking in Kitchen (Order Paid)
+                                                                </div>
+                                                                <button 
+                                                                    className="btn btn-ghost" 
+                                                                    onClick={() => printReceipt(activeOrderInFocus, { method: "PAID" }, currency, taxRate)}
+                                                                >
+                                                                    🖨️ Print Slip
+                                                                </button>
+                                                            </div>
+                                                        ) : activeAppMode === 'till' ? (
+                                                            /* TILL PAYMENT DRAWER (UNPAID BILL SETTLEMENT) */
                                                             <div className="payment-box">
                                                                 <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
                                                                     <button 
@@ -1594,7 +1645,7 @@
                                                                 </div>
                                                             </div>
                                                         ) : (
-                                                            /* ── WAITER FLOOR ACTION BUTTONS ── */
+                                                            /* WAITER FLOOR DELIVER ACTION */
                                                             <div className="action-stack">
                                                                 {ordStatus === "ready" && (
                                                                     <button className="btn btn-success" onClick={() => handleDeliverOrder(activeOrderInFocus.OrderID)}>
@@ -1602,7 +1653,7 @@
                                                                     </button>
                                                                 )}
                                                                 <button className="btn btn-ghost" onClick={() => { setSelectedTable(null); setSelectedTakeawayOrder(null); }}>
-                                                                    ← Back to List
+                                                                    ← Back to Tables
                                                                 </button>
                                                             </div>
                                                         )}
@@ -1695,7 +1746,7 @@
 
                                                         <div className="action-stack">
                                                             <button className="btn btn-success" onClick={handleTillQuickCheckout}>
-                                                                💰 Takeaway Payment & Print
+                                                                💰 Send to Kitchen & Print
                                                             </button>
                                                             <button className="btn btn-danger" style={{ padding: '7px' }} onClick={() => setOrderItems([])}>
                                                                 🗑️ Clear Cart
@@ -1741,7 +1792,7 @@
                                         </div>
                                     ))}
                                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 800, marginTop: '8px', paddingTop: '6px', borderTop: '1px solid #cbd5e1' }}>
-                                        <span>Add-ons Subtotal:</span>
+                                        <span>Add-ons Total:</span>
                                         <span>{currency} {addonConfirmData.subtotal.toFixed(2)}</span>
                                     </div>
                                 </div>
@@ -1815,7 +1866,7 @@
                                                 <thead>
                                                     <tr>
                                                         <th>Order</th>
-                                                        <th>Table</th>
+                                                        <th>Table / Customer</th>
                                                         <th>Total</th>
                                                         <th>Time</th>
                                                         <th>Receipt</th>
