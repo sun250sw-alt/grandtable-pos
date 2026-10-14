@@ -7,9 +7,6 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="pos-config.js"></script>
-    <script src="pos-api.js"></script>
-    <script src="pos-gapi.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f9fa; color: #1a1a2e; }
@@ -255,17 +252,17 @@
     const { useState, useEffect } = React;
 
     // ════════════════════════════════════════════════════════════════
-    // 🔴 SPREADSHEET CONFIGURATION (DIRECTLY LINKED):
+    // CUSTOMER SHEET WEB APP CONFIGURATION:
+    // Paste the Web app URL from deploying CustomerSheetWebApp.gs here.
     // ════════════════════════════════════════════════════════════════
-    const SPREADSHEET_ID = "1jMTY5g5zTrO0br4ibf4Rhw0qbRn8BzGFM9BfLs_lba4"; 
-    const MENU_TAB_GID = "178083244";
+    const CUSTOMER_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbylD_GRsWEFpMFUgE8FkKL5qUjGDm1Rleh7mDSxpor-0vA3KD_t7q2I2BrB_q4gsW0Sfg/exec";
 
     function CustomerApp() {
         const [menuItems, setMenuItems] = useState([]);
         const [loadingMenu, setLoadingMenu] = useState(true);
         const [cart, setCart] = useState({});
-        const [screen, setScreen] = useState("menu"); 
-        const [mode, setMode] = useState("delivery"); 
+        const [screen, setScreen] = useState("menu");
+        const [mode, setMode] = useState("delivery");
         const [cat, setCat] = useState("All");
         const [search, setSearch] = useState("");
         const [form, setForm] = useState({ name:'', phone:'', address:'', notes:'' });
@@ -274,19 +271,18 @@
         const [orderStatus, setOrderStatus] = useState("new");
         const [isSubmitting, setIsSubmitting] = useState(false);
 
-        // Helper: Formats raw row objects into standard menu item models
+        // Helper: Formats raw row objects (from the Customer Sheet's Menu
+        // tab, via the Apps Script Web App) into the menu item shape the
+        // rest of this component expects.
         const formatRawRows = (rows) => {
             if (!Array.isArray(rows) || !rows.length) return [];
             return rows.map((r, idx) => {
                 if (!r || typeof r !== "object") return null;
 
-                const name = r.Name || r.name || r.ItemName || r.DishName || r.dish || r.Item || "";
-                if (!name || name === "Name") return null;
+                const name = r.Name || r.name || "";
+                if (!name) return null;
 
-                const availStr = String(r.Available !== undefined ? r.Available : (r.available !== undefined ? r.available : r.Status || "true")).toLowerCase().trim();
-                if (availStr === "false" || availStr === "unavailable" || availStr === "0" || availStr === "off") return null;
-
-                const priceRaw = r.Price !== undefined ? r.Price : (r.price !== undefined ? r.price : 0);
+                const priceRaw = r.Price !== undefined ? r.Price : 0;
                 const price = parseFloat(String(priceRaw).replace(/[^0-9.]/g, "")) || 0;
 
                 return {
@@ -301,105 +297,43 @@
             }).filter(Boolean);
         };
 
-        // ── ZERO-CORS JSONP GOOGLE SHEETS LOADER ──
-        const fetchGVizJSONP = (sheetId, queryParam) => {
-            return new Promise((resolve, reject) => {
-                const callbackName = 'gviz_cb_' + Math.floor(Math.random() * 1000000);
-                const timeoutId = setTimeout(() => {
-                    delete window[callbackName];
-                    if (script.parentNode) script.parentNode.removeChild(script);
-                    reject(new Error("Timeout loading sheet data"));
-                }, 6000);
-
-                window[callbackName] = (data) => {
-                    clearTimeout(timeoutId);
-                    delete window[callbackName];
-                    if (script.parentNode) script.parentNode.removeChild(script);
-                    resolve(data);
-                };
-
-                const script = document.createElement('script');
-                const q = queryParam ? ('&' + queryParam) : '';
-                script.src = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=responseHandler:${callbackName}${q}`;
-                script.onerror = (err) => {
-                    clearTimeout(timeoutId);
-                    delete window[callbackName];
-                    if (script.parentNode) script.parentNode.removeChild(script);
-                    reject(err);
-                };
-                document.head.appendChild(script);
-            });
-        };
-
-        // ── 1. LOAD LIVE MENU (JSONP ENGINE) ──
+        // ── 1. LOAD LIVE MENU, from the dedicated Customer Sheet via its
+        // Apps Script Web App — this is a public GET, so it needs no
+        // sign-in and works for a genuinely anonymous customer. ──
         const loadMenuFromDatabase = async () => {
-            const queries = [
-                `gid=${MENU_TAB_GID}`,
-                `sheet=MenuItems`,
-                `sheet=Menu`,
-                `sheet=Menus`,
-                `` // Default active sheet
-            ];
-
-            for (let q of queries) {
-                try {
-                    const data = await fetchGVizJSONP(SPREADSHEET_ID, q);
-                    if (data && data.table) {
-                        let cols = (data.table.cols || []).map(c => (c.label || "").trim());
-                        let rowsData = data.table.rows || [];
-
-                        // If column headers are in Row 0
-                        if (cols.every(c => !c) && rowsData.length > 0) {
-                            const headerRow = rowsData[0].c || [];
-                            cols = headerRow.map((cell, idx) => (cell && cell.v !== null ? String(cell.v).trim() : `col_${idx}`));
-                            rowsData = rowsData.slice(1);
-                        }
-
-                        const parsedRows = rowsData.map(r => {
-                            const obj = {};
-                            (r.c || []).forEach((cell, idx) => {
-                                const colName = cols[idx];
-                                if (colName) {
-                                    obj[colName] = (cell && cell.v !== null) ? cell.v : "";
-                                }
-                            });
-                            return obj;
-                        });
-
-                        const formatted = formatRawRows(parsedRows);
-                        if (formatted.length > 0) {
-                            setMenuItems(formatted);
-                            setLoadingMenu(false);
-                            return true;
-                        }
-                    }
-                } catch(e) {}
+            setLoadingMenu(true);
+            try {
+                const res = await fetch(`${CUSTOMER_APP_SCRIPT_URL}?action=menu`);
+                const json = await res.json();
+                if (json && json.success && Array.isArray(json.data)) {
+                    setMenuItems(formatRawRows(json.data));
+                } else {
+                    console.error("Menu load error:", json && json.error);
+                }
+            } catch (e) {
+                console.error("Menu load error:", e);
             }
-
             setLoadingMenu(false);
-            return false;
         };
 
         useEffect(() => {
             loadMenuFromDatabase();
         }, []);
 
-        // ── 2. LIVE ORDER STATUS POLLING ──
+        // ── 2. LIVE ORDER STATUS POLLING, also via the Apps Script Web
+        // App — a customer tracking their order has no Google session
+        // either, so this also can't go through POS_GAPI. ──
         useEffect(() => {
             if (screen !== "tracking" || !placedOrder) return;
 
             const pollInterval = setInterval(async () => {
-                const api = window.POS_API || window.POS_GAPI;
-                if (api && api.Orders && typeof api.Orders.getAll === "function") {
-                    try {
-                        const res = await api.Orders.getAll();
-                        const orders = (res && res.data) ? res.data : [];
-                        const match = orders.find(o => (o.OrderID || o.orderId || o.id) === placedOrder.orderId);
-                        if (match) {
-                            setOrderStatus((match.Status || match.status || "new").toLowerCase());
-                        }
-                    } catch(e){}
-                }
+                try {
+                    const res = await fetch(`${CUSTOMER_APP_SCRIPT_URL}?action=orderStatus&orderId=${encodeURIComponent(placedOrder.orderId)}`);
+                    const json = await res.json();
+                    if (json && json.success && json.status) {
+                        setOrderStatus(String(json.status).toLowerCase());
+                    }
+                } catch (e) {}
             }, 4000);
 
             return () => clearInterval(pollInterval);
@@ -441,51 +375,59 @@
             }
 
             setIsSubmitting(true);
-            const api = window.POS_API || window.POS_GAPI;
             const generatedOrderId = "ORD-" + Date.now().toString().slice(-6);
 
+            // Field names here are PascalCase to match the Customer Sheet's
+            // Orders tab headers directly — createOrder() in
+            // CustomerSheetWebApp.gs writes these straight into the row.
             const orderPayload = {
-                orderId: generatedOrderId,
-                tableNumber: mode === "pickup" ? 0 : 99, 
-                customerName: form.name,
-                customerPhone: form.phone,
-                waiterName: mode === "delivery" ? "Online Delivery" : "Online Pickup",
-                items: cartItems.map(item => ({ 
-                    name: item.name, 
-                    qty: cart[item.id], 
-                    price: item.price, 
+                OrderID: generatedOrderId,
+                TableNumber: mode === "pickup" ? 0 : 99,
+                CustomerName: form.name,
+                CustomerPhone: form.phone,
+                CustomerAddress: mode === "delivery" ? form.address : "",
+                WaiterName: mode === "delivery" ? "Online Delivery" : "Online Pickup",
+                Items: JSON.stringify(cartItems.map(item => ({
+                    name: item.name,
+                    qty: cart[item.id],
+                    price: item.price,
                     category: item.cat,
                     prepTime: item.prepTime || ""
-                })),
-                subtotal: subtotal,
-                total: total,
-                notes: (mode === "delivery" ? `[DELIVERY: ${form.address}] ` : '[PICKUP] ') + (form.notes || ""),
-                status: "new",
-                orderTime: new Date().toISOString()
+                }))),
+                Subtotal: subtotal,
+                Tax: 0,
+                Total: total,
+                Notes: (mode === "delivery" ? `[DELIVERY: ${form.address}] ` : '[PICKUP] ') + (form.notes || ""),
+                Status: "new",
+                OrderTime: new Date().toISOString()
             };
 
             let realOrderId = generatedOrderId;
 
-            if (api && api.Orders && typeof api.Orders.create === "function") {
+            // This is a genuinely anonymous customer's browser with no
+            // Google sign-in, so this goes through the Apps Script Web App
+            // (a public POST), not POS_GAPI — the same reason the menu load
+            // above does. The script also forwards delivery orders into the
+            // Main Sheet's Deliveries tab for Driver App, so there's no
+            // separate Deliveries.create() call needed here.
+            if (CUSTOMER_APP_SCRIPT_URL && CUSTOMER_APP_SCRIPT_URL.indexOf("PASTE_") !== 0) {
                 try {
-                    const res = await api.Orders.create(orderPayload);
-                    if (res && res.data && (res.data.OrderID || res.data.orderId)) {
-                        realOrderId = res.data.OrderID || res.data.orderId;
-                    }
-
-                    if (mode === "delivery" && api.Deliveries && typeof api.Deliveries.create === "function") {
-                        await api.Deliveries.create({
-                            orderId: realOrderId,
-                            customerName: form.name,
-                            customerAddress: form.address,
-                            distance: "2.5 km",
-                            earnings: "250.00",
-                            status: "pending"
-                        });
+                    const res = await fetch(CUSTOMER_APP_SCRIPT_URL, {
+                        method: "POST",
+                        headers: { "Content-Type": "text/plain;charset=utf-8" },
+                        body: JSON.stringify(orderPayload)
+                    });
+                    const json = await res.json();
+                    if (json && json.success && json.orderId) {
+                        realOrderId = json.orderId;
+                    } else {
+                        console.error("Order submit error:", json && json.error);
                     }
                 } catch(err) {
                     console.error("Order submit error:", err);
                 }
+            } else {
+                console.error("CUSTOMER_APP_SCRIPT_URL is not set — order was not saved anywhere.");
             }
 
             setIsSubmitting(false);
