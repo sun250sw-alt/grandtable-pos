@@ -7,6 +7,9 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Map for the delivery-address pin (Leaflet + OpenStreetMap: free, no API key) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f9fa; color: #1a1a2e; }
@@ -201,6 +204,15 @@
         }
         .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #f39c12; }
 
+        /* Delivery location picker */
+        .loc-btn { width: 100%; padding: 12px; background: #1a1a2e; color: white; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; }
+        .loc-btn:disabled { opacity: 0.6; cursor: default; }
+        .loc-map { height: 260px; margin-top: 10px; border-radius: 12px; border: 2px solid #eee; position: relative; z-index: 0; }
+        .loc-status { font-size: 12.5px; color: #666; margin-top: 8px; line-height: 1.4; }
+        .loc-status.ok { color: #2e7d32; }
+        .loc-clear { background: none; border: none; color: #c0392b; font-size: 12.5px; font-weight: 600; cursor: pointer; margin-left: 8px; }
+        .loc-pin { background: none; border: none; font-size: 30px; line-height: 30px; text-align: center; }
+
         .totals-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 14px; }
         .totals-row.total { font-size: 18px; font-weight: 800; border-top: 2px solid #eee; margin-top: 8px; padding-top: 14px; }
 
@@ -249,7 +261,167 @@
 <div id="root"></div>
 
 <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
+
+    // ════════════════════════════════════════════════════════════════
+    // DELIVERY LOCATION PICKER
+    // "Use my location" button + a map where the customer can tap or drag
+    // a pin onto their exact spot. The pin is what the Driver App routes
+    // to; the readable street address (looked up from the pin) fills the
+    // address box, and the customer can still edit it.
+    // ════════════════════════════════════════════════════════════════
+    const DEFAULT_MAP_CENTER = [6.9271, 79.8612]; // Colombo — shown until a pin is placed
+
+    // Turns OpenStreetMap's long address into a short readable one.
+    function shortAddress(data) {
+        if (!data) return "";
+        const a = data.address || {};
+        const street = [a.house_number, a.road].filter(Boolean).join(" ");
+        const area = a.suburb || a.neighbourhood || a.village || a.quarter || "";
+        const city = a.city || a.town || a.municipality || a.county || "";
+        const parts = [street, area, city].filter(Boolean);
+        return parts.length ? parts.join(", ") : (data.display_name || "");
+    }
+
+    function LocationPicker({ pin, onPick, address, onAddress }) {
+        const mapEl = useRef(null);
+        const mapRef = useRef(null);
+        const markerRef = useRef(null);
+        const reqRef = useRef(0);          // ignores out-of-date address lookups
+        const autoRef = useRef("");        // last address WE filled in
+        const addressRef = useRef(address);
+        const cbRef = useRef({});
+        addressRef.current = address;
+        cbRef.current = { onPick, onAddress };
+
+        const [status, setStatus] = useState("");
+        const [statusOk, setStatusOk] = useState(false);
+        const [locating, setLocating] = useState(false);
+        const mapAvailable = typeof window.L !== "undefined";
+
+        const lookupAddress = async (lat, lng) => {
+            const myReq = ++reqRef.current;
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=en&lat=${lat}&lon=${lng}`);
+                const data = await res.json();
+                if (myReq !== reqRef.current) return; // a newer pin was placed meanwhile
+                const text = shortAddress(data);
+                // Only overwrite the box if it's empty or still holds our own
+                // earlier suggestion — never clobber what the customer typed.
+                const current = (addressRef.current || "").trim();
+                if (text && (!current || current === autoRef.current)) {
+                    autoRef.current = text;
+                    cbRef.current.onAddress(text);
+                }
+            } catch (e) {
+                console.error("Address lookup failed:", e);
+            }
+        };
+
+        const placePin = (lat, lng, zoomIn) => {
+            const map = mapRef.current;
+            if (!map) return;
+            if (!markerRef.current) {
+                const icon = L.divIcon({ className: "loc-pin", html: "📍", iconSize: [30, 30], iconAnchor: [15, 29] });
+                const marker = L.marker([lat, lng], { draggable: true, icon }).addTo(map);
+                marker.on("dragend", () => {
+                    const p = marker.getLatLng();
+                    cbRef.current.onPick({ lat: p.lat, lng: p.lng });
+                    lookupAddress(p.lat, p.lng);
+                });
+                markerRef.current = marker;
+            } else {
+                markerRef.current.setLatLng([lat, lng]);
+            }
+            if (zoomIn) map.setView([lat, lng], Math.max(map.getZoom(), 17));
+            cbRef.current.onPick({ lat, lng });
+            lookupAddress(lat, lng);
+        };
+
+        // Build the map once.
+        useEffect(() => {
+            if (!mapAvailable || !mapEl.current || mapRef.current) return;
+            const start = pin ? [pin.lat, pin.lng] : DEFAULT_MAP_CENTER;
+            const map = L.map(mapEl.current).setView(start, pin ? 17 : 12);
+            L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                maxZoom: 19,
+                attribution: "&copy; OpenStreetMap contributors"
+            }).addTo(map);
+            map.on("click", (e) => {
+                setStatus("Pin placed. Drag it to fine-tune.");
+                setStatusOk(true);
+                placePin(e.latlng.lat, e.latlng.lng, false);
+            });
+            mapRef.current = map;
+            if (pin) {
+                const icon = L.divIcon({ className: "loc-pin", html: "📍", iconSize: [30, 30], iconAnchor: [15, 29] });
+                const marker = L.marker(start, { draggable: true, icon }).addTo(map);
+                marker.on("dragend", () => {
+                    const p = marker.getLatLng();
+                    cbRef.current.onPick({ lat: p.lat, lng: p.lng });
+                    lookupAddress(p.lat, p.lng);
+                });
+                markerRef.current = marker;
+            }
+            setTimeout(() => map.invalidateSize(), 250);
+            return () => { map.remove(); mapRef.current = null; markerRef.current = null; };
+        }, []);
+
+        const detect = () => {
+            if (!navigator.geolocation) {
+                setStatus("Your browser can't share its location. Tap the map to drop a pin instead.");
+                setStatusOk(false);
+                return;
+            }
+            setLocating(true);
+            setStatus("Finding your location…");
+            setStatusOk(false);
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    setLocating(false);
+                    const acc = Math.round(pos.coords.accuracy || 0);
+                    setStatus(acc > 150
+                        ? `Location is approximate (±${acc} m). Drag the pin onto your door.`
+                        : "Location found. Drag the pin if it's slightly off.");
+                    setStatusOk(true);
+                    placePin(pos.coords.latitude, pos.coords.longitude, true);
+                },
+                (err) => {
+                    setLocating(false);
+                    setStatusOk(false);
+                    setStatus(err.code === 1
+                        ? "Location permission was blocked. Allow it in your browser settings, or tap the map to drop a pin."
+                        : "Couldn't get your location. Tap the map to drop a pin instead.");
+                },
+                { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
+            );
+        };
+
+        const clearPin = () => {
+            if (markerRef.current && mapRef.current) mapRef.current.removeLayer(markerRef.current);
+            markerRef.current = null;
+            reqRef.current++;
+            onPick(null);
+            setStatus("");
+        };
+
+        if (!mapAvailable) {
+            return <div className="loc-status">Map couldn't load — please type your address above.</div>;
+        }
+
+        return (
+            <div className="form-group">
+                <button type="button" className="loc-btn" onClick={detect} disabled={locating}>
+                    {locating ? "Finding you…" : "📍 Use my current location"}
+                </button>
+                <div ref={mapEl} className="loc-map"></div>
+                <div className={"loc-status" + (statusOk ? " ok" : "")}>
+                    {status || "Or tap the map to drop a pin on your exact spot."}
+                    {pin && <button type="button" className="loc-clear" onClick={clearPin}>Remove pin</button>}
+                </div>
+            </div>
+        );
+    }
 
     // ════════════════════════════════════════════════════════════════
     // CUSTOMER SHEET WEB APP CONFIGURATION:
@@ -266,6 +438,7 @@
         const [cat, setCat] = useState("All");
         const [search, setSearch] = useState("");
         const [form, setForm] = useState({ name:'', phone:'', address:'', notes:'' });
+        const [pin, setPin] = useState(null); // { lat, lng } from the delivery map, or null
         const [currency, setCurrency] = useState("Rs. ");
         const [placedOrder, setPlacedOrder] = useState(null);
         const [orderStatus, setOrderStatus] = useState("new");
@@ -369,10 +542,18 @@
                 alert("Please enter your name and phone number.");
                 return;
             }
-            if (mode === "delivery" && !form.address) {
-                alert("Please enter your delivery address.");
+            if (mode === "delivery" && !form.address && !pin) {
+                alert("Please enter your delivery address or drop a pin on the map.");
                 return;
             }
+
+            // A dropped pin is sent as "GPS: lat, lng" — the exact format the
+            // Driver App already recognises, so the driver is routed to the
+            // pin itself instead of a guess from typed text. The readable
+            // address and a Google Maps link go in the order notes, where
+            // the kitchen/till staff see them.
+            const pinCoords = pin ? `${pin.lat.toFixed(6)}, ${pin.lng.toFixed(6)}` : "";
+            const mapLink = pin ? `https://www.google.com/maps?q=${pin.lat.toFixed(6)},${pin.lng.toFixed(6)}` : "";
 
             setIsSubmitting(true);
             const generatedOrderId = "ORD-" + Date.now().toString().slice(-6);
@@ -385,7 +566,7 @@
                 TableNumber: mode === "pickup" ? 0 : 99,
                 CustomerName: form.name,
                 CustomerPhone: form.phone,
-                CustomerAddress: mode === "delivery" ? form.address : "",
+                CustomerAddress: mode === "delivery" ? (pin ? `GPS: ${pinCoords}` : form.address) : "",
                 WaiterName: mode === "delivery" ? "Online Delivery" : "Online Pickup",
                 Items: JSON.stringify(cartItems.map(item => ({
                     name: item.name,
@@ -397,7 +578,7 @@
                 Subtotal: subtotal,
                 Tax: 0,
                 Total: total,
-                Notes: (mode === "delivery" ? `[DELIVERY: ${form.address}] ` : '[PICKUP] ') + (form.notes || ""),
+                Notes: (mode === "delivery" ? `[DELIVERY: ${form.address || "Pinned location"}]${mapLink ? ` [MAP: ${mapLink}]` : ""} ` : '[PICKUP] ') + (form.notes || ""),
                 Status: "new",
                 OrderTime: new Date().toISOString()
             };
@@ -506,7 +687,12 @@
                             <h3>{mode === "delivery" ? "Delivery Details" : "Pickup Details"}</h3>
                             <div className="form-group"><label>Your Name *</label><input placeholder="e.g. Sanjaya" value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
                             <div className="form-group"><label>Phone Number *</label><input placeholder="e.g. 077 123 4567" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></div>
-                            {mode === "delivery" && <div className="form-group"><label>Delivery Address *</label><input placeholder="e.g. 45 Beach Road, Colombo" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div>}
+                            {mode === "delivery" && (
+                                <React.Fragment>
+                                    <div className="form-group"><label>Delivery Address *</label><input placeholder="e.g. 45 Beach Road, Colombo" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div>
+                                    <LocationPicker pin={pin} onPick={setPin} address={form.address} onAddress={(text) => setForm(f => ({...f, address: text}))} />
+                                </React.Fragment>
+                            )}
                             <div className="form-group"><label>Special Instructions (optional)</label><input placeholder="e.g. Less sugar, ring doorbell" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} /></div>
                         </div>
                         <div className="checkout-section">
