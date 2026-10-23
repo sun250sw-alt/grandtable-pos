@@ -427,7 +427,22 @@
     // CUSTOMER SHEET WEB APP CONFIGURATION:
     // Paste the Web app URL from deploying CustomerSheetWebApp.gs here.
     // ════════════════════════════════════════════════════════════════
-    const CUSTOMER_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbylD_GRsWEFpMFUgE8FkKL5qUjGDm1Rleh7mDSxpor-0vA3KD_t7q2I2BrB_q4gsW0Sfg/exec";
+    // ONE shared app for every restaurant: each restaurant's own link carries its
+    // script code, e.g.  customer-app.html?s=AKfycb...  (made by the restaurant's
+    // control panel). Without ?s= the default below is used (the original restaurant).
+    const CUSTOMER_APP_SCRIPT_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbylD_GRsWEFpMFUgE8FkKL5qUjGDm1Rleh7mDSxpor-0vA3KD_t7q2I2BrB_q4gsW0Sfg/exec";
+    const CUSTOMER_APP_SCRIPT_URL = (function () {
+        try {
+            const code = new URLSearchParams(location.search).get("s");
+            if (code && /^[A-Za-z0-9_-]{20,}$/.test(code)) {      // only a plain deployment code — never a free-form URL
+                try { localStorage.setItem("gt_script_code", code); } catch (e) {}
+                return "https://script.google.com/macros/s/" + code + "/exec";
+            }
+            const saved = localStorage.getItem("gt_script_code");   // customer re-opened the page without the code
+            if (saved && /^[A-Za-z0-9_-]{20,}$/.test(saved)) return "https://script.google.com/macros/s/" + saved + "/exec";
+        } catch (e) {}
+        return CUSTOMER_APP_SCRIPT_URL_DEFAULT;
+    })();
 
     function CustomerApp() {
         const [menuItems, setMenuItems] = useState([]);
@@ -440,6 +455,24 @@
         const [form, setForm] = useState({ name:'', phone:'', address:'', notes:'' });
         const [pin, setPin] = useState(null); // { lat, lng } from the delivery map, or null
         const [currency, setCurrency] = useState("Rs. ");
+        const [shopName, setShopName] = useState("The Grand Table");
+        const [deliveryFeeCfg, setDeliveryFeeCfg] = useState(250);
+
+        // Restaurant name / currency / delivery fee come from that restaurant's own script
+        // (older scripts without this answer simply keep the defaults above).
+        useEffect(() => {
+            (async () => {
+                try {
+                    const res = await fetch(`${CUSTOMER_APP_SCRIPT_URL}?action=info`);
+                    const json = await res.json();
+                    if (json && json.success && json.data) {
+                        if (json.data.name) { setShopName(json.data.name); document.title = "Order Online - " + json.data.name; }
+                        if (json.data.currency) setCurrency(String(json.data.currency) + " ");
+                        if (json.data.deliveryFee !== undefined && !isNaN(parseFloat(json.data.deliveryFee))) setDeliveryFeeCfg(parseFloat(json.data.deliveryFee));
+                    }
+                } catch (e) {}
+            })();
+        }, []);
         const [placedOrder, setPlacedOrder] = useState(null);
         const [orderStatus, setOrderStatus] = useState("new");
         const [isSubmitting, setIsSubmitting] = useState(false);
@@ -523,7 +556,7 @@
 
         const totalItems = Object.values(cart).reduce((s, q) => s + q, 0);
         const subtotal = menuItems.reduce((s, item) => s + (cart[item.id] || 0) * item.price, 0);
-        const deliveryFee = mode === "delivery" && subtotal > 0 ? 250 : 0;
+        const deliveryFee = mode === "delivery" && subtotal > 0 ? deliveryFeeCfg : 0;
         const total = subtotal + deliveryFee;
 
         const setQty = (id, delta) => {
@@ -714,7 +747,7 @@
             <div className="app">
                 <div className="hero">
                     <div className="hero-top">
-                        <div className="hero-logo">🍽️ The <span>Grand</span> Table</div>
+                        <div className="hero-logo">🍽️ {shopName}</div>
                         <div className="hero-mode-toggle">
                             <button className={`mode-btn ${mode === 'delivery' ? 'active' : ''}`} onClick={() => setMode('delivery')}>🚗 Delivery</button>
                             <button className={`mode-btn ${mode === 'pickup' ? 'active' : ''}`} onClick={() => setMode('pickup')}>🏃 Pickup</button>
@@ -724,7 +757,7 @@
                     <div className="hero-sub">Hot & delicious, {mode === 'delivery' ? 'delivered to your door' : 'ready for collection'}</div>
                     <div className="hero-badges">
                         <span className="hero-badge">⏱ 20-30 min</span>
-                        {mode === "delivery" && <span className="hero-badge">🚗 {currency}250 delivery</span>}
+                        {mode === "delivery" && <span className="hero-badge">🚗 {currency}{deliveryFeeCfg} delivery</span>}
                         <span className="hero-badge">⭐ 4.9 (450+ reviews)</span>
                     </div>
                 </div>
