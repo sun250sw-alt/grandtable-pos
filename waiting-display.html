@@ -292,7 +292,7 @@ html, body {
 <div class="page" id="app" style="display:none">
   <!-- TOP BAR -->
   <div class="top-bar">
-    <div class="rest-name" id="rest-name">🍽️ The Grand Table</div>
+    <div class="rest-name" id="rest-name">🍽️ Restaurant</div>
     <div class="clock-wrap">
       <div id="clock-time">00:00:00</div>
       <div id="clock-date"></div>
@@ -328,6 +328,7 @@ html, body {
         <div class="ns-right">
           <div class="ns-tables" id="ns-tables"></div>
           <div class="ns-ready" id="ns-ready">Your order will appear here when ready</div>
+          <div id="ns-online" style="margin-top:8px;font-size:15px;font-weight:800;color:#4c1d95;"></div>
         </div>
       </div>
 
@@ -364,7 +365,7 @@ html, body {
 
 <script>
 var CURRENCY = "Rs.";
-var REST_NAME = "The Grand Table";
+var REST_NAME = (window.POS_SHOP && POS_SHOP.display()) || "Restaurant";
 
 var DEFAULT_MENU = {
   "Main Course": [
@@ -477,18 +478,30 @@ function renderQueue(queueItems, nowServingItems) {
 
   if (!nsNumbers || !nsTables || !nsReady) return;
 
+  var nsOnline = document.getElementById("ns-online");
+  var dine   = (nowServingItems || []).filter(function(s) { return !s.online; });
+  var onDel  = (nowServingItems || []).filter(function(s) { return s.online === "delivery"; });
+  var onPick = (nowServingItems || []).filter(function(s) { return s.online === "pickup"; });
+
   if (nowServingItems && nowServingItems.length > 0) {
     nsNumbers.innerHTML = nowServingItems.map(function(s) {
-      return '<div class="ns-number">' + s.ticket + '</div>';
+      return '<div class="ns-number"' + (s.online ? ' style="background:#7c3aed;color:#fff;padding:0 10px;border-radius:10px;"' : '') + '>' + s.ticket + '</div>';
     }).join("");
-    nsTables.textContent = nowServingItems.map(function(s) {
-      return "Table " + s.table;
+    nsTables.textContent = dine.map(function(s) {
+      return parseInt(s.table, 10) === 0 ? "🥡 Takeaway" : "Table " + s.table;
     }).join("  ·  ");
-    nsReady.textContent  = "✅ Please proceed to your table";
+    nsReady.textContent  = dine.length ? "✅ Please proceed to your table or counter" : "";
   } else {
     nsNumbers.innerHTML  = '<div class="ns-none">No orders ready yet</div>';
     nsTables.textContent = "";
     nsReady.textContent  = "Your order will appear here when ready";
+  }
+  // Separate group for ONLINE orders (kept apart from dine-in tables)
+  if (nsOnline) {
+    var parts = [];
+    if (onDel.length)  parts.push("🛵 Driver collection: " + onDel.map(function(s) { return s.ticket; }).join(", "));
+    if (onPick.length) parts.push("🛍️ Online pickup: " + onPick.map(function(s) { return s.ticket; }).join(", "));
+    nsOnline.innerHTML = parts.join("<br>");
   }
 
   var el = document.getElementById("queue-rows");
@@ -508,8 +521,8 @@ function renderQueue(queueItems, nowServingItems) {
               : '<span class="q-pill pill-wait">Waiting</span>';
     return '<div class="q-row ' + cls + '">' +
       '<div class="q-ticket">' + q.ticket + '</div>' +
-      '<div><div class="q-name">' + q.name + '</div>' +
-         '<div class="q-party">' + q.party + ' guest' + (q.party !== 1 ? "s" : "") + '</div></div>' +
+      '<div><div class="q-name">' + (q.online ? (q.online === "delivery" ? "🛵 " : "🛍️ ") : "") + q.name + '</div>' +
+         '<div class="q-party">' + (q.online ? (q.online === "delivery" ? "Online · delivery" : "Online · pickup") : (q.party + ' guest' + (q.party !== 1 ? "s" : ""))) + '</div></div>' +
       '<div class="q-wait"><div class="q-wait-num">~' + q.wait + ' min</div>' +
          '<div class="q-wait-lbl">est. wait</div></div>' +
       '<div class="q-badge">' + pill + '</div>' +
@@ -549,7 +562,8 @@ async function loadLiveData() {
       var nowServing = ordersRes.data
         .filter(function(o) { return o.Status === "ready"; })
         .map(function(o, i) {
-          return { ticket: "A" + (ticketBase + i), table: o.TableNumber };
+          return { ticket: "A" + (ticketBase + i), table: o.TableNumber,
+                   online: (window.POS_ORDER && POS_ORDER.type(o)) || null };
         });
 
       var queue = ordersRes.data
@@ -561,7 +575,8 @@ async function loadLiveData() {
           var wait = Math.max(5, 25 - elapsed);
           return {
             ticket: "A" + (ticketBase + nowServing.length + i),
-            name  : o.CustomerName || ("Table " + o.TableNumber),
+            name  : o.CustomerName || (parseInt(o.TableNumber, 10) === 0 ? "Takeaway" : "Table " + o.TableNumber),
+            online: (window.POS_ORDER && POS_ORDER.type(o)) || null,
             party : 2,
             wait  : wait,
           };
@@ -605,7 +620,8 @@ async function loadLiveData() {
         renderMenu();
         startCatRotate();
         loadLiveData();
-        setInterval(loadLiveData, 8000);
+        setInterval(loadLiveData, (window.POS_IS_LAN ? 3000 : 8000));
+        if (window.POS_ONLIVE) POS_ONLIVE(loadLiveData, "order.");
       },
       onError: function(msg) { console.error("Auth error:", msg); }
     });
