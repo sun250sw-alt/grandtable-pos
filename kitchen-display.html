@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kitchen Display - Restaurant POS</title>
+    <title>Kitchen Display</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -92,6 +92,11 @@
         .order-card.status-new { border-left-color: #e74c3c; }
         .order-card.status-preparing { border-left-color: #f39c12; }
         .order-card.status-ready { border-left-color: #27ae60; }
+
+        /* ── Online orders (Customer App): purple card so they stand out from dine-in ── */
+        .order-card.online { background: #2a1850; border-left-color: #a855f7 !important; box-shadow: 0 4px 16px rgba(168,85,247,0.35); }
+        .online-strip { display:flex; align-items:center; gap:8px; padding:6px 16px; background:#a855f7; color:#fff; font-size:12px; font-weight:800; letter-spacing:.4px; }
+        .online-strip.pickup { background:#7c3aed; }
 
         @keyframes slideIn {
             from { opacity: 0; transform: translateY(20px); }
@@ -253,6 +258,9 @@
         return {
             id       : row.OrderID,
             table    : row.TableNumber,
+            online   : (window.POS_ORDER && POS_ORDER.type(row)) || null,   // "delivery" | "pickup" | null
+            onlineLabel: window.POS_ORDER ? POS_ORDER.label(row) : "",
+            customer : row.CustomerName || "",
             waiter   : row.WaiterName || "Staff",
             status   : row.Status || "new",
             notes    : row.Notes || "",
@@ -310,11 +318,14 @@
         }
 
         return (
-            <div className={`order-card status-${order.status} ${isUrgent && order.status !== 'ready' ? 'priority-high' : ''}`}>
+            <div className={`order-card status-${order.status} ${order.online ? 'online' : ''} ${isUrgent && order.status !== 'ready' ? 'priority-high' : ''}`}>
+                {order.online && (
+                    <div className={`online-strip ${order.online}`}>{order.onlineLabel}{order.customer ? ` · ${order.customer}` : ''}</div>
+                )}
                 <div className="card-header">
                     <div>
                         <div className="order-id">{order.id}</div>
-                        <div className="table-info">🍽️ Table {order.table} &nbsp;·&nbsp; {order.items.length} items</div>
+                        <div className="table-info">{order.online ? (order.online === 'delivery' ? '🛵 For delivery' : '🛍️ Customer collects') : (parseInt(order.table, 10) === 0 ? '🥡 Takeaway' : `🍽️ Table ${order.table}`)} &nbsp;·&nbsp; {order.items.length} items</div>
                     </div>
                     <span className={`status-badge ${badgeClass}`}>{statusLabel}</span>
                 </div>
@@ -376,7 +387,7 @@
                     const res = await window.POS_GAPI.Orders.getAll();
                     if (res && res.data) {
                         const active = res.data
-                            .filter(o => o.Status !== "served" && o.Status !== "closed")
+                            .filter(o => !["served", "closed", "cancelled"].includes(String(o.Status || "").toLowerCase()))
                             .map(sheetToKitchenOrder);
                         
                         setOrders(active);
@@ -385,6 +396,7 @@
             }
             
             fetchOrders();
+            if (window.POS_ONLIVE) POS_ONLIVE(fetchOrders, "order.");   // LAN: instant push
             const pollMs = (window.POS_CONFIG && window.POS_CONFIG.POLL_MS) || 5000;
             const interval = setInterval(fetchOrders, pollMs);
             return () => clearInterval(interval);
@@ -407,7 +419,7 @@
         return (
             <div>
                 <div className="header">
-                    <h1>🍳 Kitchen Display</h1>
+                    <h1>🍳 Kitchen Display <small data-shop-name style={{ opacity: 0.55, fontSize: "0.55em", fontWeight: 600 }}>{POS_SHOP.display()}</small></h1>
                     <div className="header-stats">
                         <div className="stat-box">
                             <div className="stat-number" style={{ color: '#e74c3c' }}>{counts.new}</div>
