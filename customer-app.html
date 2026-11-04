@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Order Online - The Grand Table</title>
+    <title>Order Online</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -212,6 +212,25 @@
         .loc-status.ok { color: #2e7d32; }
         .loc-clear { background: none; border: none; color: #c0392b; font-size: 12.5px; font-weight: 600; cursor: pointer; margin-left: 8px; }
         .loc-pin { background: none; border: none; font-size: 30px; line-height: 30px; text-align: center; }
+        .shop-pin { background: none; border: none; text-align: center; }
+        .shop-pin .sp-ico { width: 38px; height: 38px; margin: 0 auto; border-radius: 50%; background: #f39c12; border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.35); font-size: 20px; line-height: 32px; }
+        .shop-pin .sp-name { display: inline-block; margin-top: 2px; padding: 1px 7px; background: #1a1a2e; color: #fff; font-size: 11px; font-weight: 700; border-radius: 8px; white-space: nowrap; }
+
+        /* Special offer / notice */
+        .offer-card { margin: -24px 20px 0; position: relative; z-index: 6; padding: 14px 40px 14px 14px; border-radius: 14px; color: #fff; box-shadow: 0 6px 18px rgba(0,0,0,.18); display: flex; gap: 12px; align-items: flex-start; background: linear-gradient(135deg, #e74c3c, #f39c12); }
+        .offer-card.notice { background: linear-gradient(135deg, #2d3561, #667eea); }
+        .offer-card .oc-ico { font-size: 28px; line-height: 1; }
+        .offer-card .oc-title { font-weight: 800; font-size: 15px; margin-bottom: 2px; }
+        .offer-card .oc-text { font-size: 13px; line-height: 1.4; white-space: pre-line; opacity: .96; }
+        .offer-card .oc-close { position: absolute; top: 6px; right: 8px; background: rgba(0,0,0,.2); border: none; color: #fff; width: 24px; height: 24px; border-radius: 50%; font-size: 14px; cursor: pointer; line-height: 1; }
+        .offer-card + .search-bar { margin-top: 12px; }
+        .closed-card { margin: -24px 20px 0; position: relative; z-index: 6; padding: 14px 16px; border-radius: 14px; background: #1a1a2e; color: #fff; box-shadow: 0 6px 18px rgba(0,0,0,.2); display: flex; gap: 12px; align-items: center; }
+        .closed-card .cc-ico { font-size: 28px; }
+        .closed-card .cc-title { font-weight: 800; font-size: 15px; }
+        .closed-card .cc-text { font-size: 13px; opacity: .85; }
+        .closed-card + .search-bar, .closed-card + .offer-card { margin-top: 12px; }
+        .mode-btn:disabled { opacity: .45; cursor: not-allowed; text-decoration: line-through; }
+        .add-btn:disabled { background: #ccc; cursor: not-allowed; transform: none; }
 
         .totals-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 14px; }
         .totals-row.total { font-size: 18px; font-weight: 800; border-top: 2px solid #eee; margin-top: 8px; padding-top: 14px; }
@@ -283,7 +302,7 @@
         return parts.length ? parts.join(", ") : (data.display_name || "");
     }
 
-    function LocationPicker({ pin, onPick, address, onAddress }) {
+    function LocationPicker({ pin, onPick, address, onAddress, shop }) {
         const mapEl = useRef(null);
         const mapRef = useRef(null);
         const markerRef = useRef(null);
@@ -291,6 +310,9 @@
         const autoRef = useRef("");        // last address WE filled in
         const addressRef = useRef(address);
         const cbRef = useRef({});
+        const shopMarkerRef = useRef(null);
+        const shopRef = useRef(shop);
+        shopRef.current = shop;
         addressRef.current = address;
         cbRef.current = { onPick, onAddress };
 
@@ -341,8 +363,9 @@
         // Build the map once.
         useEffect(() => {
             if (!mapAvailable || !mapEl.current || mapRef.current) return;
-            const start = pin ? [pin.lat, pin.lng] : DEFAULT_MAP_CENTER;
-            const map = L.map(mapEl.current).setView(start, pin ? 17 : 12);
+            const sh = shopRef.current;
+            const start = pin ? [pin.lat, pin.lng] : (sh ? [sh.lat, sh.lng] : DEFAULT_MAP_CENTER);
+            const map = L.map(mapEl.current).setView(start, pin ? 17 : (sh ? 16 : 12));
             L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
                 maxZoom: 19,
                 attribution: "&copy; OpenStreetMap contributors"
@@ -364,8 +387,22 @@
                 markerRef.current = marker;
             }
             setTimeout(() => map.invalidateSize(), 250);
-            return () => { map.remove(); mapRef.current = null; markerRef.current = null; };
+            return () => { map.remove(); mapRef.current = null; markerRef.current = null; shopMarkerRef.current = null; };
         }, []);
+
+        // The restaurant itself: a fixed shop icon on the map (not draggable, taps pass through to the map).
+        useEffect(() => {
+            const map = mapRef.current;
+            if (!map || !shop) return;
+            const html = '<div class="sp-ico">🍽️</div><div class="sp-name">' + String(shop.name || "").replace(/[<>&"]/g, "") + '</div>';
+            const icon = L.divIcon({ className: "shop-pin", html, iconSize: [110, 58], iconAnchor: [55, 19] });
+            if (shopMarkerRef.current) {
+                shopMarkerRef.current.setLatLng([shop.lat, shop.lng]).setIcon(icon);
+            } else {
+                shopMarkerRef.current = L.marker([shop.lat, shop.lng], { icon, interactive: false, keyboard: false, zIndexOffset: -100 }).addTo(map);
+                if (!markerRef.current) map.setView([shop.lat, shop.lng], Math.max(map.getZoom(), 16));   // info arrived after the map opened
+            }
+        }, [shop && shop.lat, shop && shop.lng, shop && shop.name]);
 
         const detect = () => {
             if (!navigator.geolocation) {
@@ -455,24 +492,54 @@
         const [form, setForm] = useState({ name:'', phone:'', address:'', notes:'' });
         const [pin, setPin] = useState(null); // { lat, lng } from the delivery map, or null
         const [currency, setCurrency] = useState("Rs. ");
-        const [shopName, setShopName] = useState("The Grand Table");
+        const [shopName, setShopName] = useState("");
         const [deliveryFeeCfg, setDeliveryFeeCfg] = useState(250);
+        const [hours, setHours] = useState({ isOpen: true, openTime: "", closeTime: "" });
+        const [deliveryOn, setDeliveryOn] = useState(true);
+        const closed = hours.isOpen === false;
+        const fmtTime = (t) => { const m = String(t || "").match(/^(\d{1,2}):(\d{2})/); if (!m) return ""; let h = parseInt(m[1], 10); const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12; return h + ":" + m[2] + " " + ap; };
+        const [shopLoc, setShopLoc] = useState(null);      // { lat, lng, name } of the restaurant
+        const [offer, setOffer] = useState(null);          // { title, text, kind } while an offer/notice is active
+        const [offerHidden, setOfferHidden] = useState(() => { try { return sessionStorage.getItem("gt_offer_hidden") || ""; } catch (e) { return ""; } });
 
         // Restaurant name / currency / delivery fee come from that restaurant's own script
         // (older scripts without this answer simply keep the defaults above).
         useEffect(() => {
-            (async () => {
+            let stop = false;
+            const load = async () => {
                 try {
                     const res = await fetch(`${CUSTOMER_APP_SCRIPT_URL}?action=info`);
                     const json = await res.json();
-                    if (json && json.success && json.data) {
-                        if (json.data.name) { setShopName(json.data.name); document.title = "Order Online - " + json.data.name; }
-                        if (json.data.currency) setCurrency(String(json.data.currency) + " ");
-                        if (json.data.deliveryFee !== undefined && !isNaN(parseFloat(json.data.deliveryFee))) setDeliveryFeeCfg(parseFloat(json.data.deliveryFee));
-                    }
+                    if (stop || !(json && json.success && json.data)) return;
+                    const d = json.data;
+                    if (d.name) { setShopName(d.name); document.title = "Order Online - " + d.name; }
+                    if (d.currency) setCurrency(String(d.currency) + " ");
+                    if (d.deliveryFee !== undefined && !isNaN(parseFloat(d.deliveryFee))) setDeliveryFeeCfg(parseFloat(d.deliveryFee));
+                    setHours(prev => {
+                        const isOpen = !(d.isOpen === false || String(d.isOpen).toLowerCase() === "false");
+                        const o = String(d.openTime || ""), c = String(d.closeTime || "");
+                        return prev.isOpen === isOpen && prev.openTime === o && prev.closeTime === c ? prev : { isOpen, openTime: o, closeTime: c };
+                    });
+                    setDeliveryOn(String(d.deliveryEnabled === undefined ? "true" : d.deliveryEnabled).toLowerCase() !== "false");
+                    const la = parseFloat(d.lat), ln = parseFloat(d.lng);
+                    setShopLoc(prev => {
+                        if (isNaN(la) || isNaN(ln) || (la === 0 && ln === 0)) return null;
+                        const nm = d.name || "";
+                        return prev && prev.lat === la && prev.lng === ln && prev.name === nm ? prev : { lat: la, lng: ln, name: nm };
+                    });
+                    const txt = String(d.offerText || "").trim(), ttl = String(d.offerTitle || "").trim();
+                    setOffer(prev => {
+                        if (!txt && !ttl) return null;
+                        const kind = String(d.offerKind || "offer").toLowerCase() === "notice" ? "notice" : "offer";
+                        return prev && prev.text === txt && prev.title === ttl && prev.kind === kind ? prev : { title: ttl, text: txt, kind };
+                    });
                 } catch (e) {}
-            })();
+            };
+            load();
+            const iv = setInterval(load, 60000);          // offers appear/disappear without a page reload
+            return () => { stop = true; clearInterval(iv); };
         }, []);
+        useEffect(() => { if (!deliveryOn && mode === "delivery") setMode("pickup"); }, [deliveryOn, mode]);
         const [placedOrder, setPlacedOrder] = useState(null);
         const [orderStatus, setOrderStatus] = useState("new");
         const [isSubmitting, setIsSubmitting] = useState(false);
@@ -571,6 +638,8 @@
 
         // ── 3. PLACE ORDER ──
         const handlePlaceOrder = async () => {
+            if (closed) { alert("Sorry, we're closed right now" + (hours.openTime ? " — we open at " + fmtTime(hours.openTime) : "") + "."); return; }
+            if (mode === "delivery" && !deliveryOn) { alert("Delivery isn't available right now. Please choose Pickup."); setMode("pickup"); return; }
             if (!form.name || !form.phone) {
                 alert("Please enter your name and phone number.");
                 return;
@@ -636,9 +705,15 @@
                         realOrderId = json.orderId;
                     } else {
                         console.error("Order submit error:", json && json.error);
+                        setIsSubmitting(false);
+                        alert((json && json.error) ? json.error : "Sorry, we couldn't send your order. Please try again.");
+                        return;
                     }
                 } catch(err) {
                     console.error("Order submit error:", err);
+                    setIsSubmitting(false);
+                    alert("Sorry, we couldn't reach the restaurant. Check your connection and try again.");
+                    return;
                 }
             } else {
                 console.error("CUSTOMER_APP_SCRIPT_URL is not set — order was not saved anywhere.");
@@ -723,7 +798,7 @@
                             {mode === "delivery" && (
                                 <React.Fragment>
                                     <div className="form-group"><label>Delivery Address *</label><input placeholder="e.g. 45 Beach Road, Colombo" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div>
-                                    <LocationPicker pin={pin} onPick={setPin} address={form.address} onAddress={(text) => setForm(f => ({...f, address: text}))} />
+                                    <LocationPicker shop={shopLoc} pin={pin} onPick={setPin} address={form.address} onAddress={(text) => setForm(f => ({...f, address: text}))} />
                                 </React.Fragment>
                             )}
                             <div className="form-group"><label>Special Instructions (optional)</label><input placeholder="e.g. Less sugar, ring doorbell" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} /></div>
@@ -733,6 +808,7 @@
                             <div className="totals-row"><span>Subtotal</span><span>{currency}{subtotal.toLocaleString()}</span></div>
                             {mode === "delivery" && <div className="totals-row"><span>Delivery fee</span><span>{currency}{deliveryFee.toLocaleString()}</span></div>}
                             <div className="totals-row total"><span>Total</span><span>{currency}{total.toLocaleString()}</span></div>
+                            <div style={{ fontSize: "12.5px", color: "#6b7280", marginTop: "8px" }}>💵 {mode === "delivery" ? "Pay cash to the driver when your order arrives." : "Pay at the counter when you collect your order."}</div>
                         </div>
                         <button className="place-order-btn" onClick={handlePlaceOrder} disabled={isSubmitting}>
                             {isSubmitting ? "Sending to Kitchen..." : `Place Order · ${currency}${total.toLocaleString()}`}
@@ -747,9 +823,9 @@
             <div className="app">
                 <div className="hero">
                     <div className="hero-top">
-                        <div className="hero-logo">🍽️ {shopName}</div>
+                        <div className="hero-logo">🍽️ {shopName || "Order Online"}</div>
                         <div className="hero-mode-toggle">
-                            <button className={`mode-btn ${mode === 'delivery' ? 'active' : ''}`} onClick={() => setMode('delivery')}>🚗 Delivery</button>
+                            <button className={`mode-btn ${mode === 'delivery' ? 'active' : ''}`} disabled={!deliveryOn} title={deliveryOn ? "" : "Delivery is off right now"} onClick={() => setMode('delivery')}>🚗 Delivery</button>
                             <button className={`mode-btn ${mode === 'pickup' ? 'active' : ''}`} onClick={() => setMode('pickup')}>🏃 Pickup</button>
                         </div>
                     </div>
@@ -758,9 +834,32 @@
                     <div className="hero-badges">
                         <span className="hero-badge">⏱ 20-30 min</span>
                         {mode === "delivery" && <span className="hero-badge">🚗 {currency}{deliveryFeeCfg} delivery</span>}
+                        {!deliveryOn && <span className="hero-badge">🚫 Delivery off — pickup only</span>}
+                        {hours.openTime && hours.closeTime && <span className="hero-badge">🕒 {fmtTime(hours.openTime)} – {fmtTime(hours.closeTime)}</span>}
                         <span className="hero-badge">⭐ 4.9 (450+ reviews)</span>
                     </div>
                 </div>
+
+                {closed && (
+                    <div className="closed-card">
+                        <div className="cc-ico">🔒</div>
+                        <div>
+                            <div className="cc-title">We're closed right now</div>
+                            <div className="cc-text">{hours.openTime ? "Orders open at " + fmtTime(hours.openTime) + (hours.closeTime ? " and close at " + fmtTime(hours.closeTime) : "") + "." : "Please check back later."} You can still browse the menu.</div>
+                        </div>
+                    </div>
+                )}
+
+                {offer && offerHidden !== (offer.title + "|" + offer.text) && (
+                    <div className={"offer-card" + (offer.kind === "notice" ? " notice" : "")}>
+                        <div className="oc-ico">{offer.kind === "notice" ? "📢" : "🎉"}</div>
+                        <div>
+                            {offer.title && <div className="oc-title">{offer.title}</div>}
+                            {offer.text && <div className="oc-text">{offer.text}</div>}
+                        </div>
+                        <button className="oc-close" aria-label="Dismiss" onClick={() => { const k = offer.title + "|" + offer.text; setOfferHidden(k); try { sessionStorage.setItem("gt_offer_hidden", k); } catch (e) {} }}>×</button>
+                    </div>
+                )}
 
                 <div className="search-bar">
                     <span className="search-icon">🔍</span>
@@ -803,7 +902,7 @@
                                                 <button className="qty-btn-sm filled" onClick={() => setQty(item.id, 1)}>+</button>
                                             </div>
                                         ) : (
-                                            <button className="add-btn" onClick={() => setQty(item.id, 1)}>+</button>
+                                            <button className="add-btn" disabled={closed} onClick={() => setQty(item.id, 1)}>+</button>
                                         )}
                                     </div>
                                 </div>
@@ -812,7 +911,7 @@
                     )}
                 </div>
 
-                {totalItems > 0 && (
+                {totalItems > 0 && !closed && (
                     <div className="cart-bar" onClick={() => setScreen("checkout")}>
                         <div className="cart-bar-left">
                             <div className="cart-count">{totalItems}</div>
