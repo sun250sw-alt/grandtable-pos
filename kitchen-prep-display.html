@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kitchen Prep Display — The Grand Table</title>
+<title>Kitchen Prep Display</title>
 <script src="pos-config.js"></script>
 <script src="pos-api.js"></script>
 <script src="pos-gapi.js"></script>
@@ -103,6 +103,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .qi-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;}
 .qi-order{font-weight:700;font-size:14px;}
 .qi-table{font-size:12px;color:#8b949e;}
+.qi-online{font-size:11px;font-weight:800;color:#fff;background:#a855f7;padding:2px 8px;border-radius:8px;}
+.queue-item.online{border-left:4px solid #a855f7;background:rgba(168,85,247,.10);}
 .qi-dish{font-size:13px;color:#f39c12;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
 .qty-pill{background:#f39c12;color:black;font-weight:900;font-size:11px;padding:1px 6px;border-radius:6px;}
 .reorder-pill{background:#3b82f6;color:white;font-weight:800;font-size:10px;padding:1px 6px;border-radius:6px;}
@@ -419,7 +421,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <div class="header">
       <div style="display:flex; align-items:center; gap:12px;">
          <img src="input_file_1.jpeg" style="width:48px; height:48px; object-fit:contain; mix-blend-mode:multiply;" alt="🔥" onerror="this.style.display='none'">
-         <h1>👨‍🍳 Kitchen Prep Display</h1>
+         <h1>👨‍🍳 Kitchen Prep Display <small data-shop-name style="opacity:.55;font-size:.55em;font-weight:600">Restaurant</small></h1>
       </div>
       <div class="header-right">
         <button onclick="openChefHistory()" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.25); color:white; padding:5px 12px; border-radius:8px; font-size:11px; cursor:pointer; font-weight:700; display:flex; align-items:center; gap:6px;">📋 My History</button>
@@ -763,6 +765,7 @@ function selectChef(name) {
   loadQueue();
   var pollMs = (window.POS_CONFIG && window.POS_CONFIG.POLL_MS) || 4000;
   STATE.queueIntervalId = setInterval(loadQueue, pollMs);
+  if (window.POS_ONLIVE && !window._prepLiveHooked) { window._prepLiveHooked = true; POS_ONLIVE(function(){ if (STATE.currentChef) loadQueue(); }, "order."); }   // LAN: instant push
 }
 
 // ── CHEF HISTORY CONTROLLER ──
@@ -803,6 +806,7 @@ function openChefHistory() {
           chefHistory.push({
             orderId  : orderId,
             table    : tableNo,
+            tableText: tableText(order),
             dish     : item.name || item.Name || item.dish || item.Dish || "Item",
             qty      : parseInt(item.quantity || item.qty || 1, 10),
             status   : (item.status || order.Status || "ready").toLowerCase(),
@@ -836,7 +840,7 @@ function openChefHistory() {
 
       return '<tr>' +
         '<td style="font-weight:700;">' + h.orderId + '</td>' +
-        '<td>Table ' + h.table + '</td>' +
+        '<td>' + (h.tableText || ('Table ' + h.table)) + '</td>' +
         '<td style="color:#f39c12; font-weight:700;">' + (h.qty > 1 ? h.qty + '× ' : '') + h.dish + '</td>' +
         '<td><span class="status-badge ' + badgeCls + '">' + statusText + '</span></td>' +
         '<td style="color:#8b949e; font-size:12px;">' + dateDisp + '</td>' +
@@ -899,6 +903,15 @@ function loadQueue() {
 }
 
 // ── SMART QUEUE BUILDER ──
+  // Online (Customer App) orders get a purple badge instead of "Table 99 / Table 0".
+  function onlineType(order) { return (window.POS_ORDER && POS_ORDER.type(order)) || null; }
+  function tableText(order) {
+    var t = onlineType(order);
+    if (t) return window.POS_ORDER.label(order);
+    var tn = order.TableNumber || order.Table || order.TableNo || order.table || "—";
+    return (parseInt(tn, 10) === 0) ? "🥡 Takeaway" : "Table " + tn;
+  }
+
 function buildQueueFromOrders(orders) {
   var items = [];
   orders.forEach(function(order) {
@@ -948,6 +961,8 @@ function buildQueueFromOrders(orders) {
           orderId       : orderId,
           itemIdx       : itemIdx,
           table         : tableNo,
+          online        : onlineType(order),
+          tableText     : tableText(order),
           dish          : dishName,
           qty           : remainingQty,
           totalOrdered  : totalQty,
@@ -992,10 +1007,10 @@ function renderQueue() {
 
     var reorderBadge = (item.alreadyServed > 0) ? '<span class="reorder-pill">+' + item.qty + ' re-order</span>' : '';
 
-    return '<div class="queue-item' + (isActive ? " active" : "") + '" onclick="selectDish(' + idx + ')">' +
+    return '<div class="queue-item' + (isActive ? " active" : "") + (item.online ? " online" : "") + '" onclick="selectDish(' + idx + ')">' +
       '<div class="qi-header">' +
         '<span class="qi-order">' + item.orderId + '</span>' +
-        '<span class="qi-table">Table ' + item.table + '</span>' +
+        (item.online ? '<span class="qi-online">' + item.tableText + '</span>' : '<span class="qi-table">' + (item.tableText || ('Table ' + item.table)) + '</span>') +
       '</div>' +
       '<div class="qi-dish">' +
         '<span class="urgency-dot urg-' + item.urgency + '"></span>' +
@@ -1518,7 +1533,7 @@ function renderRecipe() {
         '<div class="big-timer-box" style="margin-bottom:16px; background:#111420; display:flex; justify-content:space-between; align-items:center; padding:12px 24px;">' +
           '<div style="text-align:left">' +
             '<div class="bt-label" style="margin-bottom:2px">Interactive Cooking Dashboard</div>' +
-            '<div style="font-size:16px; color:#f39c12; font-weight:800;">' + (qty > 1 ? qty + '× ' : '') + item.dish + ' · Table ' + item.table + '</div>' +
+            '<div style="font-size:16px; color:#f39c12; font-weight:800;">' + (qty > 1 ? qty + '× ' : '') + item.dish + ' · ' + (item.tableText || ('Table ' + item.table)) + '</div>' +
             '<div style="font-size:12px; color:#8b949e; margin-top:2px;">⏱ Total Recipe Remaining: <strong>' + totalTimeDisp + '</strong></div>' +
           '</div>' +
           '<div style="display:flex; align-items:center; gap:12px;">' +
