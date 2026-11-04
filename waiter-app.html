@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Waiter & Till Terminal - The Grand Table</title>
+    <title>Waiter & Till Terminal</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -165,6 +165,14 @@
             color: #1e1b4b;
             box-shadow: 0 1px 4px rgba(0,0,0,0.08);
         }
+
+        /* ONLINE ORDERS (Customer App) */
+        .lt-btn.online-tab { color:#7c3aed; }
+        .lt-btn.online-tab.has-new { background:#a855f7; color:white; animation: onlinePulse 1.2s infinite; }
+        @keyframes onlinePulse { 0%,100%{box-shadow:0 0 0 0 rgba(168,85,247,.6)} 50%{box-shadow:0 0 0 6px rgba(168,85,247,0)} }
+        .takeaway-card.online { border-color:#c4b5fd; background:#faf5ff; }
+        .online-chip { display:inline-block; font-size:10px; font-weight:800; color:white; background:#a855f7; padding:2px 8px; border-radius:8px; }
+        .online-info { margin-top:8px; padding:8px 10px; border-radius:8px; background:#faf5ff; border:1px solid #e9d5ff; font-size:12px; color:#4c1d95; line-height:1.5; }
 
         /* 2-COLUMN TABLE GRID TILES */
         .tables-grid {
@@ -519,7 +527,7 @@
     
     <div id="loading-placeholder" style="display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; flex-direction: column; gap: 12px;">
         <div style="font-size:40px">🍽️</div>
-        <div style="font-size:16px;font-weight:700">The Grand Table POS</div>
+        <div style="font-size:16px;font-weight:700"><span data-shop-name>Restaurant</span> POS</div>
         <div style="font-size:13px;color:#888">Connecting to database...</div>
     </div>
 
@@ -548,8 +556,7 @@
 
             slip.innerHTML = `
                 <div style="text-align:center; margin-bottom:10px;">
-                    <div style="font-size:16px; font-weight:bold;">THE GRAND TABLE</div>
-                    <div style="font-size:10px;">Restaurant & Bar</div>
+                    <div style="font-size:16px; font-weight:bold;">${POS_SHOP.upper()}</div>
                     <div style="font-size:10px; margin-top:4px;">Date: ${new Date().toLocaleString()}</div>
                     <div style="font-size:10px;">Order: #${orderData.OrderID || orderData.orderId} · ${parseInt(orderData.TableNumber) > 0 ? 'Table ' + orderData.TableNumber : 'Takeaway / Counter'}</div>
                     <div style="font-size:10px;">Server: ${orderData.WaiterName || orderData.waiter || 'Staff'}</div>
@@ -578,6 +585,350 @@
             slip.style.display = "block";
             window.print();
             setTimeout(() => { slip.style.display = "none"; }, 1000);
+        }
+
+        // ════════════════════════════════════════════════════════════
+        // Z-READ — end-of-day report. X = live look, Z = close the day.
+        // A report covers everything since the previous Z, so late-night trading and
+        // tables paid after midnight never fall between two reports.
+        // ════════════════════════════════════════════════════════════
+        const PAID_STATUSES = ["closed", "paid", "settled", "completed"];
+        const VOID_STATUSES = ["cancelled", "canceled", "void"];
+
+        function buildZReport(orders, last) {
+            const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+            const cursorMs = last && last.cursor ? Date.parse(last.cursor) : startOfToday.getTime();
+            const skip = new Set(last && last.ids ? last.ids : []);
+            const rep = { from: new Date(cursorMs).toISOString(), to: new Date().toISOString(),
+                gross: 0, tax: 0, net: 0, count: 0, methods: {}, channels: {}, items: {}, hours: {},
+                voidCount: 0, voidValue: 0, open: [], awaiting: [], driverPay: 0, saleIds: [] };
+            (orders || []).forEach(o => {
+                const t = Date.parse(o.OrderTime || o.orderTime || "");
+                const id = o.OrderID || o.orderId;
+                if (!(t >= cursorMs) || skip.has(id)) return;
+                const st = String(o.Status || o.status || "").toLowerCase();
+                const notes = String(o.Notes || o.notes || "");
+                const total = parseFloat(o.Total || o.total || 0) || 0;
+                if (VOID_STATUSES.includes(st)) { rep.voidCount++; rep.voidValue += total; return; }
+                const sale = PAID_STATUSES.includes(st) || /PAID/i.test(notes);
+                if (!sale) {
+                    (isAwaitingDriverCash(o) ? rep.awaiting : rep.open).push({ id, total, table: parseInt(o.TableNumber) || 0, time: o.OrderTime });
+                    return;
+                }
+                const dp = notes.match(/DRIVER PAID\s+([\d.]+)/i); if (dp) rep.driverPay += parseFloat(dp[1]) || 0;
+                const tax = parseFloat(o.Tax || o.tax || 0) || 0;
+                rep.gross += total; rep.tax += tax; rep.count++; rep.saleIds.push({ id, t });
+                const online = !!(window.POS_ORDER && POS_ORDER.isOnline(o));
+                const pm = notes.match(/PAID\s+([A-Za-z]+)/i);
+                const method = pm ? pm[1].charAt(0).toUpperCase() + pm[1].slice(1).toLowerCase() : (online ? "Online (not recorded)" : "Not recorded");
+                const tbl = parseInt(o.TableNumber) || 0;
+                const channel = online ? (POS_ORDER.type(o) === "delivery" ? "Online delivery" : "Online pickup") : (tbl > 0 && tbl < 90 ? "Dine-in" : "Takeaway");
+                (rep.methods[method] = rep.methods[method] || { count: 0, total: 0 }); rep.methods[method].count++; rep.methods[method].total += total;
+                (rep.channels[channel] = rep.channels[channel] || { count: 0, total: 0 }); rep.channels[channel].count++; rep.channels[channel].total += total;
+                const hr = new Date(t).getHours(); rep.hours[hr] = (rep.hours[hr] || 0) + 1;
+                let items = []; try { items = typeof o.Items === "string" ? JSON.parse(o.Items) : (o.Items || []); } catch (e) {}
+                items.forEach(it => {
+                    const n = it.name || it.Name; if (!n) return;
+                    const q = parseInt(it.qty || it.quantity || 1) || 1;
+                    const r = (rep.items[n] = rep.items[n] || { qty: 0, rev: 0 });
+                    r.qty += q; r.rev += q * (parseFloat(it.price) || 0);
+                });
+            });
+            rep.net = rep.gross - rep.tax;
+            rep.avg = rep.count ? rep.gross / rep.count : 0;
+            rep.top = Object.entries(rep.items).sort((a, b) => b[1].qty - a[1].qty).slice(0, 8).map(([name, v]) => ({ name, qty: v.qty, rev: v.rev }));
+            const ph = Object.entries(rep.hours).sort((a, b) => b[1] - a[1])[0];
+            rep.peakHour = ph ? String(ph[0]).padStart(2, "0") + ":00" : "";
+            return rep;
+        }
+
+        function printZReport(rep, meta, currency, shopName) {
+            const slip = document.getElementById("printable-receipt-slip");
+            if (!slip) return;
+            const f = n => currency + " " + (Number(n) || 0).toFixed(2);
+            const row = (a, b, bold) => `<div style="display:flex;justify-content:space-between;${bold ? "font-weight:bold;" : ""}"><span>${a}</span><span>${b}</span></div>`;
+            const fmt = iso => new Date(iso).toLocaleString();
+            const methods = Object.entries(rep.methods || {}).map(([k, v]) => row(`${k} (${v.count})`, f(v.total))).join("");
+            const channels = Object.entries(rep.channels || {}).map(([k, v]) => row(`${k} (${v.count})`, f(v.total))).join("");
+            const top = (rep.top || []).map(t => row(`${t.qty}x ${t.name}`, f(t.rev))).join("");
+            const cash = meta.counted !== "" && meta.counted !== undefined ? `
+                <div style="border-top:1px dashed #000;margin:6px 0;padding-top:6px">
+                    ${row("Opening float", f(meta.float))}${row("Cash sales", f(meta.cashSales))}${meta.driverPay ? row("Driver pay kept", "- " + f(meta.driverPay)) : ""}${row("Expected in drawer", f(meta.expected), true)}
+                    ${row("Counted", f(meta.counted))}${row("Over / (short)", f(meta.variance), true)}
+                </div>` : "";
+            slip.innerHTML = `
+                <div style="text-align:center;margin-bottom:8px">
+                    <div style="font-size:15px;font-weight:bold">${(shopName || POS_SHOP.display()).toUpperCase()}</div>
+                    <div style="font-size:13px;font-weight:bold;margin-top:4px">${meta.isZ ? "Z-READ  #" + meta.n : "X-READ (not closed)"}</div>
+                    <div style="font-size:10px">From: ${fmt(rep.from)}</div><div style="font-size:10px">To: ${fmt(meta.isZ ? meta.time : rep.to)}</div>
+                    ${meta.by ? `<div style="font-size:10px">Closed by: ${meta.by}</div>` : ""}
+                </div>
+                <div style="border-top:1px dashed #000;border-bottom:1px dashed #000;padding:6px 0;margin-bottom:6px">
+                    ${row("Orders paid", rep.count)}${row("Gross sales", f(rep.gross), true)}${row("Tax", f(rep.tax))}${row("Net sales", f(rep.net))}${row("Average order", f(rep.avg))}
+                </div>
+                <div style="font-weight:bold">PAYMENTS</div>${methods || "<div>—</div>"}
+                <div style="font-weight:bold;margin-top:6px">SALES BY TYPE</div>${channels || "<div>—</div>"}
+                ${cash}
+                <div style="font-weight:bold;margin-top:6px">TOP ITEMS</div>${top || "<div>—</div>"}
+                <div style="border-top:1px dashed #000;margin-top:6px;padding-top:6px;font-size:10px">
+                    ${row("Cancelled orders", rep.voidCount + " / " + f(rep.voidValue))}
+                    ${row("Still open (not in this report)", (rep.open || []).length)}
+                    ${(rep.awaiting || []).length ? row("Delivered - driver cash not received", (rep.awaiting || []).length + " / " + f((rep.awaiting || []).reduce((s, o) => s + o.total, 0))) : ""}
+                    ${rep.peakHour ? row("Busiest hour", rep.peakHour) : ""}
+                </div>
+                <div style="text-align:center;margin-top:10px;font-size:10px">— end of report —</div>`;
+            slip.style.display = "block";
+            window.print();
+            setTimeout(() => { slip.style.display = "none"; }, 1000);
+        }
+
+        function ZReadModal({ orders, currency, staffName, shopName, onClose }) {
+            const [last, setLast] = useState(undefined);        // undefined = still loading, null = never closed
+            const [past, setPast] = useState([]);
+            const [tab, setTab] = useState("current");
+            const [float, setFloat] = useState("");
+            const [counted, setCounted] = useState("");
+            const [busy, setBusy] = useState(false);
+            const [msg, setMsg] = useState("");
+            const f = n => currency + " " + (Number(n) || 0).toFixed(2);
+
+            const loadState = async () => {
+                try {
+                    const r = await getPosApi().Settings.get();
+                    const d = (r && r.data) || {};
+                    let l = null; try { l = d.z_last ? JSON.parse(d.z_last) : null; } catch (e) {}
+                    setLast(l);
+                    setPast(Object.keys(d).filter(k => /^zread_\d+$/.test(k)).map(k => { try { return JSON.parse(d[k]); } catch (e) { return null; } })
+                        .filter(Boolean).sort((a, b) => b.n - a.n).slice(0, 20));
+                } catch (e) { setLast(null); }
+            };
+            useEffect(() => { loadState(); }, []);
+
+            if (last === undefined) return (
+                <div className="modal-overlay"><div className="modal-card"><div className="modal-body" style={{ padding: 40, textAlign: "center" }}>Loading…</div></div></div>);
+
+            const rep = buildZReport(orders, last);
+            const cashSales = (rep.methods.Cash || { total: 0 }).total;
+            const fl = parseFloat(float) || 0;
+            const driverPay = rep.driverPay || 0;
+            const expected = fl + cashSales - driverPay;
+            const hasCount = counted !== "";
+            const variance = (parseFloat(counted) || 0) - expected;
+            const meta = () => ({ float: fl, cashSales, driverPay, expected, counted: hasCount ? (parseFloat(counted) || 0) : "", variance });
+
+            const closeDay = async () => {
+                if (rep.count === 0 && !confirm("There are no paid orders in this period. Close the day anyway?")) return;
+                if (rep.awaiting.length && !confirm(`${rep.awaiting.length} delivered order(s) are still waiting for the driver's cash. They will move to the next report once received. Close the day anyway?`)) return;
+                const pin = prompt("Manager PIN to close the day (Z-Read):");
+                if (pin === null) return;
+                setBusy(true); setMsg("");
+                try {
+                    const api = getPosApi();
+                    const v = await api.Settings.verifyPin(pin.trim());
+                    if (!(v && v.data && v.data.verified)) { setMsg("Wrong PIN — day not closed."); setBusy(false); return; }
+                    const n = (last ? last.n : 0) + 1;
+                    const now = new Date();
+                    const openTimes = rep.open.concat(rep.awaiting).map(o => Date.parse(o.time)).filter(t => !isNaN(t));
+                    const newCursorMs = openTimes.length ? Math.min(now.getTime(), ...openTimes) : now.getTime();
+                    const ids = rep.saleIds.filter(s => s.t >= newCursorMs).map(s => s.id);   // only sales that overlap the next period
+                    const snap = { n, isZ: true, time: now.toISOString(), by: staffName, from: rep.from, to: now.toISOString(),
+                        gross: rep.gross, tax: rep.tax, net: rep.net, count: rep.count, avg: rep.avg, methods: rep.methods, channels: rep.channels,
+                        top: rep.top, voidCount: rep.voidCount, voidValue: rep.voidValue, open: rep.open.slice(0, 20), awaiting: rep.awaiting.slice(0, 30), driverPay: rep.driverPay, peakHour: rep.peakHour,
+                        cash: meta() };
+                    await api.Settings.update({ ["zread_" + n]: JSON.stringify(snap), z_last: JSON.stringify({ n, cursor: new Date(newCursorMs).toISOString(), ids, time: now.toISOString() }) });
+                    try {
+                        const d = now.toISOString().slice(0, 10);
+                        await api.appendRow("Analytics", [d, rep.gross.toFixed(2), rep.count, rep.avg.toFixed(2), (rep.top[0] || {}).name || "", rep.peakHour]);
+                    } catch (e) { console.warn("Analytics row skipped:", e); }
+                    printZReport(snap, { ...snap.cash, isZ: true, n, time: snap.time, by: staffName }, currency, shopName);
+                    setMsg("✅ Day closed — Z-Read #" + n + " saved.");
+                    setFloat(""); setCounted("");
+                    await loadState();
+                } catch (e) { setMsg("Could not close the day: " + e.message); }
+                setBusy(false);
+            };
+
+            const Table = ({ title, data }) => (
+                <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontWeight: 800, fontSize: 12, color: "#6b7280", textTransform: "uppercase", marginBottom: 4 }}>{title}</div>
+                    {Object.keys(data).length === 0 ? <div style={{ color: "#999", fontSize: 13 }}>—</div> :
+                        Object.entries(data).map(([k, v]) => (
+                            <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "3px 0" }}><span>{k} <span style={{ color: "#9ca3af" }}>({v.count})</span></span><strong>{f(v.total)}</strong></div>))}
+                </div>);
+
+            return (
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
+                        <div className="modal-header">
+                            <div className="modal-title">🧾 Z-Read — End of Day</div>
+                            <button className="modal-close" onClick={onClose}>✕</button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                                <button className={"btn " + (tab === "current" ? "btn-primary" : "btn-ghost")} style={{ width: "auto", padding: "6px 14px" }} onClick={() => setTab("current")}>Today (open period)</button>
+                                <button className={"btn " + (tab === "past" ? "btn-primary" : "btn-ghost")} style={{ width: "auto", padding: "6px 14px" }} onClick={() => setTab("past")}>Past Z-Reads ({past.length})</button>
+                            </div>
+                            {tab === "past" ? (
+                                past.length === 0 ? <div style={{ textAlign: "center", color: "#888", padding: 30 }}>No Z-Reads saved yet.</div> :
+                                past.map(p => (
+                                    <div key={p.n} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #f0f0f0" }}>
+                                        <div><strong>Z #{p.n}</strong> <span style={{ color: "#6b7280", fontSize: 13 }}>· {new Date(p.time).toLocaleString()}</span><div style={{ fontSize: 13 }}>{p.count} orders · {f(p.gross)}</div></div>
+                                        <button className="btn btn-ghost" style={{ width: "auto", padding: "6px 12px", fontSize: 12 }} onClick={() => printZReport(p, { ...(p.cash || {}), isZ: true, n: p.n, time: p.time, by: p.by }, currency, shopName)}>🖨️ Reprint</button>
+                                    </div>))
+                            ) : (
+                                <React.Fragment>
+                                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 10 }}>
+                                        Since {last ? "Z #" + last.n + " — " + new Date(last.time).toLocaleString() : "start of today (no Z-Read yet)"}
+                                    </div>
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+                                        <div style={{ background: "#f0fdf4", borderRadius: 10, padding: 12 }}><div style={{ fontSize: 12, color: "#6b7280" }}>Gross sales</div><div style={{ fontSize: 22, fontWeight: 800 }}>{f(rep.gross)}</div></div>
+                                        <div style={{ background: "#eff6ff", borderRadius: 10, padding: 12 }}><div style={{ fontSize: 12, color: "#6b7280" }}>Orders paid</div><div style={{ fontSize: 22, fontWeight: 800 }}>{rep.count}</div></div>
+                                    </div>
+                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "2px 0" }}><span>Tax</span><strong>{f(rep.tax)}</strong></div>
+                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "2px 0" }}><span>Net sales</span><strong>{f(rep.net)}</strong></div>
+                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "2px 0 14px" }}><span>Average order</span><strong>{f(rep.avg)}</strong></div>
+                                    <Table title="Payments" data={rep.methods} />
+                                    <Table title="Sales by type" data={rep.channels} />
+                                    <div style={{ marginBottom: 14 }}>
+                                        <div style={{ fontWeight: 800, fontSize: 12, color: "#6b7280", textTransform: "uppercase", marginBottom: 4 }}>Cash drawer</div>
+                                        <div style={{ display: "flex", gap: 10 }}>
+                                            <div style={{ flex: 1 }}><label style={{ fontSize: 12 }}>Opening float</label><input type="number" min="0" value={float} onChange={e => setFloat(e.target.value)} placeholder="0" style={{ width: "100%", padding: 8, border: "1.5px solid #e5e7eb", borderRadius: 8 }} /></div>
+                                            <div style={{ flex: 1 }}><label style={{ fontSize: 12 }}>Cash counted now</label><input type="number" min="0" value={counted} onChange={e => setCounted(e.target.value)} placeholder="count the drawer" style={{ width: "100%", padding: 8, border: "1.5px solid #e5e7eb", borderRadius: 8 }} /></div>
+                                        </div>
+                                        <div style={{ fontSize: 13, marginTop: 6 }}>Cash sales {f(cashSales)}{driverPay > 0 && <span> − driver pay kept {f(driverPay)}</span>} · Expected in drawer <strong>{f(expected)}</strong>
+                                            {hasCount && <span style={{ marginLeft: 8, fontWeight: 800, color: Math.abs(variance) < 0.005 ? "#15803d" : "#b91c1c" }}>{Math.abs(variance) < 0.005 ? "✓ balanced" : (variance > 0 ? "over " : "short ") + f(Math.abs(variance))}</span>}</div>
+                                    </div>
+                                    {rep.top.length > 0 && (
+                                        <div style={{ marginBottom: 14 }}>
+                                            <div style={{ fontWeight: 800, fontSize: 12, color: "#6b7280", textTransform: "uppercase", marginBottom: 4 }}>Top items</div>
+                                            {rep.top.map(t => <div key={t.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0" }}><span>{t.qty}× {t.name}</span><span>{f(t.rev)}</span></div>)}
+                                        </div>)}
+                                    {rep.voidCount > 0 && <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>Cancelled orders: {rep.voidCount} ({f(rep.voidValue)})</div>}
+                                    {rep.awaiting.length > 0 && (
+                                        <div style={{ background: "#f5f3ff", border: "1px solid #c4b5fd", borderRadius: 10, padding: 10, fontSize: 13, marginBottom: 10 }}>
+                                            💵 {rep.awaiting.length} delivered order{rep.awaiting.length > 1 ? "s are" : " is"} waiting for the driver's cash ({f(rep.awaiting.reduce((s, o) => s + o.total, 0))}). Use <strong>Driver cash</strong> in the header when they hand it in.
+                                        </div>)}
+                                    {rep.open.length > 0 && (
+                                        <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 10, padding: 10, fontSize: 13, marginBottom: 10 }}>
+                                            ⚠️ {rep.open.length} order{rep.open.length > 1 ? "s are" : " is"} still open / unpaid ({f(rep.open.reduce((s, o) => s + o.total, 0))}). {rep.open.length > 1 ? "They aren't" : "It isn't"} in this report and will appear in the next one once paid.
+                                        </div>)}
+                                    {msg && <div style={{ fontSize: 13, fontWeight: 700, color: msg.startsWith("✅") ? "#15803d" : "#b91c1c", marginBottom: 8 }}>{msg}</div>}
+                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                        <button className="btn btn-ghost" onClick={() => printZReport(rep, { ...meta(), isZ: false }, currency, shopName)}>🖨️ Print X-Read</button>
+                                        <button className="btn btn-primary" disabled={busy} onClick={closeDay}>{busy ? "Closing…" : "✅ Close Day & Print Z-Read"}</button>
+                                    </div>
+                                    <div style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 8 }}>The X-Read is a read-only look at the day so far. Closing the day (Z) needs the manager PIN and starts a fresh report.</div>
+                                </React.Fragment>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ════════════════════════════════════════════════════════════
+        // DRIVER CASH — delivered orders are paid in cash to the driver; the driver brings the
+        // money to the till, and the cashier receives it here (this is what settles the order).
+        // ════════════════════════════════════════════════════════════
+        function isAwaitingDriverCash(o) {
+            if (!(window.POS_ORDER && POS_ORDER.type(o) === "delivery")) return false;
+            const st = String(o.Status || o.status || "").toLowerCase();
+            return st === "delivered" && !/PAID/i.test(String(o.Notes || o.notes || ""));
+        }
+
+        function DriverCashModal({ orders, currency, staffName, shopName, onClose, onDone }) {
+            const [rows, setRows] = useState(null);
+            const [keep, setKeep] = useState({});      // driver key -> driver keeps their delivery pay from the cash
+            const [busy, setBusy] = useState("");
+            const [msg, setMsg] = useState("");
+            const f = n => currency + " " + (Number(n) || 0).toFixed(2);
+
+            useEffect(() => {
+                (async () => {
+                    const api = getPosApi(); let dels = [], drivers = [];
+                    try { dels = await api.getRows("Deliveries"); } catch (e) {}
+                    try { drivers = await api.getRows("Drivers"); } catch (e) {}
+                    setRows({ dels, drivers });
+                })();
+            }, [orders.length]);
+
+            if (!rows) return <div className="modal-overlay"><div className="modal-card"><div className="modal-body" style={{ padding: 40, textAlign: "center" }}>Loading…</div></div></div>;
+
+            const groups = {};
+            orders.filter(isAwaitingDriverCash).forEach(o => {
+                const d = rows.dels.find(x => x.OrderID === o.OrderID) || {};
+                const email = String(d.DriverEmail || "").toLowerCase();
+                const drv = rows.drivers.find(x => String(x.Email || "").toLowerCase() === email);
+                const key = email || "unknown";
+                const g = (groups[key] = groups[key] || { key, name: (drv && drv.Name) || email || "Unknown driver", list: [], total: 0, pay: 0 });
+                const pay = parseFloat(d.Earnings) || 0;
+                g.list.push({ order: o, pay }); g.total += parseFloat(o.Total) || 0; g.pay += pay;
+            });
+            const list = Object.values(groups);
+
+            const receive = async (g) => {
+                const withhold = !!keep[g.key];
+                if (!confirm(`Receive ${f(withhold ? g.total - g.pay : g.total)} cash from ${g.name} for ${g.list.length} order(s)?`)) return;
+                setBusy(g.key); setMsg("");
+                try {
+                    const api = getPosApi();
+                    for (const it of g.list) {
+                        const o = it.order;
+                        const note = (o.Notes ? o.Notes + " " : "") + `[PAID Cash at Till - driver ${g.name}]` + (withhold && it.pay ? ` [DRIVER PAID ${it.pay.toFixed(2)}]` : "");
+                        await api.Orders.update({ orderId: o.OrderID, status: "closed", notes: note });
+                    }
+                    const slip = document.getElementById("printable-receipt-slip");
+                    if (slip) {
+                        slip.innerHTML = `<div style="text-align:center;font-weight:bold">${(shopName || POS_SHOP.display()).toUpperCase()}</div>
+                            <div style="text-align:center;font-size:10px">DRIVER CASH RECEIPT</div><div style="font-size:10px">${new Date().toLocaleString()}</div>
+                            <div style="font-size:10px">Driver: ${g.name} · Received by: ${staffName}</div>
+                            <div style="border-top:1px dashed #000;margin:6px 0;padding-top:6px">
+                            ${g.list.map(it => `<div style="display:flex;justify-content:space-between"><span>${it.order.OrderID}</span><span>${f(it.order.Total)}</span></div>`).join("")}</div>
+                            <div style="display:flex;justify-content:space-between"><span>Orders total</span><span>${f(g.total)}</span></div>
+                            ${withhold ? `<div style="display:flex;justify-content:space-between"><span>Driver pay kept</span><span>- ${f(g.pay)}</span></div>` : ""}
+                            <div style="display:flex;justify-content:space-between;font-weight:bold"><span>CASH RECEIVED</span><span>${f(withhold ? g.total - g.pay : g.total)}</span></div>
+                            <div style="margin-top:14px;font-size:10px">Driver signature: ______________</div>`;
+                        slip.style.display = "block"; window.print(); setTimeout(() => { slip.style.display = "none"; }, 1000);
+                    }
+                    setMsg(`✅ Received ${f(withhold ? g.total - g.pay : g.total)} from ${g.name}`);
+                    onDone && onDone();
+                } catch (e) { setMsg("Could not save: " + e.message); }
+                setBusy("");
+            };
+
+            return (
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 540 }}>
+                        <div className="modal-header">
+                            <div className="modal-title">💵 Cash from delivery drivers</div>
+                            <button className="modal-close" onClick={onClose}>✕</button>
+                        </div>
+                        <div className="modal-body">
+                            {msg && <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: msg.startsWith("✅") ? "#15803d" : "#b91c1c" }}>{msg}</div>}
+                            {list.length === 0 ? <div style={{ textAlign: "center", color: "#888", padding: 30 }}>No delivered orders are waiting for cash. 🎉</div> :
+                                list.map(g => (
+                                    <div key={g.key} style={{ border: "1.5px solid #fcd34d", background: "#fffbeb", borderRadius: 12, padding: 12, marginBottom: 12 }}>
+                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                            <strong>🛵 {g.name}</strong><strong style={{ fontSize: 18 }}>{f(g.total)}</strong>
+                                        </div>
+                                        {g.list.map(it => (
+                                            <div key={it.order.OrderID} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0", color: "#475569" }}>
+                                                <span>{it.order.OrderID} · {it.order.CustomerName || "Customer"}</span><span>{f(it.order.Total)}</span>
+                                            </div>))}
+                                        {g.pay > 0 && (
+                                            <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, marginTop: 8, cursor: "pointer" }}>
+                                                <input type="checkbox" checked={!!keep[g.key]} onChange={e => setKeep({ ...keep, [g.key]: e.target.checked })} />
+                                                Driver keeps their delivery pay ({f(g.pay)}) from this cash
+                                            </label>)}
+                                        <button className="btn btn-success" disabled={busy === g.key} style={{ marginTop: 10 }} onClick={() => receive(g)}>
+                                            {busy === g.key ? "Saving…" : `✅ Receive ${f(keep[g.key] ? g.total - g.pay : g.total)} cash`}
+                                        </button>
+                                    </div>))}
+                            <div style={{ fontSize: 11.5, color: "#9ca3af" }}>Receiving the cash settles those orders as paid (Cash) and they appear in today's Z-Read.</div>
+                        </div>
+                    </div>
+                </div>
+            );
         }
 
         function OrderTimer({ orderTime }) {
@@ -618,6 +969,42 @@
             const [paymentMethod, setPaymentMethod]         = useState("Cash");
             const [completedPaymentModal, setCompletedPaymentModal] = useState(null);
             const [showHistoryModal, setShowHistoryModal]   = useState(false);
+            const [posShopName, setPosShopName] = useState(POS_SHOP.display());
+            useEffect(() => {
+                const h = () => setPosShopName(POS_SHOP.display());
+                window.addEventListener("pos-shop-name", h); h();
+                return () => window.removeEventListener("pos-shop-name", h);
+            }, []);
+            const [showZRead, setShowZRead]                   = useState(false);
+            const [showDriverCash, setShowDriverCash]         = useState(false);
+            const [forceSettleId, setForceSettleId]           = useState(null);   // online delivery order the till wants to settle itself
+
+            // Online delivery switch (stored in Settings so the customer app and every till see the same state)
+            const [deliveryOn, setDeliveryOn] = useState(true);
+            const [deliveryBusy, setDeliveryBusy] = useState(false);
+            useEffect(() => {
+                let stop = false;
+                const read = async () => {
+                    const api = getPosApi();
+                    try {
+                        const r = api && api.Settings && await api.Settings.get();
+                        if (!stop && r && r.data) setDeliveryOn(String(r.data.delivery_enabled || "true").toLowerCase() !== "false");
+                    } catch (e) {}
+                };
+                read();
+                const iv = setInterval(read, 8000);
+                return () => { stop = true; clearInterval(iv); };
+            }, []);
+            const toggleDelivery = async () => {
+                const next = !deliveryOn;
+                if (!next && !confirm("Turn OFF online delivery? Customers will only be able to order pickup.")) return;
+                setDeliveryBusy(true);
+                try {
+                    await getPosApi().Settings.update({ delivery_enabled: next ? "true" : "false" });
+                    setDeliveryOn(next);
+                } catch (e) { alert("Could not change delivery: " + e.message); }
+                setDeliveryBusy(false);
+            };
 
             // Add-on Confirmation Dialog Modal State
             const [addonConfirmData, setAddonConfirmData]   = useState(null);
@@ -703,6 +1090,7 @@
 
             useEffect(() => {
                 loadData();
+                if (window.POS_ONLIVE) POS_ONLIVE(loadData, "order.");   // LAN: instant push
                 const pollMs = (window.POS_CONFIG && window.POS_CONFIG.POLL_MS) || 4000;
                 const interval = setInterval(loadData, pollMs);
                 return () => clearInterval(interval);
@@ -945,6 +1333,68 @@
                 }
             };
 
+            // ── CANCEL ONE ITEM (only while the kitchen has NOT started it) ──
+            const handleCancelItem = async (orderId, itemIdx, itemName) => {
+                if (!window.confirm(`Cancel "${itemName}" from this order?`)) return;
+                const api = getPosApi();
+                if (!api) return;
+                try {
+                    // Re-read the order right now: the kitchen may have started it a second ago.
+                    const res = await api.Orders.getAll();
+                    const orderRow = (res && res.data ? res.data : []).find(r => (r.OrderID || r.orderId) === orderId);
+                    if (!orderRow) { showNotification("Order not found", "error"); return; }
+                    let itemsArray = [];
+                    try { const raw = orderRow.Items || []; itemsArray = typeof raw === "string" ? JSON.parse(raw) : raw; } catch(e){}
+
+                    let idx = itemsArray[itemIdx] && (itemsArray[itemIdx].name || itemsArray[itemIdx].Name) === itemName
+                        ? itemIdx : itemsArray.findIndex(it => (it.name || it.Name) === itemName);
+                    const target = itemsArray[idx];
+                    const st = String((target && target.status) || "").toLowerCase();
+                    if (!target) { showNotification("Item already removed", "error"); loadData(); return; }
+                    if (target.chef || ["preparing", "ready", "served"].includes(st)) {
+                        showNotification("Too late — the kitchen has already started this item", "error");
+                        loadData();
+                        return;
+                    }
+
+                    const oldSub = parseFloat(orderRow.Subtotal || 0);
+                    const oldTax = parseFloat(orderRow.Tax || 0);
+                    const oldTotal = parseFloat(orderRow.Total || 0);
+                    const extra = Math.max(0, oldTotal - oldSub - oldTax);   // e.g. delivery fee on online orders
+
+                    const remaining = itemsArray.filter((_, i) => i !== idx);
+                    const newSub = remaining.reduce((sum, it) => sum + (parseFloat(it.price || 0) * parseInt(it.qty || it.quantity || 1, 10)), 0);
+                    const newTax = oldSub > 0 ? parseFloat((oldTax * newSub / oldSub).toFixed(2)) : 0;
+                    const newTotal = remaining.length ? parseFloat((newSub + newTax + extra).toFixed(2)) : 0;
+
+                    const wasLast = remaining.length === 0;
+                    const stillNeedsKitchen = remaining.some(it => it.prepTime !== "Bypass Prep" && String(it.status || "").toLowerCase() !== "ready");
+                    let nextStatus = String(orderRow.Status || "new").toLowerCase();
+                    if (wasLast) nextStatus = "cancelled";
+                    else if (!stillNeedsKitchen && nextStatus !== "served") nextStatus = "ready";   // everything left is already cooked
+
+                    await api.Orders.update({
+                        orderId,
+                        items: remaining,
+                        subtotal: newSub,
+                        tax: newTax,
+                        total: newTotal,
+                        status: nextStatus
+                    });
+
+                    if (wasLast && api.Tables && typeof api.Tables.update === "function" && selectedTable) {
+                        await api.Tables.update({ tableNumber: selectedTable.number, status: "available", currentWaiter: "", guests: 0 });
+                        setSelectedTable(null);
+                    }
+                    if (wasLast) setSelectedTakeawayOrder(null);
+
+                    showNotification(wasLast ? "Order cancelled (no items left)" : `Removed ${itemName}`);
+                    loadData();
+                } catch(e) {
+                    showNotification("Failed to cancel: " + e.message, "error");
+                }
+            };
+
             // ── COLLECT BYPASS PREP ITEM ──
             const handleCollectBypassedItem = async (orderId, itemName) => {
                 const api = getPosApi();
@@ -1089,7 +1539,7 @@
                         await api.Orders.update({
                             orderId: order.OrderID || order.orderId,
                             status: "closed",
-                            notes: `[PAID ${paymentMethod} at Till]`
+                            notes: ((order.Notes || order.notes) ? (order.Notes || order.notes) + " " : "") + `[PAID ${paymentMethod} at Till]`   // keep delivery address etc.
                         });
                     }
 
@@ -1125,12 +1575,34 @@
                 }
             };
 
-            // Active Takeaway Orders (Table 0 or 99 and not closed)
+            // Active Takeaway Orders (counter sales, Table 0) — online orders have their own tab
+            const isOnlineOrder = (o) => !!(window.POS_ORDER && POS_ORDER.isOnline(o));
             const activeTakeawayOrders = liveOrders.filter(o => {
                 const tbl = parseInt(o.TableNumber || o.table || 0);
                 const st = (o.Status || o.status || "").toLowerCase();
-                return (tbl === 0 || tbl >= 90) && !["closed", "cancelled", "void"].includes(st);
+                return (tbl === 0 || tbl >= 90) && !isOnlineOrder(o) && !["closed", "cancelled", "void"].includes(st);
             });
+            // Active ONLINE orders (Customer App: delivery + pickup)
+            const activeOnlineOrders = liveOrders.filter(o => {
+                const st = (o.Status || o.status || "").toLowerCase();
+                return isOnlineOrder(o) && !["closed", "cancelled", "void"].includes(st);
+            });
+            const newOnlineCount = activeOnlineOrders.filter(o => (o.Status || "").toLowerCase() === "new").length;
+            const listOrders = leftSidebarTab === 'online' ? activeOnlineOrders : activeTakeawayOrders;
+
+            // Ping when a brand-new online order arrives
+            const seenOnlineRef = React.useRef(null);
+            useEffect(() => {
+                const ids = new Set(activeOnlineOrders.map(o => o.OrderID));
+                if (seenOnlineRef.current) {
+                    const fresh = [...ids].filter(id => !seenOnlineRef.current.has(id));
+                    if (fresh.length) {
+                        showNotification("🌐 New online order: " + fresh.join(", "));
+                        try { const a = new (window.AudioContext || window.webkitAudioContext)(); const o = a.createOscillator(); o.connect(a.destination); o.frequency.value = 880; o.start(); setTimeout(() => o.stop(), 250); } catch (e) {}
+                    }
+                }
+                seenOnlineRef.current = ids;
+            }, [liveOrders]);
 
             // Currently focused active order
             const activeOrderInFocus = selectedTable 
@@ -1149,7 +1621,7 @@
                 return (
                     <div className="app-container">
                         <div className="header">
-                            <h1>🍽️ The Grand Table POS</h1>
+                            <h1>🍽️ {posShopName} POS</h1>
                         </div>
                         <div className="server-screen">
                             <div style={{ fontSize: "56px" }}>🧑‍💼</div>
@@ -1182,7 +1654,7 @@
             return (
                 <div className="app-container">
                     <div className="header">
-                        <h1>🍽️ The Grand Table</h1>
+                        <h1>🍽️ {posShopName}</h1>
                         
                         {/* MODE SWITCHER */}
                         <div className="mode-switcher">
@@ -1201,6 +1673,19 @@
                         </div>
 
                         <div className="header-info">
+                            <button className="btn btn-ghost" disabled={deliveryBusy} title="Let online customers request delivery" style={{ padding: '6px 12px', fontSize: '11px', color: 'white', background: deliveryOn ? 'rgba(39,174,96,0.85)' : 'rgba(192,57,43,0.85)', border: '1px solid rgba(255,255,255,0.35)', fontWeight: 700 }} onClick={toggleDelivery}>
+                                🛵 Delivery: {deliveryOn ? 'ON' : 'OFF'}
+                            </button>
+                            {activeAppMode === 'till' && (
+                                <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '11px', color: 'white', background: liveOrders.some(isAwaitingDriverCash) ? 'rgba(124,58,237,0.95)' : 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.35)', fontWeight: 700 }} onClick={() => setShowDriverCash(true)}>
+                                    💵 Driver cash{liveOrders.filter(isAwaitingDriverCash).length ? ` (${liveOrders.filter(isAwaitingDriverCash).length})` : ''}
+                                </button>
+                            )}
+                            {activeAppMode === 'till' && (
+                                <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '11px', color: 'white', background: 'rgba(243,156,18,0.9)', border: '1px solid rgba(255,255,255,0.35)', fontWeight: 700 }} onClick={() => setShowZRead(true)}>
+                                    🧾 Z-Read
+                                </button>
+                            )}
                             <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '11px', color: 'white', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)' }} onClick={() => setShowHistoryModal(true)}>
                                 📋 History
                             </button>
@@ -1215,7 +1700,7 @@
                         {/* ── COLUMN 1: LEFT SIDEBAR (2-COLUMN TABLE GRID / TAKEAWAYS) ── */}
                         <div className="panel">
                             <h2>
-                                <span>{leftSidebarTab === 'tables' ? '🪑 Floor Tables' : '🥡 Takeaways'}</span>
+                                <span>{leftSidebarTab === 'tables' ? '🪑 Floor Tables' : leftSidebarTab === 'online' ? '🌐 Online Orders' : '🥡 Takeaways'}</span>
                                 {activeAppMode === 'till' && (
                                     <button 
                                         className={`btn ${(!selectedTable && !selectedTakeawayOrder) ? 'btn-primary' : 'btn-ghost'}`} 
@@ -1240,6 +1725,12 @@
                                     onClick={() => setLeftSidebarTab('takeaway')}
                                 >
                                     🥡 Takeaways ({activeTakeawayOrders.length})
+                                </button>
+                                <button 
+                                    className={`lt-btn online-tab ${leftSidebarTab === 'online' ? 'active' : ''} ${newOnlineCount > 0 && leftSidebarTab !== 'online' ? 'has-new' : ''}`}
+                                    onClick={() => setLeftSidebarTab('online')}
+                                >
+                                    🌐 Online ({activeOnlineOrders.length})
                                 </button>
                             </div>
 
@@ -1287,15 +1778,15 @@
                                 )
                             ) : (
                                 /* ACTIVE TAKEAWAY / ONLINE ORDERS LIST */
-                                activeTakeawayOrders.length === 0 ? (
+                                listOrders.length === 0 ? (
                                     <div style={{ textAlign: 'center', padding: '30px 10px', color: '#94a3b8' }}>
-                                        <div style={{ fontSize: '28px', marginBottom: '4px' }}>🥡</div>
-                                        <div style={{ fontWeight: 700, fontSize: '13px' }}>No active takeaway orders</div>
-                                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>Tap "+ New Sale" to start a takeaway order</div>
+                                        <div style={{ fontSize: '28px', marginBottom: '4px' }}>{leftSidebarTab === 'online' ? '🌐' : '🥡'}</div>
+                                        <div style={{ fontWeight: 700, fontSize: '13px' }}>{leftSidebarTab === 'online' ? 'No active online orders' : 'No active takeaway orders'}</div>
+                                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{leftSidebarTab === 'online' ? 'Customer App orders appear here instantly' : 'Tap "+ New Sale" to start a takeaway order'}</div>
                                     </div>
                                 ) : (
                                     <div className="takeaway-list">
-                                        {activeTakeawayOrders.map((order, idx) => {
+                                        {listOrders.map((order, idx) => {
                                             const st = (order.Status || "new").toLowerCase();
                                             const isSelected = selectedTakeawayOrder && (selectedTakeawayOrder.OrderID || selectedTakeawayOrder.orderId) === (order.OrderID || order.orderId);
                                             const isReady = st === "ready";
@@ -1308,7 +1799,7 @@
                                             return (
                                                 <div 
                                                     key={idx}
-                                                    className={`takeaway-card ${isSelected ? 'selected' : ''}`}
+                                                    className={`takeaway-card ${isSelected ? 'selected' : ''} ${isOnlineOrder(order) ? 'online' : ''}`}
                                                     onClick={() => handleTakeawaySelect(order)}
                                                 >
                                                     {isReady && <div className="ready-badge">🔔 Ready</div>}
@@ -1319,6 +1810,7 @@
                                                         </span>
                                                     </div>
                                                     <div style={{ fontSize: '12px', color: '#475569', marginTop: '3px' }}>
+                                                        {isOnlineOrder(order) && <span className="online-chip" style={{ marginRight: '6px' }}>{POS_ORDER.label(order)}</span>}
                                                         {order.CustomerName ? `👤 ${order.CustomerName}` : '🥡 Takeaway / Counter'}
                                                     </div>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', fontWeight: 800 }}>
@@ -1387,7 +1879,7 @@
                                 {selectedTable ? (
                                     <span className="badge badge-occupied">Table {selectedTable.number}</span>
                                 ) : selectedTakeawayOrder ? (
-                                    <span className="badge badge-available">Takeaway #{selectedTakeawayOrder.OrderID || selectedTakeawayOrder.orderId}</span>
+                                    <span className="badge badge-available">{isOnlineOrder(selectedTakeawayOrder) ? 'Online' : 'Takeaway'} #{selectedTakeawayOrder.OrderID || selectedTakeawayOrder.orderId}</span>
                                 ) : (
                                     <span className="badge badge-available">New Counter Sale</span>
                                 )}
@@ -1417,9 +1909,12 @@
 
                                         const ordStatus = (activeOrderInFocus.Status || "").toLowerCase();
                                         const isTakeaway = parseInt(activeOrderInFocus.TableNumber || 0) === 0 || parseInt(activeOrderInFocus.TableNumber || 0) >= 90;
-                                        const labelText = isTakeaway ? (activeOrderInFocus.CustomerName ? `${activeOrderInFocus.CustomerName} (Takeaway)` : 'Takeaway Order') : `Table ${activeOrderInFocus.TableNumber}`;
+                                        const onlineFocus = isOnlineOrder(activeOrderInFocus);
+                                        const labelText = onlineFocus ? `${POS_ORDER.label(activeOrderInFocus)} · ${activeOrderInFocus.CustomerName || 'Customer'}` : isTakeaway ? (activeOrderInFocus.CustomerName ? `${activeOrderInFocus.CustomerName} (Takeaway)` : 'Takeaway Order') : `Table ${activeOrderInFocus.TableNumber}`;
                                         
                                         const isAlreadyPaid = (activeOrderInFocus.Notes || "").includes("PAID") || ["closed", "paid"].includes(ordStatus);
+                                        const onlineUnpaid = onlineFocus && !isAlreadyPaid;
+                                        const onlineType = onlineFocus ? POS_ORDER.type(activeOrderInFocus) : null;
 
                                         return (
                                             <div>
@@ -1447,6 +1942,16 @@
                                                             </div>
                                                         </div>
                                                     </div>
+
+                                                    {onlineFocus && (
+                                                        <div className="online-info">
+                                                            {POS_ORDER.phone(activeOrderInFocus) && <div>📞 <a href={`tel:${POS_ORDER.phone(activeOrderInFocus)}`}>{POS_ORDER.phone(activeOrderInFocus)}</a></div>}
+                                                            {POS_ORDER.type(activeOrderInFocus) === 'delivery' && (
+                                                                <div>📍 {POS_ORDER.address(activeOrderInFocus) || 'No address'} {POS_ORDER.mapLink(activeOrderInFocus) && <a href={POS_ORDER.mapLink(activeOrderInFocus)} target="_blank" rel="noreferrer">· Open map</a>}</div>
+                                                            )}
+                                                            {POS_ORDER.type(activeOrderInFocus) === 'pickup' && <div>🛍️ Customer collects at the counter</div>}
+                                                        </div>
+                                                    )}
 
                                                     {/* Itemized Dishes List with Live Cooking Status */}
                                                     <div style={{ margin: '8px 0 4px' }}>
@@ -1490,6 +1995,10 @@
                                                                 statusColor = "#d97706";
                                                             }
 
+                                                            // Cancel is offered only until the kitchen starts the item (or it's collected/paid/served)
+                                                            const canCancel = ordStatus !== 'served' && !isAlreadyPaid && !item.chef
+                                                                && !["preparing", "ready", "served", "cancelled"].includes(String(item.status || "").toLowerCase());
+
                                                             return (
                                                                 <div key={idx} className="dish-row">
                                                                     <div className="dish-row-top">
@@ -1500,7 +2009,18 @@
                                                                         <span style={{ fontSize: '11px', color: '#94a3b8' }}>
                                                                             {currency} {(parseFloat(item.price || 0) * parseInt(item.qty || 1)).toFixed(2)}
                                                                         </span>
-                                                                        {actionButtonHtml}
+                                                                        <span style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                                                                            {actionButtonHtml}
+                                                                            {canCancel && (
+                                                                                <button
+                                                                                    className="btn btn-danger"
+                                                                                    style={{ padding: '3px 8px', fontSize: '10px', width: 'auto', marginTop: '2px' }}
+                                                                                    onClick={() => handleCancelItem(activeOrderInFocus.OrderID, idx, item.name || item.Name)}
+                                                                                >
+                                                                                    ✕ Cancel
+                                                                                </button>
+                                                                            )}
+                                                                        </span>
                                                                     </div>
                                                                 </div>
                                                             );
@@ -1553,7 +2073,29 @@
                                                         </div>
 
                                                         {/* ── BUTTON LOGIC: HAND OVER READY TAKEAWAY vs TILL SETTLEMENT ── */}
-                                                        {isTakeaway && ordStatus === "ready" ? (
+                                                        {onlineUnpaid && onlineType === "delivery" && forceSettleId !== activeOrderInFocus.OrderID ? (
+                                                            /* ONLINE DELIVERY: the driver collects the cash and brings it to the till */
+                                                            <div className="action-stack" style={{ marginTop: '14px' }}>
+                                                                <div style={{ background: '#f5f3ff', border: '1px solid #c4b5fd', color: '#6d28d9', padding: '12px', borderRadius: '8px', fontSize: '13px', fontWeight: 700, textAlign: 'center' }}>
+                                                                    {ordStatus === "delivered" ? "🛵 Delivered — waiting for the driver to hand in the cash" : "🛵 Delivery order — the driver collects the cash and hands it in at the till"}
+                                                                </div>
+                                                                {activeAppMode === 'till' && (
+                                                                    <React.Fragment>
+                                                                        <button className="btn btn-primary" onClick={() => setShowDriverCash(true)}>💵 Open Driver cash</button>
+                                                                        <button className="btn btn-ghost" onClick={() => setForceSettleId(activeOrderInFocus.OrderID)}>Take payment here instead</button>
+                                                                    </React.Fragment>
+                                                                )}
+                                                                <button className="btn btn-ghost" onClick={() => printReceipt(activeOrderInFocus, { method: "Cash on delivery" }, currency, taxRate)}>🖨️ Print Slip</button>
+                                                            </div>
+                                                        ) : onlineUnpaid && onlineType === "pickup" && (ordStatus !== "ready" || activeAppMode !== 'till') ? (
+                                                            /* ONLINE PICKUP: customer pays at the till when collecting */
+                                                            <div className="action-stack" style={{ marginTop: '14px' }}>
+                                                                <div style={{ background: '#f5f3ff', border: '1px solid #c4b5fd', color: '#6d28d9', padding: '12px', borderRadius: '8px', fontSize: '13px', fontWeight: 700, textAlign: 'center' }}>
+                                                                    {ordStatus === "ready" ? "🛍️ Ready — the customer pays at the Till when collecting" : "🔥 In the kitchen — payment is taken at the Till when the customer collects"}
+                                                                </div>
+                                                                <button className="btn btn-ghost" onClick={() => printReceipt(activeOrderInFocus, { method: "Pay at pickup" }, currency, taxRate)}>🖨️ Print Slip</button>
+                                                            </div>
+                                                        ) : isTakeaway && ordStatus === "ready" && !onlineUnpaid ? (
                                                             /* READY TAKEAWAY: HAND OVER TO CUSTOMER */
                                                             <div className="action-stack" style={{ marginTop: '14px' }}>
                                                                 <button 
@@ -1847,6 +2389,9 @@
                     )}
 
                     {/* ── SETTLED ORDERS HISTORY MODAL ── */}
+                    {showDriverCash && <DriverCashModal orders={liveOrders} currency={currency} staffName={currentServer} shopName={(typeof getPosApi === "function" && getPosApi() && getPosApi().getSettings && (getPosApi().getSettings() || {}).restaurant_name) || ""} onClose={() => setShowDriverCash(false)} onDone={() => loadData()} />}
+                    {showZRead && <ZReadModal orders={liveOrders} currency={currency} staffName={currentServer} shopName={(typeof getPosApi === "function" && getPosApi() && getPosApi().getSettings && (getPosApi().getSettings() || {}).restaurant_name) || ""} onClose={() => setShowZRead(false)} />}
+
                     {showHistoryModal && (
                         <div className="modal-overlay" onClick={() => setShowHistoryModal(false)}>
                             <div className="modal-card" onClick={e => e.stopPropagation()}>
