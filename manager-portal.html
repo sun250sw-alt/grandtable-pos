@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manager Portal - Restaurant POS</title>
+    <title>Manager Portal</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -239,7 +239,7 @@
 <body>
 <div id="root"></div>
 <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
 
     const RECIPE_DATA = {
       "Burger Deluxe": {
@@ -1727,8 +1727,13 @@
     }
 
     function SettingsPage({ toast }) {
-        const [form, setForm] = useState({ name: "", currency: "LKR", tax: "10", delivery: "250", pin: "1234", address: "", lat: "", lng: "" });
+        const [form, setForm] = useState({ name: "", currency: "LKR", tax: "10", delivery: "250", pin: "1234", address: "", lat: "", lng: "", rate: "", base: "", offerKind: "offer", offerTitle: "", offerText: "", offerUntil: "", offerActive: true, openTime: "", closeTime: "", deliveryOn: true });
         const [saving, setSaving] = useState(false);
+        const [showMap, setShowMap] = useState(false);
+        const [mapMsg, setMapMsg] = useState("");
+        const [pasteTxt, setPasteTxt] = useState("");
+        const mapDiv = useRef(null), mapObj = useRef(null), markerObj = useRef(null), formRef = useRef(null);
+        formRef.current = form;
 
         const loadSettings = async () => {
             if (!window.POS_GAPI) return;
@@ -1742,7 +1747,17 @@
                     pin: settings.admin_pin || "1234",
                     address: settings.restaurant_address || "",
                     lat: settings.restaurant_lat || "",
-                    lng: settings.restaurant_lng || ""
+                    lng: settings.restaurant_lng || "",
+                    rate: settings.driver_rate_per_km || "",
+                    base: settings.driver_base_fee || "",
+                    offerKind: settings.offer_kind || "offer",
+                    offerTitle: settings.offer_title || "",
+                    offerText: settings.offer_text || "",
+                    offerUntil: settings.offer_until || "",
+                    offerActive: String(settings.offer_active || "true").toLowerCase() !== "false",
+                    openTime: settings.open_time || "",
+                    closeTime: settings.close_time || "",
+                    deliveryOn: String(settings.delivery_enabled || "true").toLowerCase() !== "false"
                 });
             } catch(e) { console.error("Load settings page error:", e); }
         };
@@ -1773,6 +1788,67 @@
             );
         };
 
+        // Accepts "6.9271, 79.8612", a Google Maps link with @lat,lng or ?q=lat,lng
+        const parseLatLng = (t) => {
+            t = String(t || ""); try { t = decodeURIComponent(t); } catch (e) {}
+            const m = t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || t.match(/[?&](?:q|ll|query|destination)=(-?\d+\.\d+)[,+ ]\s*(-?\d+\.\d+)/) ||
+                      t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || t.match(/^\s*(-?\d+\.\d+)\s*[, ]\s*(-?\d+\.\d+)\s*$/);
+            return m ? { lat: parseFloat(m[1]), lng: parseFloat(m[2]) } : null;
+        };
+        const applyPaste = () => {
+            const ll = parseLatLng(pasteTxt);
+            if (!ll) { alert("Could not find coordinates in that text. Paste the full Google Maps link (not the short maps.app.goo.gl one) or 'lat, lng'."); return; }
+            setForm(f => ({ ...f, lat: ll.lat.toFixed(6), lng: ll.lng.toFixed(6) }));
+            setPasteTxt(""); toast("✅ Location set from link");
+        };
+        const setPoint = (lat, lng, fillAddress) => {
+            setForm(f => ({ ...f, lat: lat.toFixed(6), lng: lng.toFixed(6) }));
+            if (fillAddress && window.google && !formRef.current.address) {
+                new google.maps.Geocoder().geocode({ location: { lat, lng } }, (r, st) => {
+                    if (st === "OK" && r[0]) setForm(f => f.address ? f : { ...f, address: r[0].formatted_address });
+                });
+            }
+        };
+        useEffect(() => {
+            if (!showMap) return;
+            let cancelled = false;
+            const init = () => {
+                if (cancelled || !mapDiv.current || !window.google || !google.maps) return;
+                const f = formRef.current;
+                const has = parseFloat(f.lat) && parseFloat(f.lng);
+                const c = has ? { lat: parseFloat(f.lat), lng: parseFloat(f.lng) } : { lat: 6.9271, lng: 79.8612 };
+                const map = new google.maps.Map(mapDiv.current, { center: c, zoom: has ? 17 : 12, streetViewControl: false, mapTypeControl: true });
+                const marker = new google.maps.Marker({ position: c, map, draggable: true, visible: !!has, title: "Restaurant" });
+                map.addListener("click", e => { marker.setPosition(e.latLng); marker.setVisible(true); setPoint(e.latLng.lat(), e.latLng.lng(), true); });
+                marker.addListener("dragend", e => setPoint(e.latLng.lat(), e.latLng.lng(), true));
+                mapObj.current = map; markerObj.current = marker; setMapMsg("");
+            };
+            if (window.google && google.maps) { init(); }
+            else {
+                const key = (typeof POS_CONFIG !== "undefined" && POS_CONFIG.MAPS_API_KEY) || "";
+                if (!key) { setMapMsg("No Google Maps key in pos-config.js. Use the paste-link box instead."); return; }
+                window.gm_authFailure = () => setMapMsg("Google rejected the Maps key (check Maps JavaScript API + billing). Use the paste-link box instead.");
+                window.__mpMapsReady = init;
+                const sc = document.createElement("script");
+                sc.src = "https://maps.googleapis.com/maps/api/js?key=" + key + "&callback=__mpMapsReady";
+                sc.onerror = () => setMapMsg("Map could not load (no internet?). Use the paste-link box instead.");
+                document.head.appendChild(sc);
+                setMapMsg("Loading map…");
+            }
+            return () => { cancelled = true; };
+        }, [showMap]);
+        const searchPlace = () => {
+            const q = (document.getElementById("mp-search") || {}).value;
+            if (!q || !window.google || !mapObj.current) return;
+            new google.maps.Geocoder().geocode({ address: q }, (r, st) => {
+                if (st !== "OK" || !r[0]) { alert("Place not found"); return; }
+                const l = r[0].geometry.location;
+                mapObj.current.setCenter(l); mapObj.current.setZoom(17);
+                markerObj.current.setPosition(l); markerObj.current.setVisible(true);
+                setPoint(l.lat(), l.lng(), true);
+            });
+        };
+
         const handleSave = async () => {
             if (!form.name || !form.pin) { alert("Restaurant Name and PIN are required"); return; }
             if (form.pin.replace(/\D/g, "").length !== 4) { alert("PIN must be exactly 4 digits"); return; }
@@ -1788,7 +1864,17 @@
                         admin_pin: form.pin,
                         restaurant_address: form.address,
                         restaurant_lat: form.lat,
-                        restaurant_lng: form.lng
+                        restaurant_lng: form.lng,
+                        driver_rate_per_km: String(form.rate || "0"),
+                        driver_base_fee: String(form.base || "0"),
+                        offer_kind: form.offerKind,
+                        offer_title: form.offerTitle.trim(),
+                        offer_text: form.offerText.trim(),
+                        offer_until: form.offerUntil,
+                        offer_active: form.offerActive ? "true" : "false",
+                        open_time: form.openTime,
+                        close_time: form.closeTime,
+                        delivery_enabled: form.deliveryOn ? "true" : "false"
                     });
                     toast("⚙️ Settings updated successfully!");
                 }
@@ -1822,6 +1908,26 @@
                             📌 Detect GPS Location
                         </button>
                     </div>
+                    <div className="form-group" style={{ gridColumn: "1/-1" }}>
+                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                            <button className="btn btn-ghost" type="button" onClick={() => setShowMap(v => !v)}>🗺️ {showMap ? "Hide map" : "Pick on map"}</button>
+                            <input value={pasteTxt} onChange={e => setPasteTxt(e.target.value)} placeholder="…or paste a Google Maps link / 'lat, lng'" style={{ flex: 1, minWidth: "200px" }} />
+                            <button className="btn btn-ghost" type="button" onClick={applyPaste}>Use</button>
+                        </div>
+                        {showMap && (
+                            <div style={{ marginTop: "10px" }}>
+                                <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+                                    <input id="mp-search" placeholder="Search address or place…" style={{ flex: 1 }} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); searchPlace(); } }} />
+                                    <button className="btn btn-ghost" type="button" onClick={searchPlace}>Search</button>
+                                </div>
+                                <div ref={mapDiv} style={{ height: "320px", borderRadius: "12px", background: "#e5e7eb" }}></div>
+                                <div style={{ fontSize: "12px", color: mapMsg ? "#b45309" : "#6b7280", marginTop: "6px" }}>{mapMsg || "Click the map or drag the pin onto your restaurant, then press Save Settings."}</div>
+                            </div>
+                        )}
+                        {form.lat && form.lng && (
+                            <div style={{ fontSize: "12px", color: "#6b7280", marginTop: "6px" }}>📍 Saved pin: {form.lat}, {form.lng} — <a href={"https://www.google.com/maps?q=" + form.lat + "," + form.lng} target="_blank" rel="noreferrer">check on Google Maps</a></div>
+                        )}
+                    </div>
                     <div className="form-group">
                         <label>Currency Symbol / Code</label>
                         <input value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })} placeholder="LKR" />
@@ -1835,8 +1941,67 @@
                         <input type="number" min="0" value={form.delivery} onChange={e => setForm({ ...form, delivery: e.target.value })} placeholder="250" />
                     </div>
                     <div className="form-group">
+                        <label>🏍️ Driver pay per km</label>
+                        <input type="number" min="0" step="any" value={form.rate} onChange={e => setForm({ ...form, rate: e.target.value })} placeholder="e.g. 60" />
+                    </div>
+                    <div className="form-group">
+                        <label>🏍️ Driver base pay per delivery</label>
+                        <input type="number" min="0" step="any" value={form.base} onChange={e => setForm({ ...form, base: e.target.value })} placeholder="e.g. 100 (optional)" />
+                    </div>
+                    <div className="form-group">
                         <label>🔐 Manager Access PIN (4 digits)</label>
                         <input type="password" maxLength="4" value={form.pin} onChange={e => setForm({ ...form, pin: e.target.value.replace(/\D/g, "") })} placeholder="1234" />
+                    </div>
+                </div>
+                <div style={{ borderTop: "1px solid #f0f0f0", marginTop: "24px", paddingTop: "20px", maxWidth: "600px" }}>
+                    <div style={{ fontWeight: 800, fontSize: "15px", marginBottom: "4px" }}>🕒 Opening hours &amp; online delivery</div>
+                    <div style={{ fontSize: "12.5px", color: "#6b7280", marginBottom: "12px" }}>Customers can only place online orders between these times (shop time). Leave both empty to accept orders all day. A closing time earlier than the opening time means you close after midnight (e.g. 18:00 – 02:00).</div>
+                    <div className="form-grid settings-grid">
+                        <div className="form-group">
+                            <label>Opens at</label>
+                            <input type="time" value={form.openTime} onChange={e => setForm({ ...form, openTime: e.target.value })} />
+                        </div>
+                        <div className="form-group">
+                            <label>Closes at</label>
+                            <input type="time" value={form.closeTime} onChange={e => setForm({ ...form, closeTime: e.target.value })} />
+                        </div>
+                        <div className="form-group" style={{ gridColumn: "1/-1" }}>
+                            <label style={{ display: "flex", gap: "8px", alignItems: "center", cursor: "pointer" }}>
+                                <input type="checkbox" checked={form.deliveryOn} onChange={e => setForm({ ...form, deliveryOn: e.target.checked })} style={{ width: "auto" }} />
+                                🛵 Accept online delivery orders (the till can also switch this on/off during service)
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div style={{ borderTop: "1px solid #f0f0f0", marginTop: "24px", paddingTop: "20px", maxWidth: "600px" }}>
+                    <div style={{ fontWeight: 800, fontSize: "15px", marginBottom: "4px" }}>🎉 Special Offer / Notice on the customer app</div>
+                    <div style={{ fontSize: "12.5px", color: "#6b7280", marginBottom: "12px" }}>Shown at the top of the ordering page only while it is switched on (and before the end date, if you set one). Leave the message empty to show nothing.</div>
+                    <div className="form-grid settings-grid">
+                        <div className="form-group">
+                            <label>Type</label>
+                            <select value={form.offerKind} onChange={e => setForm({ ...form, offerKind: e.target.value })}>
+                                <option value="offer">🎉 Special offer</option>
+                                <option value="notice">📢 Notice</option>
+                            </select>
+                        </div>
+                        <div className="form-group">
+                            <label>Show until (optional)</label>
+                            <input type="date" value={form.offerUntil} onChange={e => setForm({ ...form, offerUntil: e.target.value })} />
+                        </div>
+                        <div className="form-group" style={{ gridColumn: "1/-1" }}>
+                            <label>Title</label>
+                            <input maxLength="60" value={form.offerTitle} onChange={e => setForm({ ...form, offerTitle: e.target.value })} placeholder="e.g. Weekend Special — 20% off all burgers" />
+                        </div>
+                        <div className="form-group" style={{ gridColumn: "1/-1" }}>
+                            <label>Message</label>
+                            <textarea rows="3" maxLength="240" value={form.offerText} onChange={e => setForm({ ...form, offerText: e.target.value })} placeholder="e.g. Valid Sat & Sun. Free drink with every family meal." style={{ width: "100%", padding: "10px", border: "1.5px solid #e5e7eb", borderRadius: "8px", fontFamily: "inherit", fontSize: "14px" }} />
+                        </div>
+                        <div className="form-group" style={{ gridColumn: "1/-1" }}>
+                            <label style={{ display: "flex", gap: "8px", alignItems: "center", cursor: "pointer" }}>
+                                <input type="checkbox" checked={form.offerActive} onChange={e => setForm({ ...form, offerActive: e.target.checked })} style={{ width: "auto" }} />
+                                Show it to customers now
+                            </label>
+                        </div>
                     </div>
                 </div>
                 <div style={{ borderTop: "1px solid #f0f0f0", marginTop: "24px", paddingTop: "20px", maxWidth: "600px" }}>
@@ -1863,6 +2028,12 @@
 
     function ManagerPortal() {
         const [active, setActive] = useState("overview");
+        const [posShopName, setPosShopName] = useState(POS_SHOP.display());
+        useEffect(() => {
+            const h = () => setPosShopName(POS_SHOP.display());
+            window.addEventListener("pos-shop-name", h); h();
+            return () => window.removeEventListener("pos-shop-name", h);
+        }, []);
         const [toastMsg, setToastMsg] = useState("");
 
         const triggerToast = (msg) => {
@@ -1883,7 +2054,7 @@
         return (
             <div className="layout">
                 <div className="sidebar">
-                    <div className="sidebar-logo">🍽️ The Grand Table <span>Manager Portal</span></div>
+                    <div className="sidebar-logo">🍽️ {posShopName} <span>Manager Portal</span></div>
                     <div className="nav-section">Main</div>
                     {NAV.map(n => (
                         <div key={n.section} className={`nav-item ${active === n.section ? 'active' : ''}`} onClick={() => setActive(n.section)}>
@@ -1974,6 +2145,14 @@
     }
 
     setStatus("Checking session...");
+
+    if (window.POS_IS_LAN) {            // LAN: no Google sign-in, just the PIN
+      POS_GAPI.initUserSheet().then(function() {
+        setStatus("Verifying PIN...");
+        showPinModal(POS_GAPI.getSession());
+      }).catch(function(e) { setStatus("Cannot reach the restaurant server: " + e.message); });
+      return;
+    }
 
     var savedRaw = localStorage.getItem("pos_session");
     if (!savedRaw) {
