@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Driver App — The Grand Table</title>
+<title>Driver App</title>
 <script src="pos-config.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -171,7 +171,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <div class="stat-s"><div class="stat-s-val" id="st-earn" style="color:#27ae60">Rs.0</div><div class="stat-s-lbl">Earnings</div></div>
     <div class="stat-s"><div class="stat-s-val" id="st-del">0</div><div class="stat-s-lbl">Delivered</div></div>
     <div class="stat-s"><div class="stat-s-val" id="st-km">—</div><div class="stat-s-lbl">Distance</div></div>
-    <div class="stat-s"><div class="stat-s-val" style="color:#f39c12">⭐ 4.9</div><div class="stat-s-lbl">Rating</div></div>
+    <div class="stat-s"><div class="stat-s-val" id="st-rate" style="color:#f39c12">⭐ —</div><div class="stat-s-lbl">Rating</div></div>
   </div>
 
   <div class="nav">
@@ -204,7 +204,19 @@ var APP = {
   tab      : "orders",
   orders   : [],
   history  : [],
-  earn     : { today:0.00, week:1420.00, dels:0, km:0.0 },
+  earn     : { today:0.00, dels:0, km:0.0 },
+  avail    : [],
+  fee      : 250,
+  rating   : null,
+  hold     : { amt: 0, n: 0 },
+  rate     : 0,
+  base     : 0,
+  km       : {},
+  kmBusy   : {},
+  mapEl    : null,
+  eta      : "",
+  sig      : "",
+  seen     : null,
   gps      : null,     
   map      : null,     
   dirR     : null,     
@@ -216,9 +228,88 @@ var DEFAULT_REST_ADDR = "15 Galle Road, Colombo";
 var DEFAULT_REST_LAT = 6.927100;
 var DEFAULT_REST_LNG = 79.861200;
 
+// ── NEW-DELIVERY ALERT (beep + vibrate + banner) ───────────────
+var _audio = null;
+function unlockAudio() {
+  try { _audio = _audio || new (window.AudioContext || window.webkitAudioContext)(); if (_audio.state === "suspended") _audio.resume(); } catch (e) {}
+}
+["touchstart", "click"].forEach(function(ev){ document.addEventListener(ev, unlockAudio, { passive: true }); });
+function beep() {
+  try {
+    unlockAudio(); if (!_audio) return;
+    [0, 0.25, 0.5].forEach(function(t) {
+      var o = _audio.createOscillator(), g = _audio.createGain();
+      o.frequency.value = 880; o.connect(g); g.connect(_audio.destination);
+      g.gain.setValueAtTime(0.25, _audio.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.001, _audio.currentTime + t + 0.2);
+      o.start(_audio.currentTime + t); o.stop(_audio.currentTime + t + 0.22);
+    });
+  } catch (e) {}
+}
+function alertNewDelivery(count) {
+  beep();
+  try { if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]); } catch (e) {}
+  var b = document.getElementById("new-banner");
+  if (!b) { b = document.createElement("div"); b.id = "new-banner";
+    b.style.cssText = "position:fixed;top:10px;left:50%;transform:translateX(-50%);background:#f39c12;color:#000;font-weight:800;padding:10px 18px;border-radius:24px;z-index:99;box-shadow:0 4px 14px rgba(0,0,0,.3);font-size:14px";
+    document.body.appendChild(b); }
+  b.textContent = "🆕 " + count + " new delivery" + (count > 1 ? " requests" : " request") + "!";
+  b.style.display = "block";
+  clearTimeout(b._t); b._t = setTimeout(function(){ b.style.display = "none"; }, 6000);
+}
+
+// ── DISTANCE & PAY ────────────────────────────────────────────
+function haversineKm(a, b) {
+  var R = 6371, toR = Math.PI / 180;
+  var dLat = (b.lat - a.lat) * toR, dLng = (b.lng - a.lng) * toR;
+  var x = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(a.lat*toR)*Math.cos(b.lat*toR)*Math.sin(dLng/2)*Math.sin(dLng/2);
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+function payFor(km) {
+  if (APP.rate > 0 && km != null) return Math.round(APP.base + APP.rate * km);
+  return APP.fee;
+}
+// Restaurant -> customer distance: exact (road) once known, else a straight-line estimate x1.3
+function legKm(o) {
+  if (APP.km[o.id] != null) return { km: APP.km[o.id], approx: false };
+  if (typeof o.cust.lat === "number" && typeof o.cust.lng === "number")
+    return { km: haversineKm({lat:o.rest.lat,lng:o.rest.lng}, o.cust) * 1.3, approx: true };
+  return null;
+}
+function distHtml(o) {
+  var d = legKm(o);
+  if (!d) return '<div class="oc-time" style="margin:6px 0 0">📏 distance calculating…</div>';
+  return '<div style="margin:8px 0 0;padding:8px 10px;background:#f0fdf4;border-radius:8px;font-size:13px;font-weight:700;color:#15803d">📏 ' +
+    (d.approx ? '≈ ' : '') + d.km.toFixed(1) + ' km restaurant → customer · 💰 Rs. ' + payFor(d.km) + (d.approx ? ' (est.)' : '') + '</div>';
+}
+// Get exact road distance (restaurant -> customer) from Google Directions; needs the map loaded
+function resolveDistances() {
+  if (!APP.mapReady || !window.google) return;
+  APP.orders.concat(APP.avail).forEach(function(o) {
+    if (APP.km[o.id] != null || APP.kmBusy[o.id]) return;
+    APP.kmBusy[o.id] = true;
+    var done = function() {
+      if (typeof o.cust.lat !== "number") { APP.kmBusy[o.id] = false; return; }
+      new google.maps.DirectionsService().route({
+        origin: { lat:o.rest.lat, lng:o.rest.lng }, destination: { lat:o.cust.lat, lng:o.cust.lng },
+        travelMode: google.maps.TravelMode.DRIVING
+      }, function(res, st) {
+        if (st === "OK") { APP.km[o.id] = res.routes[0].legs[0].distance.value / 1000; render(); }
+        else { APP.kmBusy[o.id] = false; }
+      });
+    };
+    if (typeof o.cust.lat === "number") done();
+    else new google.maps.Geocoder().geocode({ address: o.cust.addr + ", Sri Lanka" }, function(r, st) {
+      if (st === "OK" && r[0]) { o.cust.lat = r[0].geometry.location.lat(); o.cust.lng = r[0].geometry.location.lng(); }
+      done();
+    });
+  });
+}
+
 // ── GPS ───────────────────────────────────────────────────────
 function startGPS() {
   if (!navigator.geolocation) { setGPSBar(null, "GPS not supported"); return; }
+  if (window.isSecureContext === false) { setGPSBar(null, "GPS needs https — open the online driver link"); return; }
   navigator.geolocation.watchPosition(
     function(pos) {
       APP.gps = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy };
@@ -226,7 +317,7 @@ function startGPS() {
       updateDriverMarker();
       sendLocationToSheet();
     },
-    function(err) { setGPSBar(null, "GPS unavailable"); },
+    function(err) { setGPSBar(null, err && err.code === 1 ? "GPS blocked — allow location in browser" : "GPS unavailable"); },
     { enableHighAccuracy: true, maximumAge: 5000, timeout: 12000 }
   );
 }
@@ -264,6 +355,12 @@ function hasMapsKey() {
          POS_CONFIG.MAPS_API_KEY !== "";
 }
 
+window.gm_authFailure = function() {
+  var el = document.getElementById("map-container");
+  if (el) el.innerHTML = '<div class="map-no-key"><div style="font-size:32px">🗺️</div><div>Google Maps key was rejected.<br>Use the Navigate buttons below instead.</div></div>';
+  APP.mapReady = false;
+};
+
 function loadMapsAPI() {
   if (!hasMapsKey()) return;
   var s = document.createElement("script");
@@ -279,6 +376,7 @@ window.mapsReady = function() {
 
   var center = APP.gps ? { lat: APP.gps.lat, lng: APP.gps.lng } : { lat: DEFAULT_REST_LAT, lng: DEFAULT_REST_LNG };
 
+  APP.mapEl = el;
   APP.map = new google.maps.Map(el, {
     zoom: 14, center: center, mapTypeId: "roadmap",
     disableDefaultUI: true, zoomControl: true, gestureHandling: "greedy",
@@ -300,6 +398,7 @@ window.mapsReady = function() {
 
   if (APP.gps) placeDriverMarker();
   if (APP.orders.length) geocodeAndDrawRoute(APP.orders[0]);
+  resolveDistances();
 };
 
 function placeDriverMarker() {
@@ -321,34 +420,19 @@ function updateDriverMarker() {
   placeDriverMarker();
 }
 
-// Coordinate extraction parser (if customer used the GPS Auto-detection finder button)
 function geocodeAndDrawRoute(order) {
   if (!APP.mapReady || !order) return;
-  
-  // Clean GPS Coordinates parsing (E.g. "GPS: 6.927100, 79.861200")
-  if (String(order.cust.addr).startsWith("GPS:")) {
-    const rawCoords = String(order.cust.addr).replace("GPS:", "").split(",");
-    if (rawCoords.length === 2) {
-      const parsedLat = parseFloat(rawCoords[0].trim());
-      const parsedLng = parseFloat(rawCoords[1].trim());
-      if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
-         order.cust.lat = parsedLat;
-         order.cust.lng = parsedLng;
-         drawRoute(order);
-         return;
-      }
-    }
-  }
-
-  // Fallback to text Address Geocoding
+  if (typeof order.cust.lat === "number" && typeof order.cust.lng === "number") { drawRoute(order); return; }
   var geocoder = new google.maps.Geocoder();
-  geocoder.geocode({ address: order.cust.addr }, function(results, status) {
+  geocoder.geocode({ address: order.cust.addr + ", Sri Lanka" }, function(results, status) {
     if (status === "OK" && results[0]) {
-      var location = results[0].geometry.location;
-      order.cust.lat = location.lat();
-      order.cust.lng = location.lng();
+      order.cust.lat = results[0].geometry.location.lat();
+      order.cust.lng = results[0].geometry.location.lng();
+      drawRoute(order);
+    } else {
+      var etaEl = document.getElementById("map-eta");
+      if (etaEl) etaEl.textContent = "Address not found on map — use Navigate";
     }
-    drawRoute(order);
   });
 }
 
@@ -388,8 +472,11 @@ function drawRoute(order) {
     APP.dirR.setDirections(result);
 
     var leg   = result.routes[0].legs[0];
+    var totalDur = result.routes[0].legs.reduce(function(sm,l){ return sm + l.duration.value; }, 0);
+    var totalKm0 = result.routes[0].legs.reduce(function(sm,l){ return sm + l.distance.value; }, 0) / 1000;
+    APP.eta = "Route " + totalKm0.toFixed(1) + " km · ETA " + Math.max(1, Math.round(totalDur/60)) + " min";
     var etaEl = document.getElementById("map-eta");
-    if (etaEl) etaEl.textContent = "ETA " + leg.duration.text;
+    if (etaEl) etaEl.textContent = APP.eta;
 
     var totalM = result.routes[0].legs.reduce(function(s,l){ return s+l.distance.value; }, 0);
     APP.earn.km = (totalM/1000).toFixed(1);
@@ -434,6 +521,20 @@ function openGoogleMaps(addr) {
   window.open(url, "_blank");
 }
 
+// Navigate using exact coordinates when we have them (pinned location),
+// otherwise the readable address. 'who' = "rest" | "cust".
+function navTo(id, who) {
+  var o = APP.orders.concat(APP.avail).find(function(x){ return x.id === id; });
+  if (!o) return;
+  var t = who === "rest" ? o.rest : o.cust;
+  openGoogleMaps(typeof t.lat === "number" && typeof t.lng === "number" ? t.lat + "," + t.lng : t.addr);
+}
+
+function callCust(id) {
+  var o = APP.orders.concat(APP.avail).find(function(x){ return x.id === id; });
+  if (o && o.cust.phone) window.location.href = "tel:" + o.cust.phone;
+}
+
 function showRouteOnMap(id) {
   var order = APP.orders.find(function(o){ return o.id===id; });
   if (order && APP.mapReady) {
@@ -469,7 +570,18 @@ function toggleOnline() {
 function render() {
   var el = document.getElementById("content");
   if (!el) return;
-  if (APP.tab === "orders")   { el.innerHTML = renderOrders();   return; }
+  if (APP.tab === "orders") {
+    el.innerHTML = renderOrders();
+    // renderOrders() makes a fresh #gmap div each time; put the live map back so it never goes blank
+    var ph = document.getElementById("gmap");
+    if (ph && APP.mapEl && ph !== APP.mapEl) {
+      ph.parentNode.replaceChild(APP.mapEl, ph);
+      if (window.google && APP.map) google.maps.event.trigger(APP.map, "resize");
+    }
+    var etaEl = document.getElementById("map-eta");
+    if (etaEl && APP.eta) etaEl.textContent = APP.eta;
+    return;
+  }
   if (APP.tab === "earnings") { el.innerHTML = renderEarnings(); return; }
   if (APP.tab === "history")  { el.innerHTML = renderHistory();  return; }
 }
@@ -492,47 +604,77 @@ function renderOrders() {
     ? '<div class="center-state"><div class="cs-icon">🎉</div><div class="cs-title">All Delivered!</div><div class="cs-sub">Waiting for new orders…</div></div>'
     : APP.orders.map(orderCardHtml).join("");
 
-  return mapHtml + '<div class="orders-wrap">' + cardsHtml + '</div>';
+  var availHtml = APP.avail.length
+    ? '<div style="font-size:12px;font-weight:800;color:#6b7280;margin:4px 2px 8px;text-transform:uppercase;letter-spacing:.5px">Available deliveries</div>' +
+      APP.avail.map(availCardHtml).join("")
+    : '';
+
+  return mapHtml + '<div class="orders-wrap">' + cardsHtml + availHtml + '</div>';
+}
+
+function availCardHtml(o) {
+  return '<div class="order-card">' +
+    '<div class="oc-header"><div><div class="oc-id">' + esc(o.id) + '</div><div class="oc-time">' + esc(o.time) + '</div></div>' +
+    '<span class="status-chip chip-pickup">🆕 Unassigned</span></div>' +
+    '<div class="oc-route"><div class="route-pt"><div class="rp-icon rp-cust">📍</div><div>' +
+    '<div class="rp-lbl">Deliver to</div><div class="rp-addr">' + esc(o.cust.name) + '</div>' +
+    '<div class="rp-sub">' + esc(o.cust.addr) + '</div></div></div></div>' +
+    distHtml(o) +
+    '<div class="oc-footer"><div class="oc-items">' + esc(o.items.length + ' items') + '</div><div class="oc-val">💵 Collect Rs.' + o.val.toFixed(2) + '</div></div>' +
+    '<div class="oc-actions"><button class="act-btn btn-pickup" onclick="claimDelivery(\'' + o.deliveryId + '\')">🙋 Accept this delivery</button></div></div>';
+}
+
+function esc(t) { return String(t == null ? "" : t).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+
+function renderEarnings() {
+  return '<div class="orders-wrap">' +
+    '<div class="order-card" style="padding:16px"><div style="font-size:13px;color:#6b7280">Total earned (all delivered)</div>' +
+    '<div style="font-size:30px;font-weight:800;color:#27ae60">Rs. ' + APP.earn.today.toFixed(0) + '</div>' +
+    '<div style="margin-top:10px;font-size:13px;color:#6b7280">' + APP.earn.dels + ' deliveries · Rs. ' + APP.fee + ' per delivery</div></div>' +
+    '<div class="order-card" style="padding:16px;border:2px solid ' + (APP.hold.amt > 0 ? '#f39c12' : '#bbf7d0') + '">' +
+      '<div style="font-size:13px;color:#6b7280">💵 Cash to hand in at the till</div>' +
+      '<div style="font-size:30px;font-weight:800;color:' + (APP.hold.amt > 0 ? '#d97706' : '#15803d') + '">Rs. ' + APP.hold.amt.toFixed(0) + '</div>' +
+      '<div style="margin-top:6px;font-size:13px;color:#6b7280">' + (APP.hold.n ? APP.hold.n + ' delivered order' + (APP.hold.n > 1 ? 's' : '') + ' — give this cash to the cashier when you are back.' : 'Nothing to hand in. 👍') + '</div></div></div>';
+}
+
+function renderHistory() {
+  if (!APP.history.length) return '<div class="center-state"><div class="cs-icon">🕐</div><div class="cs-title">No deliveries yet</div></div>';
+  return '<div class="orders-wrap">' + APP.history.slice().reverse().map(function(h){
+    return '<div class="order-card" style="padding:12px 14px"><div style="display:flex;justify-content:space-between;font-weight:700"><span>' + esc(h.id) + '</span><span style="color:#27ae60">Rs.' + h.earn.toFixed(0) + '</span></div>' +
+      '<div style="font-size:12px;color:#6b7280;margin-top:3px">' + esc(h.addr) + ' · ' + esc(h.time) + '</div>' +
+      '<div style="font-size:12px;margin-top:3px;font-weight:700;color:' + (h.settled ? '#15803d' : '#d97706') + '">' + (h.settled ? '✓ Cash handed in (Rs.' + h.amt.toFixed(0) + ')' : '⏳ Hand in Rs.' + h.amt.toFixed(0) + ' at the till') + '</div></div>';
+  }).join("") + '</div>';
 }
 
 function orderCardHtml(o) {
   var isPickup  = o.status === "pickup";
-  var isTransit = o.status === "transit";
   return '<div class="order-card">' +
     '<div class="oc-header">' +
-      '<div><div class="oc-id">' + o.id + '</div><div class="oc-time">Ordered at ' + o.time + '</div></div>' +
+      '<div><div class="oc-id">' + esc(o.id) + '</div><div class="oc-time">Ordered at ' + esc(o.time) + '</div></div>' +
       '<span class="status-chip ' + (isPickup ? "chip-pickup" : "chip-transit") + '">' +
         (isPickup ? "📦 Pickup" : "🚗 In Transit") + '</span>' +
     '</div>' +
     '<div class="oc-route">' +
-      '<div class="route-pt">' +
-        '<div class="rp-icon rp-rest">🍽️</div>' +
-        '<div><div class="rp-lbl">Pickup from</div>' +
-        '<div class="rp-addr">' + o.rest.name + '</div>' +
-        '<div class="rp-sub">' + o.rest.addr + '</div></div>' +
-      '</div>' +
+      '<div class="route-pt"><div class="rp-icon rp-rest">🍽️</div><div><div class="rp-lbl">Pickup from</div>' +
+        '<div class="rp-addr">' + esc(o.rest.name) + '</div><div class="rp-sub">' + esc(o.rest.addr) + '</div></div></div>' +
       '<div class="route-line2"></div>' +
-      '<div class="route-pt">' +
-        '<div class="rp-icon rp-cust">📍</div>' +
-        '<div><div class="rp-lbl">Deliver to</div>' +
-        '<div class="rp-addr">' + o.cust.name + '</div>' +
-        '<div class="rp-sub">' + o.cust.addr + '</div></div>' +
-      '</div>' +
+      '<div class="route-pt"><div class="rp-icon rp-cust">📍</div><div><div class="rp-lbl">Deliver to</div>' +
+        '<div class="rp-addr">' + esc(o.cust.name) + '</div><div class="rp-sub">' + esc(o.cust.addr) + '</div></div></div>' +
     '</div>' +
+    distHtml(o) +
     '<div class="oc-footer">' +
-      '<div class="oc-items">' + o.items.length + ' items · ' + o.items[0] +
-        (o.items.length > 1 ? ' +' + (o.items.length-1) + ' more' : '') + '</div>' +
-      '<div class="oc-val">Rs.' + o.val.toFixed(2) + '</div>' +
+      '<div class="oc-items">' + o.items.length + ' items · ' + esc(o.items[0]) + (o.items.length > 1 ? ' +' + (o.items.length-1) + ' more' : '') + '</div>' +
+      '<div class="oc-val" title="Cash to collect from the customer">💵 Collect Rs.' + o.val.toFixed(2) + '</div>' +
     '</div>' +
     '<div class="oc-actions">' +
       (isPickup
-        ? '<button class="act-btn btn-nav-rest" onclick="openGoogleMaps(\'' + o.rest.addr + '\')">🗺️ Navigate to Restaurant</button>' +
+        ? '<button class="act-btn btn-nav-rest" onclick="navTo(\'' + o.id + '\',\'rest\')">🗺️ Navigate to Restaurant</button>' +
           '<button class="act-btn btn-show-route" onclick="showRouteOnMap(\'' + o.id + '\')">📍 Show Full Route on Map</button>' +
           '<button class="act-btn btn-pickup" onclick="updateStatus(\'' + o.deliveryId + '\',\'transit\')">✅ Picked Up — Start Delivery</button>'
-        : '<button class="act-btn btn-nav-cust" onclick="openGoogleMaps(\'' + o.cust.addr + '\')">🗺️ Navigate to Customer</button>' +
+        : '<button class="act-btn btn-nav-cust" onclick="navTo(\'' + o.id + '\',\'cust\')">🗺️ Navigate to Customer</button>' +
           '<button class="act-btn btn-show-route" onclick="showRouteOnMap(\'' + o.id + '\')">📍 Show Route on Map</button>' +
-          '<button class="act-btn btn-delivered" onclick="updateStatus(\'' + o.deliveryId + '\',\'delivered\')">🎉 Mark as Delivered</button>') +
-      '<button class="act-btn btn-call" onclick="window.location.href=\'tel:' + o.cust.phone + '\'">📞 Call Customer (' + o.cust.phone + ')</button>' +
+          '<button class="act-btn btn-delivered" onclick="updateStatus(\'' + o.deliveryId + '\',\'delivered\')">🎉 Delivered — cash collected</button>') +
+      (o.cust.phone ? '<button class="act-btn btn-call" onclick="callCust(\'' + o.id + '\')">📞 Call Customer (' + esc(o.cust.phone) + ')</button>' : '') +
     '</div>' +
   '</div>';
 }
@@ -565,80 +707,99 @@ async function loadLiveDeliveries() {
     if (setRestLat && parseFloat(setRestLat.Value)) restLat = parseFloat(setRestLat.Value);
     if (setRestLng && parseFloat(setRestLng.Value)) restLng = parseFloat(setRestLng.Value);
 
-    // 3. Filter Deliveries assigned to this driver that are active
+    var feeRow = setRows.find(s => s.Key === "driver_fee") || setRows.find(s => s.Key === "delivery_fee");
+    if (feeRow && parseFloat(feeRow.Value) >= 0) APP.fee = parseFloat(feeRow.Value);
+    var rateRow = setRows.find(s => s.Key === "driver_rate_per_km"), baseRow = setRows.find(s => s.Key === "driver_base_fee");
+    APP.rate = rateRow ? (parseFloat(rateRow.Value) || 0) : 0;
+    APP.base = baseRow ? (parseFloat(baseRow.Value) || 0) : 0;
+
+    // 3. Deliveries assigned to this driver, plus unassigned ones anyone can accept
     const driverEmail = APP.session.email.toLowerCase();
-    const activeDels = delRows.filter(function(d) {
-      return d.DriverEmail && d.DriverEmail.toLowerCase() === driverEmail &&
-             d.Status !== "delivered" && d.Status !== "cancelled";
-    });
+    const mine = function(d) { return d.DriverEmail && d.DriverEmail.toLowerCase() === driverEmail; };
+    const activeDels = delRows.filter(function(d) { return mine(d) && d.Status !== "delivered" && d.Status !== "cancelled"; });
+    const historicalDels = delRows.filter(function(d) { return mine(d) && d.Status === "delivered"; });
+    const openDels = delRows.filter(function(d) { return !d.DriverEmail && (!d.Status || d.Status === "pending"); });
 
-    const historicalDels = delRows.filter(function(d) {
-      return d.DriverEmail && d.DriverEmail.toLowerCase() === driverEmail &&
-             d.Status === "delivered";
-    });
-
-    // 4. Update local Earnings and delivery stats dynamically
+    // 4. Earnings / history
     APP.earn.dels = historicalDels.length;
     APP.earn.today = historicalDels.reduce((sum, d) => sum + (parseFloat(d.Earnings) || 0), 0);
-    
     var earnEl = document.getElementById("st-earn");
     var delEl = document.getElementById("st-del");
     if (earnEl) earnEl.textContent = "Rs. " + APP.earn.today.toFixed(0);
     if (delEl) delEl.textContent = APP.earn.dels;
-
-    // Map historical ledger
+    // Cash the driver is holding: delivered orders the till hasn't received yet
+    var holding = 0, holdingN = 0;
     APP.history = historicalDels.map(function(d) {
-        return {
-            id: d.OrderID || d.DeliveryID,
-            addr: d.CustomerAddress,
-            time: d.DeliveredTime ? new Date(d.DeliveredTime).toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"}) : "Complete",
-            earn: parseFloat(d.Earnings) || 250.00
-        };
+      var ord = ordRows.find(function(x){ return x.OrderID === d.OrderID; }) || {};
+      var st = String(ord.Status || "").toLowerCase();
+      var settled = st === "closed" || st === "paid" || /PAID/i.test(String(ord.Notes || ""));
+      var amt = parseFloat(ord.Total) || 0;
+      if (!settled && st !== "cancelled") { holding += amt; holdingN++; }
+      return { id: d.OrderID || d.DeliveryID, addr: d.CustomerAddress || "", amt: amt, settled: settled,
+               time: d.DeliveredTime ? new Date(d.DeliveredTime).toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"}) : "Complete",
+               earn: parseFloat(d.Earnings) || APP.fee };
     });
+    APP.hold = { amt: holding, n: holdingN };
 
-    // 5. Build active delivery array with Joined Order details
-    APP.orders = activeDels.map(function(d) {
-      const matchOrder = ordRows.find(function(o) { return o.OrderID === d.OrderID; });
-      let itemsList = ["Food Package"];
-      let orderVal = 250.00;
-      let orderPhone = "+94 77 123 4567";
-      
-      if (matchOrder) {
-        try {
-          itemsList = JSON.parse(matchOrder.Items).map(function(it){ return (it.qty || it.quantity) + "x " + (it.name || it.Name); });
-          orderVal = parseFloat(matchOrder.Total) || 250.00;
-          
-          // Fallback to customer's phone number from sheet record
-          if (matchOrder.CustomerPhone || matchOrder.Phone) {
-              orderPhone = matchOrder.CustomerPhone || matchOrder.Phone;
-          }
-        } catch(e){}
-      }
-
+    // 5. Join each delivery with its order (items, phone, readable address, pin)
+    function build(d) {
+      const o = ordRows.find(function(x) { return x.OrderID === d.OrderID; }) || {};
+      let items = ["Food Package"];
+      try { items = JSON.parse(o.Items).map(function(it){ return (it.qty || it.quantity) + "x " + (it.name || it.Name); }); } catch(e) {}
+      if (!items.length) items = ["Food Package"];
+      const addrRaw = d.CustomerAddress || o.CustomerAddress || "";
+      const view = { CustomerAddress: addrRaw, Notes: o.Notes || "", CustomerPhone: o.CustomerPhone || "" };
+      let lat, lng;
+      const g = String(addrRaw).match(/GPS:\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)/i) ||
+                String(o.Notes || "").match(/[?&]q=(-?[\d.]+),(-?[\d.]+)/);
+      if (g) { lat = parseFloat(g[1]); lng = parseFloat(g[2]); }
+      const readable = (window.POS_ORDER ? POS_ORDER.address(view) : addrRaw) || "Address not given";
+      const cust = { name: d.CustomerName || o.CustomerName || "Customer",
+                     addr: readable,
+                     phone: window.POS_ORDER ? POS_ORDER.phone(view) : String(o.CustomerPhone || "") };
+      if (!isNaN(lat) && lat !== undefined) { cust.lat = lat; cust.lng = lng; }
       return {
-        id: d.OrderID,
-        deliveryId: d.DeliveryID,
-        time: d.PickupTime ? new Date(d.PickupTime).toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"}) : "Just now",
-        status: d.Status === "pending" || d.Status === "pickup" ? "pickup" : "transit",
+        id: d.OrderID, deliveryId: d.DeliveryID,
+        time: d.PickupTime ? new Date(d.PickupTime).toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"}) : (o.OrderTime ? new Date(o.OrderTime).toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"}) : "Just now"),
+        status: d.Status === "pending" || d.Status === "pickup" || !d.Status ? "pickup" : "transit",
         rest: { name: restName, addr: restAddr, lat: restLat, lng: restLng },
-        cust: { 
-          name: d.CustomerName || "Customer", 
-          addr: d.CustomerAddress, 
-          phone: orderPhone,
-          lat: 6.9012, lng: 79.8562 
-        },
-        items: itemsList,
-        val: orderVal
+        cust: cust, items: items, val: parseFloat(o.Total) || 0
       };
-    });
-    
-    render();
-    if (APP.orders.length && APP.mapReady) {
-        geocodeAndDrawRoute(APP.orders[0]);
+    }
+    var newOrders = activeDels.map(build), newAvail = openDels.map(build);
+    var sig = JSON.stringify([newOrders, newAvail, APP.rate, APP.base, APP.fee, APP.history.length, APP.hold, APP.history.map(function(h){ return h.settled; })]);
+    var changed = sig !== APP.sig;
+    APP.sig = sig;
+    if (changed) { APP.orders = newOrders; APP.avail = newAvail; }
+    // alert when a delivery we haven't seen before shows up (not for the first load)
+    var ids = newAvail.map(function(o){ return o.deliveryId; });
+    if (APP.seen === null) APP.seen = {};
+    else {
+      var fresh = ids.filter(function(id){ return !APP.seen[id]; });
+      if (fresh.length && APP.online) alertNewDelivery(fresh.length);
+    }
+    ids.forEach(function(id){ APP.seen[id] = true; });
+
+    if (changed) {
+      render();
+      if (APP.orders.length && APP.mapReady) geocodeAndDrawRoute(APP.orders[0]);
+      resolveDistances();
     }
   } catch(e) {
     console.error("Live deliveries joining error:", e);
   }
+}
+
+async function claimDelivery(deliveryId) {
+  var api = window.POS_GAPI || window.POS_API;
+  try {
+    // re-read first: someone else may have accepted it a moment ago
+    var rows = await api.getRows("Deliveries");
+    var d = rows.find(function(r){ return r.DeliveryID === deliveryId; });
+    if (!d || d.DriverEmail) { alert("Sorry, another driver already took this delivery."); await loadLiveDeliveries(); return; }
+    await api.updateRow("Deliveries", 0, deliveryId, { DriverEmail: APP.session.email, Status: "pickup" });
+    await loadLiveDeliveries();
+  } catch (e) { alert("Could not accept delivery: " + e.message); }
 }
 
 async function updateStatus(deliveryId, status) {
@@ -647,23 +808,25 @@ async function updateStatus(deliveryId, status) {
 
   try {
     if (status === "delivered") {
-      // 1. Mark delivery row as delivered in Sheets
+      var matchDel = APP.orders.find(function(o){ return o.deliveryId === deliveryId; });
+      var dk = matchDel ? legKm(matchDel) : null;
+      // 1. Mark delivery row as delivered in Sheets (pay = base + rate x km, or the flat fee)
       await api.updateRow("Deliveries", 0, deliveryId, {
          Status: "delivered",
          DeliveredTime: new Date().toISOString(),
-         Distance: APP.earn.km + " km",
-         Earnings: "250.00" 
+         Distance: dk ? dk.km.toFixed(1) : "",
+         Earnings: String(payFor(dk ? dk.km : null))
       });
 
-      // 2. Locate active order ID to close the main order row
-      var matchDel = APP.orders.find(function(o){ return o.deliveryId === deliveryId; });
+      // 2. Close the main order row
       if (matchDel && matchDel.id) {
           await api.updateRow("Orders", 0, matchDel.id, {
-             Status: "closed"
+             Status: "delivered"
           });
       }
 
       showNotification("Delivery complete! Payout recorded.");
+
     } else {
       // Mark as picked up (In Transit)
       await api.updateRow("Deliveries", 0, deliveryId, {
@@ -711,10 +874,13 @@ function showNotification(msg) {
         if (nameEl) nameEl.textContent = name;
         if (vehEl) vehEl.textContent = "🚗 " + veh + (plt ? " · " + plt : "");
 
+        var rt = session && session.driverData && parseFloat(session.driverData.Rating);
+        var rEl = document.getElementById("st-rate");
+        if (rEl && rt) rEl.textContent = "⭐ " + rt.toFixed(1);
         startGPS();
         loadMapsAPI();
         loadLiveDeliveries();
-        setInterval(loadLiveDeliveries, 10000);
+        setInterval(loadLiveDeliveries, 8000);
         render();
 
         setTimeout(function() {
