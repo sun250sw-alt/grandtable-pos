@@ -4,15 +4,55 @@
 // Each user's data lives in their own Google Drive.
 // ============================================================
 
+// ── SHOP NAME ───────────────────────────────────────────────
+// One place that knows the restaurant's name (Settings → restaurant_name, set at setup / in the
+// Manager Portal). Every app header, page title and receipt reads it from here, so the name
+// always follows the setup. The last known name is remembered so even the sign-in screen shows it.
+window.POS_SHOP = (function () {
+  var KEY = "pos_shop_name", name = "", base = null;
+  try { name = localStorage.getItem(KEY) || ""; } catch (e) {}
+  function display() { return name || "Restaurant"; }
+  function apply() {
+    try {
+      if (base === null) base = document.title.replace(/\s*[-\u2014]\s*(The Grand Table|Restaurant POS)\s*$/, "");
+      if (name) document.title = base + " \u2014 " + name;
+      document.querySelectorAll("[data-shop-name]").forEach(function (el) { el.textContent = display(); });
+    } catch (e) {}
+  }
+  function set(n) {
+    n = String(n || "").trim();
+    if (!n || n === name) return;
+    name = n;
+    try { localStorage.setItem(KEY, n); } catch (e) {}
+    apply();
+    try { window.dispatchEvent(new Event("pos-shop-name")); } catch (e) {}
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", apply); else apply();
+  return { get name() { return name; }, display: display, upper: function () { return display().toUpperCase(); }, set: set, apply: apply };
+})();
+
+// ── LAN MODE ────────────────────────────────────────────────
+// When an app is opened from the restaurant's local server (plain http://),
+// every Google Sheets call is redirected to that server instead. Opened from
+// GitHub Pages (https) nothing changes. Override with ?mode=online / ?mode=lan.
+window.POS_IS_LAN = (function () {
+  try {
+    if (/[?&]mode=online/.test(location.search)) return false;
+    if (/[?&]mode=lan/.test(location.search)) return true;
+    return location.protocol === "http:";
+  } catch (e) { return false; }
+})();
+const POS_LAN_BASE = window.POS_LAN_BASE || "";
+
 const POS_CONFIG = {
   // Replace with your Google OAuth Client ID
   GOOGLE_CLIENT_ID : "335894427389-lj497464m2a7anusn9d5e75ekojkguva.apps.googleusercontent.com",
 
-  RESTAURANT_NAME  : "Grand Table POS",  // default, overridden by each user's setup
+  RESTAURANT_NAME  : "Restaurant POS",  // default, overridden by each user's setup
   CURRENCY         : "LKR",
   TAX_RATE         : 0.10,
   DELIVERY_FEE     : 250,
-  POLL_MS          : 5000,
+  POLL_MS          : window.POS_IS_LAN ? 2000 : 5000,   // LAN also gets instant WebSocket pushes
   MAPS_API_KEY     : "AIzaSyC8E4xFMHnAZi1TZFM5pW51caa746de3ZQ",   // optional — for driver GPS
 
   // Auth mode per app
@@ -53,7 +93,32 @@ window.POS_GAPI = (() => {
   let _tokenClient = null;
 
   // ── Load Google API libraries ─────────────────────────────
+  const LAN = window.POS_IS_LAN;
+  const LAN_DEFAULT_USER = { email: "lan@local", name: "Restaurant (LAN)", picture: "" };
+  function _lanUser() {
+    try { const u = JSON.parse(localStorage.getItem("pos_lan_user") || "null"); if (u && u.email) return u; } catch (e) {}
+    return LAN_DEFAULT_USER;
+  }
+  function setLanUser(u) {
+    _session = u;
+    try { localStorage.setItem("pos_lan_user", JSON.stringify(u)); } catch (e) {}
+  }
+  async function _lan(method, path, body) {
+    const res = await fetch(POS_LAN_BASE + path, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    let json = null;
+    try { json = await res.json(); } catch (e) {}
+    if (!res.ok || (json && json.success === false)) {
+      throw new Error((json && json.error) || ("Server error " + res.status));
+    }
+    return json || {};
+  }
+
   function loadLibraries() {
+    if (LAN) return Promise.resolve();
     return new Promise((resolve) => {
       if (window.gapi && window.gapi.client && window.google && window.google.accounts) {
         resolve(); return;
@@ -88,6 +153,7 @@ window.POS_GAPI = (() => {
 
   // ── Sign In ───────────────────────────────────────────────
   function signIn(callback) {
+    if (LAN) { _session = _lanUser(); callback && callback(_session); return; }
     _tokenClient = google.accounts.oauth2.initTokenClient({
       client_id : POS_CONFIG.GOOGLE_CLIENT_ID,
       scope     : SCOPES,
@@ -110,6 +176,7 @@ window.POS_GAPI = (() => {
   }
 
   function silentSignIn(callback) {
+    if (LAN) { _session = _lanUser(); callback && callback(_session); return; }
     const saved = _loadSession();
     if (!saved) { callback && callback(null); return; }
     _session = saved.session;
@@ -129,6 +196,12 @@ window.POS_GAPI = (() => {
   }
 
   function signOut() {
+    if (LAN) {
+      try { localStorage.removeItem("pos_lan_user"); } catch (e) {}
+      _session = null;
+      window.location.href = "index.html";
+      return;
+    }
     if (_accessToken) google.accounts.oauth2.revoke(_accessToken, () => {});
     _accessToken = null;
     _session     = null;
@@ -161,11 +234,17 @@ window.POS_GAPI = (() => {
   }
 
   function getSession()    { return _session; }
-  function getSheetId()    { return _sheetId; }
+  function getSheetId()    { return _sheetId; }   // "LAN" in LAN mode (apps only check it is non-empty)
   function getAccessToken(){ return _accessToken; }
 
   // ── Find or create the user's spreadsheet ─────────────────
   async function initUserSheet(restaurantName) {
+    if (LAN) {
+      _sheetId = "LAN";
+      if (!_session) _session = _lanUser();
+      await _loadSettings();
+      return { sheetId: "LAN", isNew: false };
+    }
     if (!_session) {
       const saved = _loadSession();
       if (saved) _session = saved.session;
@@ -327,6 +406,7 @@ window.POS_GAPI = (() => {
       const rows = await getRows("Settings");
       _settings = {};
       rows.forEach(r => { if (r.Key) _settings[r.Key] = r.Value; });
+      if (_settings.restaurant_name) window.POS_SHOP.set(_settings.restaurant_name);
       if (_session && _session.email) {
         localStorage.setItem(LS_SETTINGS(_session.email), JSON.stringify(_settings));
       }
@@ -338,6 +418,7 @@ window.POS_GAPI = (() => {
   // ── Core Sheets CRUD ──────────────────────────────────────
 
   async function getRows(sheetName) {
+    if (LAN) return (await _lan("GET", "/api/sheet/" + encodeURIComponent(sheetName))).data || [];
     const res = await gapi.client.sheets.spreadsheets.values.get({
       spreadsheetId: _sheetId,
       range: sheetName,
@@ -355,6 +436,10 @@ window.POS_GAPI = (() => {
   }
 
   async function _appendRows(sheetName, rows) {
+    if (LAN) {
+      for (const values of rows) await _lan("POST", "/api/sheet/" + encodeURIComponent(sheetName) + "/append", { values });
+      return;
+    }
     await gapi.client.sheets.spreadsheets.values.append({
       spreadsheetId   : _sheetId,
       range           : sheetName + "!A1",
@@ -369,6 +454,10 @@ window.POS_GAPI = (() => {
   }
 
   async function updateRow(sheetName, colIndex, matchValue, updates) {
+    if (LAN) {
+      const r = await _lan("POST", "/api/sheet/" + encodeURIComponent(sheetName) + "/update", { col: colIndex, match: matchValue, updates });
+      return r.data;
+    }
     const res = await gapi.client.sheets.spreadsheets.values.get({
       spreadsheetId: _sheetId,
       range: sheetName,
@@ -380,6 +469,9 @@ window.POS_GAPI = (() => {
         const obj = {};
         headers.forEach((h, j) => { obj[h] = vals[i][j] !== undefined ? vals[i][j] : ""; });
         Object.assign(obj, updates);
+        // The restaurant laptop merges by UpdatedAt (newest wins) — stamp edits made from the cloud
+        // so a driver's "accepted"/"delivered" isn't overwritten by older laptop data.
+        if (headers.indexOf("UpdatedAt") >= 0) obj.UpdatedAt = Math.floor(Date.now() / 1000);
         const newRow = headers.map(h => obj[h] !== undefined ? obj[h] : "");
         await gapi.client.sheets.spreadsheets.values.update({
           spreadsheetId   : _sheetId,
@@ -395,6 +487,10 @@ window.POS_GAPI = (() => {
 
   // ── Google Sheets Row Deletion batch API ──
   async function deleteRow(sheetName, colIndex, matchValue) {
+    if (LAN) {
+      await _lan("POST", "/api/sheet/" + encodeURIComponent(sheetName) + "/delete", { col: colIndex, match: matchValue });
+      return { success: true };
+    }
     const res = await gapi.client.sheets.spreadsheets.values.get({
       spreadsheetId: _sheetId,
       range: sheetName,
@@ -519,6 +615,9 @@ window.POS_GAPI = (() => {
       if (data.status) updates.Status = data.status;
       if (data.items)  updates.Items  = JSON.stringify(data.items);
       if (data.notes)  updates.Notes  = data.notes;
+      if (data.subtotal !== undefined) updates.Subtotal = data.subtotal;   // totals were silently ignored before
+      if (data.tax      !== undefined) updates.Tax      = data.tax;
+      if (data.total    !== undefined) updates.Total    = data.total;
       await updateRow("Orders", 0, data.orderId, updates);
       return { success:true, data:{ updated:true } };
     },
@@ -753,6 +852,12 @@ window.POS_GAPI = (() => {
     },
     setPin: async (pin) => Settings.update({ admin_pin: pin }),
     verifyPin: async (pin) => {
+      if (LAN) {
+        try {
+          const r = await _lan("POST", "/api/settings/verify-pin", { pin });
+          return { success:true, data:{ verified: !!r.success } };
+        } catch (e) { return { success:true, data:{ verified:false } }; }
+      }
       await _loadSettings();
       const stored = _settings.admin_pin || "1234";
       return { success:true, data:{ verified: String(pin) === String(stored) }};
@@ -773,7 +878,7 @@ window.POS_GAPI = (() => {
 
   return {
     loadLibraries, signIn, silentSignIn, signOut, getSettings,
-    initUserSheet, getRows, appendRow, updateRow, deleteRow, uid,
+    initUserSheet, setLanUser, getRows, appendRow, updateRow, deleteRow, uid,
     Orders, Menu, Tables, Inventory, Staff, Drivers,
     Deliveries, Recipes, Team, Settings, Analytics, poll, getSheetId, getAccessToken, getSession
   };
@@ -788,6 +893,8 @@ window.POS_AUTH = (() => {
 
   async function init(appId, { onReady, onError } = {}) {
     const mode = POS_CONFIG.ACCESS[appId] || "session";
+
+    if (window.POS_IS_LAN) { return _lanInit(appId, mode, onReady, onError); }
 
     try {
       await POS_GAPI.loadLibraries();
@@ -862,6 +969,57 @@ window.POS_AUTH = (() => {
     }
   }
 
+  // ── LAN: no Google sign-in. Floor apps open directly, the Manager Portal asks
+  //    for the PIN, the Team App asks "who are you?" from the Staff list. ──
+  async function _lanInit(appId, mode, onReady, onError) {
+    try {
+      if (mode === "public") { onReady && onReady(null); return; }
+      await POS_GAPI.initUserSheet();
+      if (mode === "pin") { _showPinModal(POS_GAPI.getSession(), onReady, onError); return; }
+      if (mode === "team" || mode === "driver") {
+        let u = null;
+        try { u = JSON.parse(localStorage.getItem("pos_lan_user") || "null"); } catch (e) {}
+        if (u && u.email && u.email !== "lan@local") { onReady && onReady(POS_GAPI.getSession()); return; }
+        _showStaffPicker(onReady, onError);
+        return;
+      }
+      onReady && onReady(POS_GAPI.getSession());
+    } catch (e) {
+      onError ? onError("Cannot reach the restaurant server: " + e.message) : alert("Cannot reach the restaurant server: " + e.message);
+    }
+  }
+
+  async function _showStaffPicker(onReady, onError) {
+    const wall = document.createElement("div");
+    wall.id = "pos-login-wall";
+    wall.style.cssText = "position:fixed;inset:0;background:#07070f;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow:auto;";
+    wall.innerHTML = '<div style="text-align:center;padding:24px;max-width:420px;width:100%">' +
+      '<div style="font-size:48px;margin-bottom:12px">🧑‍🍳</div>' +
+      '<h1 style="color:#fff;font-size:22px;font-weight:900;margin-bottom:6px">Who are you?</h1>' +
+      '<p style="color:rgba(255,255,255,.45);font-size:13px;margin-bottom:20px">Tap your name to continue</p>' +
+      '<div id="lan-staff-list" style="display:flex;flex-direction:column;gap:10px"></div></div>';
+    document.body.appendChild(wall);
+    const list = wall.querySelector("#lan-staff-list");
+    let staff = [];
+    try { staff = await POS_GAPI.getRows("Staff"); } catch (e) {}
+    staff = staff.filter(s => s.Name && s.Email && String(s.Status || "active").toLowerCase() === "active");
+    if (!staff.length) {
+      list.innerHTML = '<div style="color:#f59e0b;font-size:13px">No staff with an email address found. Add staff (with email) in the Manager Portal first.</div>';
+      return;
+    }
+    staff.forEach(s => {
+      const b = document.createElement("button");
+      b.style.cssText = "background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:#fff;padding:14px;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;";
+      b.textContent = s.Name + (s.Role ? "  ·  " + s.Role : "");
+      b.onclick = () => {
+        POS_GAPI.setLanUser({ email: s.Email, name: s.Name, picture: "" });
+        wall.remove();
+        onReady && onReady(POS_GAPI.getSession());
+      };
+      list.appendChild(b);
+    });
+  }
+
   function _savedSession() {
     try {
       const raw = localStorage.getItem("pos_session");
@@ -881,7 +1039,7 @@ window.POS_AUTH = (() => {
       <div style="text-align:center;padding:24px;max-width:360px;width:100%">
         <div style="font-size:56px;margin-bottom:16px">🍽️</div>
         <h1 style="color:#fff;font-size:24px;font-weight:900;margin-bottom:8px">
-          ${POS_CONFIG.RESTAURANT_NAME}
+          ${window.POS_SHOP.name || POS_CONFIG.RESTAURANT_NAME}
         </h1>
         <p style="color:rgba(255,255,255,.4);font-size:14px;margin-bottom:32px">
           Authenticate your restaurant terminal
@@ -1009,6 +1167,7 @@ window.POS_AUTH = (() => {
   }
 
   function openSheet() {
+    if (window.POS_IS_LAN) { alert("The LAN system stores data on the restaurant server. It syncs to Google Sheets automatically."); return; }
     const id = POS_GAPI.getSheetId();
     if (id) {
       window.open("https://docs.google.com/spreadsheets/d/" + id + "/edit", "_blank");
@@ -1026,11 +1185,12 @@ window.POS_AUTH = (() => {
     var el = document.getElementById(containerId);
     if (!el) return;
     var sheetId = POS_GAPI.getSheetId();
-    var sheetBtn = sheetId
+    var sheetBtn = (sheetId && !window.POS_IS_LAN)
       ? '<button onclick="POS_AUTH.openSheet()" style="background:rgba(39,174,96,.15);border:1px solid rgba(39,174,96,.3);color:#27ae60;padding:4px 12px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;">📊 Open Sheet</button>'
       : '';
     el.innerHTML =
       '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+        (window.POS_IS_LAN ? '<span id="pos-live-dot" title="Live connection to the restaurant server" style="font-size:11px;font-weight:700;color:#f59e0b;">● LAN</span>' : '') +
         '<span style="font-size:12px;opacity:.6;">' + (s ? s.name : "") + '</span>' +
         sheetBtn +
         '<button onclick="POS_AUTH.refreshApp()" style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.7);padding:4px 12px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;">🔄 Refresh</button>' +
@@ -1040,3 +1200,84 @@ window.POS_AUTH = (() => {
 
   return { init, signOut, renderBadge, renderUtilBar, openSheet, refreshApp };
 })();
+
+// ============================================================
+// LAN LIVE UPDATES — instant push from the restaurant server.
+// Every screen can listen:  window.addEventListener("pos-live", e => reload())
+// e.detail = { type: "order.created" | "order.updated" | "menu.updated" | ..., payload }
+// (Only active in LAN mode; online mode keeps using the normal polling.)
+// ============================================================
+(function () {
+  if (!window.POS_IS_LAN) return;
+  let ws = null, retry = 0;
+  function dot(color, title) {
+    const d = document.getElementById("pos-live-dot");
+    if (d) { d.style.color = color; d.title = title; }
+  }
+  function connect() {
+    try {
+      ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+    } catch (e) { return setTimeout(connect, 3000); }
+    ws.onopen = () => { retry = 0; dot("#22c55e", "Live"); };
+    ws.onmessage = (ev) => {
+      let msg = null;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (!msg || msg.type === "connected") return;
+      window.dispatchEvent(new CustomEvent("pos-live", { detail: msg }));
+    };
+    ws.onclose = () => { dot("#ef4444", "Reconnecting..."); setTimeout(connect, Math.min(1000 * ++retry, 5000)); };
+    ws.onerror = () => { try { ws.close(); } catch (e) {} };
+  }
+  // Hide Google-only buttons (Open Sheet) and Google-only tiles in LAN mode.
+  const st = document.createElement("style");
+  st.textContent = '[onclick*="docs.google.com"],[onclick*="openSheet"],[data-online-only]{display:none !important}';
+  (document.head || document.documentElement).appendChild(st);
+  connect();
+  setInterval(() => dot(ws && ws.readyState === 1 ? "#22c55e" : "#ef4444", ws && ws.readyState === 1 ? "Live" : "Reconnecting..."), 2000);
+})();
+
+// Convenience: call fn whenever the server pushes a change (debounced), in
+// addition to the app's own polling. Safe to call in online mode (no-op).
+window.POS_ONLIVE = function (fn, filter) {
+  let t = null;
+  window.addEventListener("pos-live", (e) => {
+    if (filter && !String(e.detail && e.detail.type || "").startsWith(filter)) return;
+    clearTimeout(t);
+    t = setTimeout(fn, 120);
+  });
+};
+
+// ============================================================
+// POS_ORDER — one shared definition of "online order" for every app.
+// Online orders (Customer App) carry WaiterName "Online Delivery" / "Online Pickup".
+// ============================================================
+window.POS_ORDER = {
+  isOnline(o) { return /^online/i.test(String((o && (o.WaiterName || o.waiterName)) || "")); },
+  type(o) {                                   // "delivery" | "pickup" | null (not online)
+    if (!this.isOnline(o)) return null;
+    const w = String(o.WaiterName || o.waiterName || "");
+    const t = parseInt(o.TableNumber, 10);
+    return (/deliver/i.test(w) || t === 99) ? "delivery" : "pickup";
+  },
+  label(o) {                                  // short text for badges
+    const t = this.type(o);
+    return t === "delivery" ? "🛵 Online Delivery" : t === "pickup" ? "🛍️ Online Pickup" : "";
+  },
+  address(o) {                                // readable address (never raw GPS)
+    const a = String((o && o.CustomerAddress) || "");
+    if (a && !/^GPS:/i.test(a)) return a;
+    const m = String((o && o.Notes) || "").match(/\[DELIVERY:\s*([^\]]*)\]/i);
+    return m ? m[1].trim() : (a ? "Pinned location" : "");
+  },
+  phone(o) {                                  // Sheets turns "0771234567" into 771234567.0 — undo that
+    let p = String((o && o.CustomerPhone) || "").trim().replace(/\.0+$/, "");
+    if (/^\d{9}$/.test(p)) p = "0" + p;      // Sri Lankan mobile lost its leading 0
+    return p;
+  },
+  mapLink(o) {
+    const n = String((o && o.Notes) || "").match(/\[MAP:\s*([^\]\s]+)\s*\]/i);
+    if (n) return n[1];
+    const g = String((o && o.CustomerAddress) || "").match(/GPS:\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)/i);
+    return g ? "https://www.google.com/maps?q=" + g[1] + "," + g[2] : "";
+  },
+};
