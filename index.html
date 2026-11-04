@@ -7,14 +7,14 @@
   var lastPass = localStorage.getItem("pos_diag_pass");
   var TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
   var skipDiag = new URLSearchParams(window.location.search).get("skipdg");
-  if (!skipDiag && (!lastPass || Date.now() - parseInt(lastPass) > TWENTY_FOUR_HOURS)) {
+  if (!skipDiag && window.location.protocol !== "http:" && (!lastPass || Date.now() - parseInt(lastPass) > TWENTY_FOUR_HOURS)) {
     window.location.href = "diagnose.html";
   }
 })();
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The Grand Table — POS Hub</title>
+<title>POS Hub</title>
 <script src="pos-config.js"></script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -213,7 +213,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 
   <!-- top bar -->
   <div class="topbar">
-    <div class="logo">🍽️ The <span>Grand</span> Table</div>
+    <div class="logo">🍽️ <span data-shop-name>Restaurant</span></div>
     <div class="user-badge">
       <div id="user-badge-name"></div>
       <div style="display:flex;align-items:center;gap:8px;">
@@ -331,7 +331,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   </div>
 
   <!-- Customer & Delivery -->
-  <div class="section-lbl" style="margin-top:24px">Customer & Delivery</div>
+  <div data-online-only><div class="section-lbl" style="margin-top:24px">Customer & Delivery</div>
   <div class="grid-2">
 
     <a class="card c-green" href="customer-app.html">
@@ -365,6 +365,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     </a>
 
   </div>
+  </div><!-- /data-online-only -->
 
 
   <!-- Team -->
@@ -388,7 +389,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   </div>
 
   <!-- Google Sheets panel -->
-  <div class="sheets-panel">
+  <div class="sheets-panel" data-online-only>
     <div class="sheets-head">
       <div class="sheets-icon">📊</div>
       <div>
@@ -411,7 +412,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   </div>
 
   <!-- Setup Wizard link -->
-  <div style="text-align:center;margin-top:32px;margin-bottom:-20px;">
+  <div data-online-only style="text-align:center;margin-top:32px;margin-bottom:-20px;">
     <a href="setup-wizard.html" style="display:inline-flex;align-items:center;gap:8px;
       background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
       border-radius:10px;padding:10px 20px;color:rgba(255,255,255,.5);
@@ -422,7 +423,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   </div>
 
   <div class="footer">
-    The Grand Table POS · GitHub Pages · Google Sheets Backend · Google OAuth<br>
+    Restaurant POS · GitHub Pages · Google Sheets Backend · Google OAuth<br>
     All apps share one authenticated session — sign in once, use everywhere
   </div>
 
