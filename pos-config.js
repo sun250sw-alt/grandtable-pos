@@ -39,7 +39,7 @@ window.POS_IS_LAN = (function () {
   try {
     if (/[?&]mode=online/.test(location.search)) return false;
     if (/[?&]mode=lan/.test(location.search)) return true;
-    return location.protocol === "http:";
+    return location.protocol === "http:" || (location.protocol === "https:" && location.port === "3443");   // 3443 = the laptop's secure (camera) address
   } catch (e) { return false; }
 })();
 const POS_LAN_BASE = window.POS_LAN_BASE || "";
@@ -602,6 +602,7 @@ window.POS_GAPI = (() => {
       const total = parseFloat((sub + tax).toFixed(2));
       await appendRow("Orders", [id, data.tableNumber, data.customerName||"",
         data.waiterName||"", JSON.stringify(data.items||[]), sub, tax, total, "new", now, data.notes||""]);
+      if (data.memberId && window.POS_IS_LAN) { try { await updateRow("Orders", 0, id, { MemberID: data.memberId }); } catch (e) { console.error("member attach:", e); } }
       
       // Auto Deduct Stock Levels based on Recipe Formulation
       try {
@@ -615,6 +616,7 @@ window.POS_GAPI = (() => {
       if (data.status) updates.Status = data.status;
       if (data.items)  updates.Items  = JSON.stringify(data.items);
       if (data.notes)  updates.Notes  = data.notes;
+      if (data.memberId !== undefined && window.POS_IS_LAN) updates.MemberID = data.memberId;
       if (data.subtotal !== undefined) updates.Subtotal = data.subtotal;   // totals were silently ignored before
       if (data.tax      !== undefined) updates.Tax      = data.tax;
       if (data.total    !== undefined) updates.Total    = data.total;
@@ -1281,3 +1283,84 @@ window.POS_ORDER = {
     return g ? "https://www.google.com/maps?q=" + g[1] + "," + g[2] : "";
   },
 };
+
+
+// ── Loyalty members + in-app camera scanner (Till / Waiter) ───────────────
+// Works only in LAN mode (member list lives on the restaurant laptop). The camera needs
+// a secure page: open the app from the https:// address shown in the control panel.
+window.POS_MEMBERS = {
+  lookup: async function (q) {
+    const r = await fetch((window.POS_LAN_BASE || "") + "/api/members/lookup?q=" + encodeURIComponent(q));
+    const j = await r.json();
+    if (!j.success) throw new Error(j.error || "No member found");
+    return j.data;
+  },
+};
+window.POS_SCAN = (function () {
+  function loadJsQR() {
+    return new Promise(function (res, rej) {
+      if (window.jsQR) return res();
+      var sc = document.createElement("script"); sc.src = (window.POS_LAN_BASE || "") + "/vendor/jsqr.js";
+      sc.onload = function () { res(); }; sc.onerror = function () { rej(new Error("scanner library missing")); };
+      document.head.appendChild(sc);
+    });
+  }
+  // opts: { title, onResult(text) -> may return a Promise; throw/reject to show an error and keep scanning }
+  function open(opts) {
+    opts = opts || {};
+    var stream = null, stopped = false, busy = false, timer = null;
+    var ov = document.createElement("div");
+    ov.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;font-family:system-ui,sans-serif;color:#fff";
+    ov.innerHTML = '<div style="font-size:18px;font-weight:700;margin-bottom:8px"></div>'
+      + '<div style="position:relative;width:min(92vw,420px);aspect-ratio:1/1;background:#000;border-radius:16px;overflow:hidden;border:2px solid #f5a623">'
+      + '<video playsinline muted style="width:100%;height:100%;object-fit:cover"></video>'
+      + '<div style="position:absolute;inset:18%;border:3px solid rgba(255,255,255,.8);border-radius:14px;pointer-events:none"></div></div>'
+      + '<div class="msg" style="min-height:44px;margin:10px 0;text-align:center;font-size:14px;max-width:420px"></div>'
+      + '<div style="display:flex;gap:8px;width:min(92vw,420px)"><input class="man" placeholder="Or type phone / member ID" style="flex:1;padding:12px;border-radius:10px;border:none;font-size:16px"><button class="go" style="padding:12px 16px;border:none;border-radius:10px;background:#f5a623;font-weight:700;font-size:15px">Find</button></div>'
+      + '<button class="x" style="margin-top:14px;padding:12px 28px;border:none;border-radius:10px;background:#444;color:#fff;font-size:15px">Close</button>';
+    ov.firstChild.textContent = opts.title || "Scan customer QR";
+    document.body.appendChild(ov);
+    var video = ov.querySelector("video"), msg = ov.querySelector(".msg");
+    function say(t, bad) { msg.textContent = t; msg.style.color = bad ? "#ff8a80" : "#fff"; }
+    function close() { stopped = true; clearInterval(timer); try { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} ov.remove(); }
+    async function handle(text) {
+      if (busy || stopped) return; busy = true;
+      try { await opts.onResult(text); close(); }
+      catch (e) { say(e.message || "Not found", true); setTimeout(function () { busy = false; }, 1500); }
+    }
+    ov.querySelector(".x").onclick = close;
+    ov.querySelector(".go").onclick = function () { var v = ov.querySelector(".man").value.trim(); if (v) handle(v); };
+    ov.querySelector(".man").onkeydown = function (e) { if (e.key === "Enter") ov.querySelector(".go").click(); };
+
+    (async function () {
+      if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        say("Camera is blocked on this address. Open the app from the secure https:// address shown in the control panel (see “Camera scanner” there). You can still type the phone or member ID below.", true); return;
+      }
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+      } catch (e) { say("Camera not allowed (" + (e.name || "error") + "). Allow the camera in the browser, or type the phone / member ID below.", true); return; }
+      if (stopped) { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
+      video.srcObject = stream; try { await video.play(); } catch (e) {}
+      say("Point the camera at the customer's QR code");
+      var det = null;
+      if (window.BarcodeDetector) { try { det = new BarcodeDetector({ formats: ["qr_code", "code_128", "ean_13", "code_39"] }); } catch (e) { det = null; } }
+      if (!det) { try { await loadJsQR(); } catch (e) { say("Scanner unavailable — type the phone / member ID below.", true); return; } }
+      var cv = document.createElement("canvas"), cx = cv.getContext("2d", { willReadFrequently: true });
+      timer = setInterval(async function () {
+        if (stopped || busy || video.readyState < 2) return;
+        try {
+          if (det) { var codes = await det.detect(video); if (codes.length) handle(codes[0].rawValue); }
+          else {
+            var w = video.videoWidth, h = video.videoHeight; if (!w) return;
+            var sc = Math.min(1, 640 / w); cv.width = Math.round(w * sc); cv.height = Math.round(h * sc);
+            cx.drawImage(video, 0, 0, cv.width, cv.height);
+            var r = window.jsQR(cx.getImageData(0, 0, cv.width, cv.height).data, cv.width, cv.height);
+            if (r && r.data) handle(r.data);
+          }
+        } catch (e) {}
+      }, 250);
+    })();
+    return { close: close };
+  }
+  return { open: open };
+})();
