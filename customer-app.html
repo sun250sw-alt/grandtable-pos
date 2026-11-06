@@ -10,6 +10,8 @@
     <!-- Map for the delivery-address pin (Leaflet + OpenStreetMap: free, no API key) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f9fa; color: #1a1a2e; }
@@ -481,6 +483,121 @@
         return CUSTOMER_APP_SCRIPT_URL_DEFAULT;
     })();
 
+    // ── Loyalty account: Google sign-in, personal QR, bills ──────────────
+    function jwtExp(t) { try { return JSON.parse(atob(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).exp * 1000; } catch (e) { return 0; } }
+    function loadAcct() { try { return JSON.parse(localStorage.getItem("gt_member") || "null"); } catch (e) { return null; } }
+    function saveAcct(a) { try { if (a) localStorage.setItem("gt_member", JSON.stringify(a)); else localStorage.removeItem("gt_member"); } catch (e) {} }
+    async function scriptPost(body) {
+        const res = await fetch(CUSTOMER_APP_SCRIPT_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(body) });
+        return res.json();
+    }
+    function QrImage({ text }) {
+        let src = "";
+        try { const q = qrcode(0, "M"); q.addData(text); q.make(); src = q.createDataURL(8, 4); } catch (e) {}
+        return src ? <img alt="Your member QR code" src={src} style={{ width: 200, height: 200, imageRendering: "pixelated" }} /> : <div>QR unavailable</div>;
+    }
+    function AccountModal({ clientId, acct, setAcct, currency, onClose }) {
+        const btnRef = React.useRef(null);
+        const [err, setErr] = useState("");
+        const [busy, setBusy] = useState(false);
+        const [reg, setReg] = useState({ name: "", phone: "", consent: false });
+        const [bills, setBills] = useState(null);
+        const live = acct && acct.idToken && jwtExp(acct.idToken) > Date.now() + 60000;
+        const handleCred = async (resp) => {
+            setBusy(true); setErr("");
+            try {
+                const j = await scriptPost({ action: "login", idToken: resp.credential });
+                if (!j.success) throw new Error(j.error || "Sign-in failed");
+                if (j.registered) { const a = { idToken: resp.credential, member: j.member }; setAcct(a); saveAcct(a); }
+                else { setAcct({ idToken: resp.credential, member: null, name: j.name, email: j.email }); setReg(r => ({ ...r, name: j.name || "" })); }
+            } catch (e) { setErr(e.message || "Sign-in failed"); }
+            setBusy(false);
+        };
+        useEffect(() => {
+            if ((acct && live) || !clientId) return;
+            let tries = 0;
+            const t = setInterval(() => {
+                if (window.google && window.google.accounts && btnRef.current) {
+                    clearInterval(t);
+                    window.google.accounts.id.initialize({ client_id: clientId, callback: handleCred });
+                    window.google.accounts.id.renderButton(btnRef.current, { theme: "outline", size: "large", text: "continue_with", shape: "pill" });
+                } else if (++tries > 40) { clearInterval(t); setErr("Google sign-in could not load. Check your connection."); }
+            }, 250);
+            return () => clearInterval(t);
+        }, [clientId, live, !!acct]);
+        useEffect(() => {
+            if (!(acct && acct.member && live)) { setBills(null); return; }
+            let stop = false;
+            scriptPost({ action: "receipts", idToken: acct.idToken }).then(j => { if (!stop) setBills(j.success ? j.data : []); }).catch(() => { if (!stop) setBills([]); });
+            return () => { stop = true; };
+        }, [acct && acct.member && acct.member.memberId, live]);
+        const register = async () => {
+            setBusy(true); setErr("");
+            try {
+                const j = await scriptPost({ action: "register", idToken: acct.idToken, name: reg.name, phone: reg.phone, consent: reg.consent });
+                if (!j.success) throw new Error(j.error);
+                const a = { idToken: acct.idToken, member: j.member }; setAcct(a); saveAcct(a);
+            } catch (e) { setErr(e.message || "Could not register"); }
+            setBusy(false);
+        };
+        const box = { background: "#fff", color: "#1a1a2e", borderRadius: 18, padding: 20, width: "min(94vw,420px)", maxHeight: "88vh", overflowY: "auto" };
+        const inp = { width: "100%", padding: 12, borderRadius: 10, border: "1px solid #ddd", fontSize: 16, marginBottom: 10, boxSizing: "border-box" };
+        return (
+            <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
+                <div style={box} onClick={e => e.stopPropagation()}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                        <b style={{ fontSize: 18 }}>⭐ My Account</b>
+                        <button onClick={onClose} style={{ border: "none", background: "none", fontSize: 24, cursor: "pointer" }}>×</button>
+                    </div>
+                    {!clientId && <div>Member sign-in isn't available yet.</div>}
+                    {clientId && (!acct || (!acct.member && !live) || (acct.member && !live && false)) && (
+                        <div style={{ textAlign: "center" }}>
+                            <p style={{ fontSize: 14, color: "#555" }}>Sign in to get your personal QR code, show it at the till, and see your past bills.</p>
+                            <div ref={btnRef} style={{ display: "flex", justifyContent: "center", minHeight: 44 }}></div>
+                        </div>
+                    )}
+                    {acct && !acct.member && live && (
+                        <div>
+                            <p style={{ fontSize: 14 }}>Welcome{acct.email ? ", " + acct.email : ""}! One last step to join:</p>
+                            <input style={inp} placeholder="Your name" value={reg.name} onChange={e => setReg({ ...reg, name: e.target.value })} />
+                            <input style={inp} type="tel" placeholder="Phone number" value={reg.phone} onChange={e => setReg({ ...reg, phone: e.target.value })} />
+                            <label style={{ display: "flex", gap: 8, fontSize: 13, marginBottom: 12 }}><input type="checkbox" checked={reg.consent} onChange={e => setReg({ ...reg, consent: e.target.checked })} /> I agree the restaurant may store my name, phone and e-mail to run its loyalty programme and show my bills.</label>
+                            <button className="place-order-btn" onClick={register} disabled={busy}>Join</button>
+                        </div>
+                    )}
+                    {acct && acct.member && (
+                        <div style={{ textAlign: "center" }}>
+                            <div style={{ fontWeight: 700, fontSize: 17 }}>{acct.member.name}</div>
+                            <div style={{ fontSize: 13, color: "#666", marginBottom: 10 }}>Member {acct.member.memberId}</div>
+                            <QrImage text={"GTM1:" + acct.member.memberId} />
+                            <div style={{ fontSize: 12, color: "#777", margin: "6px 0 14px" }}>Show this at the till</div>
+                            {!live ? (
+                                <div>
+                                    <p style={{ fontSize: 13, color: "#555" }}>Sign in again to see your bills.</p>
+                                    <div ref={btnRef} style={{ display: "flex", justifyContent: "center", minHeight: 44 }}></div>
+                                </div>
+                            ) : (
+                                <div style={{ textAlign: "left" }}>
+                                    <div style={{ fontWeight: 700, margin: "8px 0" }}>🧾 My bills</div>
+                                    {bills === null ? <div style={{ color: "#888" }}>Loading…</div> : bills.length === 0 ? <div style={{ color: "#888", fontSize: 14 }}>No bills yet. Scan your QR when you pay to see them here.</div> :
+                                        bills.map(b => (
+                                            <div key={b.orderId} style={{ borderTop: "1px solid #eee", padding: "10px 0", fontSize: 14 }}>
+                                                <div style={{ display: "flex", justifyContent: "space-between" }}><b>{b.shop || "Bill"} · {b.type}</b><b>{b.currency ? b.currency + " " : currency}{Number(b.total).toLocaleString()}</b></div>
+                                                <div style={{ color: "#888", fontSize: 12 }}>{b.date ? new Date(b.date).toLocaleString() : ""}</div>
+                                                <div style={{ color: "#555", fontSize: 13, marginTop: 4 }}>{(b.items || []).map(i => i.q + "× " + i.n).join(", ")}</div>
+                                            </div>
+                                        ))}
+                                </div>
+                            )}
+                            <button onClick={() => { setAcct(null); saveAcct(null); try { window.google && window.google.accounts.id.disableAutoSelect(); } catch (e) {} }} style={{ marginTop: 14, border: "none", background: "none", color: "#c00", cursor: "pointer" }}>Sign out</button>
+                        </div>
+                    )}
+                    {err && <div style={{ color: "#c00", fontSize: 13, marginTop: 10 }}>{err}</div>}
+                </div>
+            </div>
+        );
+    }
+
     function CustomerApp() {
         const [menuItems, setMenuItems] = useState([]);
         const [loadingMenu, setLoadingMenu] = useState(true);
@@ -499,6 +616,9 @@
         const closed = hours.isOpen === false;
         const fmtTime = (t) => { const m = String(t || "").match(/^(\d{1,2}):(\d{2})/); if (!m) return ""; let h = parseInt(m[1], 10); const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12; return h + ":" + m[2] + " " + ap; };
         const [shopLoc, setShopLoc] = useState(null);      // { lat, lng, name } of the restaurant
+        const [googleClientId, setGoogleClientId] = useState("");
+        const [acct, setAcct] = useState(loadAcct);
+        const [showAcct, setShowAcct] = useState(false);
         const [offer, setOffer] = useState(null);          // { title, text, kind } while an offer/notice is active
         const [offerHidden, setOfferHidden] = useState(() => { try { return sessionStorage.getItem("gt_offer_hidden") || ""; } catch (e) { return ""; } });
 
@@ -512,6 +632,7 @@
                     const json = await res.json();
                     if (stop || !(json && json.success && json.data)) return;
                     const d = json.data;
+                    if (d.googleClientId) setGoogleClientId(String(d.googleClientId));
                     if (d.name) { setShopName(d.name); document.title = "Order Online - " + d.name; }
                     if (d.currency) setCurrency(String(d.currency) + " ");
                     if (d.deliveryFee !== undefined && !isNaN(parseFloat(d.deliveryFee))) setDeliveryFeeCfg(parseFloat(d.deliveryFee));
@@ -539,6 +660,7 @@
             const iv = setInterval(load, 60000);          // offers appear/disappear without a page reload
             return () => { stop = true; clearInterval(iv); };
         }, []);
+        useEffect(() => { if (acct && acct.member) setForm(f => ({ ...f, name: f.name || acct.member.name || "", phone: f.phone || acct.member.phone || "" })); }, [acct && acct.member && acct.member.memberId]);
         useEffect(() => { if (!deliveryOn && mode === "delivery") setMode("pickup"); }, [deliveryOn, mode]);
         const [placedOrder, setPlacedOrder] = useState(null);
         const [orderStatus, setOrderStatus] = useState("new");
@@ -684,6 +806,7 @@
                 Status: "new",
                 OrderTime: new Date().toISOString()
             };
+            if (acct && acct.idToken && jwtExp(acct.idToken) > Date.now() + 30000) orderPayload.idToken = acct.idToken;   // lets the shop verify you and add the bill to your account
 
             let realOrderId = generatedOrderId;
 
@@ -821,9 +944,11 @@
         // ── 6. MENU BROWSING SCREEN ──
         return (
             <div className="app">
+                {showAcct && <AccountModal clientId={googleClientId} acct={acct} setAcct={setAcct} currency={currency} onClose={() => setShowAcct(false)} />}
                 <div className="hero">
                     <div className="hero-top">
                         <div className="hero-logo">🍽️ {shopName || "Order Online"}</div>
+                        {googleClientId && <button className="mode-btn" style={{ marginRight: 8 }} onClick={() => setShowAcct(true)}>{acct && acct.member ? "⭐ " + (acct.member.name || "").split(" ")[0] : "👤 Sign in"}</button>}
                         <div className="hero-mode-toggle">
                             <button className={`mode-btn ${mode === 'delivery' ? 'active' : ''}`} disabled={!deliveryOn} title={deliveryOn ? "" : "Delivery is off right now"} onClick={() => setMode('delivery')}>🚗 Delivery</button>
                             <button className={`mode-btn ${mode === 'pickup' ? 'active' : ''}`} onClick={() => setMode('pickup')}>🏃 Pickup</button>
