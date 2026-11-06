@@ -967,6 +967,7 @@
             // Till & Cash Tender State
             const [tillCashTendered, setTillCashTendered]   = useState("");
             const [paymentMethod, setPaymentMethod]         = useState("Cash");
+            const [member, setMember]                       = useState(null);   // loyalty member for the current sale
             const [completedPaymentModal, setCompletedPaymentModal] = useState(null);
             const [showHistoryModal, setShowHistoryModal]   = useState(false);
             const [posShopName, setPosShopName] = useState(POS_SHOP.display());
@@ -1114,6 +1115,7 @@
                 setSelectedTable(freshTable);
                 setSelectedTakeawayOrder(null);
                 setOrderItems([]);
+                setMember(null);
                 setTillCashTendered("");
             };
 
@@ -1121,6 +1123,7 @@
                 setSelectedTakeawayOrder(order);
                 setSelectedTable(null);
                 setOrderItems([]);
+                setMember(null);
                 setTillCashTendered("");
             };
 
@@ -1200,6 +1203,7 @@
                             total        : total,
                             status       : "new",
                             notes        : "",
+                            memberId     : member ? member.MemberID : "",
                         });
                     }
 
@@ -1215,6 +1219,7 @@
                     showNotification(`Order sent to kitchen for Table ${selectedTable.number}!`);
                     setSelectedTable(null);
                     setOrderItems([]);
+                    setMember(null);
                     loadData();
                 } catch(e) {
                     showNotification("Failed to save order: " + e.message, "error");
@@ -1475,7 +1480,8 @@
                         tax         : tax,
                         total       : total,
                         status      : "preparing",
-                        notes       : `[TAKEAWAY - PAID ${paymentMethod}]`
+                        notes       : `[TAKEAWAY - PAID ${paymentMethod}]`,
+                        memberId    : member ? member.MemberID : ""
                     };
 
                     if (api.Orders && typeof api.Orders.create === "function") {
@@ -1495,6 +1501,7 @@
                     printReceipt(newOrder, { method: paymentMethod, tendered, change }, currency, taxRate);
 
                     setOrderItems([]);
+                    setMember(null);
                     setTillCashTendered("");
                     loadData();
                 } catch(e) {
@@ -1539,7 +1546,8 @@
                         await api.Orders.update({
                             orderId: order.OrderID || order.orderId,
                             status: "closed",
-                            notes: ((order.Notes || order.notes) ? (order.Notes || order.notes) + " " : "") + `[PAID ${paymentMethod} at Till]`   // keep delivery address etc.
+                            notes: ((order.Notes || order.notes) ? (order.Notes || order.notes) + " " : "") + `[PAID ${paymentMethod} at Till]`,   // keep delivery address etc.
+                            ...(member && !order.MemberID ? { memberId: member.MemberID } : {})
                         });
                     }
 
@@ -1613,6 +1621,36 @@
                 : selectedTakeawayOrder 
                     ? liveOrders.find(o => (o.OrderID || o.orderId) === (selectedTakeawayOrder.OrderID || selectedTakeawayOrder.orderId) && !["closed", "cancelled", "void"].includes((o.Status || o.status || "").toLowerCase())) || selectedTakeawayOrder
                     : null;
+
+            // ── LOYALTY: scan / look up a member and attach them to the sale ──
+            const [scanning, setScanning] = useState(false);
+            const focusMemberId = activeOrderInFocus && (activeOrderInFocus.MemberID || "");
+            useEffect(() => {
+                if (!window.POS_IS_LAN || !focusMemberId) return;
+                if (member && member.MemberID === focusMemberId) return;
+                window.POS_MEMBERS.lookup(focusMemberId).then(setMember).catch(() => {});
+            }, [focusMemberId]);
+            const openMemberScan = () => {
+                window.POS_SCAN.open({
+                    title: "Scan loyalty QR",
+                    onResult: async (text) => {
+                        const m = await window.POS_MEMBERS.lookup(text);
+                        setMember(m);
+                        const api = getPosApi();
+                        if (activeOrderInFocus && api && api.Orders && api.Orders.update) {
+                            await api.Orders.update({ orderId: activeOrderInFocus.OrderID || activeOrderInFocus.orderId, memberId: m.MemberID });
+                        }
+                        showNotification("Member: " + (m.Name || m.MemberID));
+                    }
+                });
+            };
+            const memberBar = window.POS_IS_LAN ? (
+                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, margin: "0 0 10px", padding: "8px 10px", background: member ? "#e8f5e9" : "#f5f5f5", borderRadius: 10, fontSize: 13, color: "#1e293b" }}>
+                    <span style={{ flex: "1 1 140px", minWidth: 0 }}>{member ? <span>👤 <b>{member.Name || "Member"}</b> · {member.Phone || member.MemberID} · ⭐ {member.Points || 0} pts</span> : "No loyalty member on this sale"}</span>
+                    <button className="btn btn-ghost" style={{ padding: "6px 10px" }} onClick={openMemberScan}>📷 {member ? "Change" : "Scan member"}</button>
+                    {member && !focusMemberId ? <button className="btn btn-ghost" style={{ padding: "6px 10px" }} onClick={() => setMember(null)}>✕</button> : null}
+                </div>
+            ) : null;
 
             // ── SERVER SELECTION SCREEN ──
             if (!currentServer) {
@@ -1886,6 +1924,7 @@
                             </h2>
 
                             <div className="order-panel-body">
+                                {(selectedTable || selectedTakeawayOrder || activeAppMode === 'till') ? memberBar : null}
                                 {!selectedTable && !selectedTakeawayOrder && activeAppMode !== 'till' ? (
                                     <div style={{ textAlign: 'center', padding: '40px 10px', color: '#94a3b8' }}>
                                         <div style={{ fontSize: '40px', marginBottom: '8px' }}>🍽️</div>
