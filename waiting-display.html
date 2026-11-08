@@ -6,637 +6,368 @@
 <title>Waiting Display</title>
 <script src="pos-config.js"></script>
 <style>
-* { margin:0; padding:0; box-sizing:border-box; }
-
-html, body {
-  width:100%; height:100vh;
-  overflow:hidden;
-  background:#0a0a0a;
-  color:white;
-  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+:root{
+  --bg:#070a12; --panel:rgba(255,255,255,.045); --line:rgba(255,255,255,.09);
+  --txt:#f4f6fb; --dim:rgba(244,246,251,.55); --faint:rgba(244,246,251,.32);
+  --gold:#ffb020; --green:#2ee59d; --blue:#5aa9ff; --violet:#a78bfa; --red:#ff6b6b;
+  --u:clamp(10px,1.05vw,22px);            /* one scaling unit: the whole screen grows with the TV */
 }
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--txt);
+  font-family:'Segoe UI',system-ui,-apple-system,Roboto,sans-serif}
+body{font-size:calc(var(--u)*1.1)}
 
-/* ── FIXED LAYOUT ────────────────────────────────────── */
-.ticker-wrap {
-  position:fixed;
-  bottom:0; left:0; right:0;
-  height:40px;
-  background:rgba(243,156,18,.09);
-  border-top:1px solid rgba(243,156,18,.2);
-  overflow:hidden;
-  display:flex;
-  align-items:center;
-  z-index:100;
+.page{position:fixed;inset:0;display:flex;flex-direction:column;
+  background:radial-gradient(60% 50% at 12% 0%,rgba(255,176,32,.12),transparent 70%),
+             radial-gradient(50% 50% at 100% 100%,rgba(90,169,255,.12),transparent 70%),var(--bg)}
+
+/* ── top bar ── */
+.top{flex:none;display:flex;align-items:center;justify-content:space-between;gap:calc(var(--u)*2);
+  padding:calc(var(--u)*.9) calc(var(--u)*2);border-bottom:1px solid var(--line);background:rgba(255,255,255,.03)}
+.brand{font-size:calc(var(--u)*2);font-weight:900;letter-spacing:.3px;
+  background:linear-gradient(120deg,#ffcf5a,#ff7a59);-webkit-background-clip:text;background-clip:text;color:transparent;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.clock{text-align:center;line-height:1.05}
+.clock b{display:block;font-size:calc(var(--u)*2.6);font-weight:800;font-variant-numeric:tabular-nums}
+.clock span{font-size:calc(var(--u)*.95);color:var(--dim)}
+.status{display:flex;align-items:center;gap:calc(var(--u)*.6);font-weight:700;font-size:calc(var(--u)*1.05);
+  padding:calc(var(--u)*.5) calc(var(--u)*1.2);border-radius:99px;border:1px solid var(--line);white-space:nowrap}
+.status i{width:calc(var(--u)*.7);height:calc(var(--u)*.7);border-radius:50%;background:var(--green);animation:blink 2s infinite}
+.status.open{color:var(--green);border-color:rgba(46,229,157,.35);background:rgba(46,229,157,.1)}
+.status.closed{color:var(--red);border-color:rgba(255,107,107,.35);background:rgba(255,107,107,.1)}
+.status.closed i{background:var(--red)}
+.status.off{color:var(--red)}
+.status.off i{background:var(--red);animation:none}
+@keyframes blink{50%{opacity:.25}}
+
+/* ── grid ── */
+.grid{flex:1;min-height:0;display:grid;grid-template-columns:1.35fr 1fr .85fr;gap:calc(var(--u)*1.1);padding:calc(var(--u)*1.1) calc(var(--u)*1.4)}
+.card{min-height:0;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:calc(var(--u)*1.2);background:var(--panel);overflow:hidden}
+.hd{flex:none;display:flex;align-items:center;justify-content:space-between;padding:calc(var(--u)*.9) calc(var(--u)*1.3);
+  font-size:calc(var(--u)*1.05);font-weight:800;letter-spacing:2px;text-transform:uppercase}
+.hd small{font-size:calc(var(--u)*.9);letter-spacing:0;text-transform:none;font-weight:600;color:var(--dim)}
+.ready .hd{background:linear-gradient(90deg,rgba(46,229,157,.28),rgba(46,229,157,.04));color:var(--green)}
+.prep  .hd{background:linear-gradient(90deg,rgba(255,176,32,.25),rgba(255,176,32,.03));color:var(--gold)}
+.menu  .hd{background:linear-gradient(90deg,rgba(90,169,255,.25),rgba(90,169,255,.03));color:var(--blue)}
+.body{flex:1;min-height:0;padding:calc(var(--u)*1) calc(var(--u)*1.1);overflow:hidden;position:relative}
+
+/* READY tickets */
+.tickets{display:grid;grid-template-columns:repeat(auto-fill,minmax(calc(var(--u)*13),1fr));gap:calc(var(--u)*.9);align-content:start}
+.tk{border-radius:calc(var(--u)*1);padding:calc(var(--u)*.9) calc(var(--u)*1);text-align:center;
+  background:linear-gradient(160deg,rgba(46,229,157,.2),rgba(46,229,157,.06));border:1px solid rgba(46,229,157,.4)}
+.tk .no{font-size:calc(var(--u)*4.4);font-weight:900;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:1px}
+.tk .what{font-size:calc(var(--u)*1.2);font-weight:800;margin-top:calc(var(--u)*.35)}
+.tk .who{font-size:calc(var(--u)*.95);color:var(--dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tk.pickup{background:linear-gradient(160deg,rgba(167,139,250,.24),rgba(167,139,250,.07));border-color:rgba(167,139,250,.5)}
+.tk.delivery{background:linear-gradient(160deg,rgba(90,169,255,.24),rgba(90,169,255,.07));border-color:rgba(90,169,255,.5)}
+.tk.fresh{animation:pop 1s ease-out 3,glow 1.4s ease-in-out 12}
+@keyframes pop{0%{transform:scale(.7);opacity:0}60%{transform:scale(1.06)}100%{transform:scale(1);opacity:1}}
+@keyframes glow{50%{box-shadow:0 0 calc(var(--u)*2.5) rgba(46,229,157,.75)}}
+.empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:calc(var(--u)*.6);
+  color:var(--faint);text-align:center;padding:calc(var(--u)*2);font-size:calc(var(--u)*1.3)}
+.empty em{font-style:normal;font-size:calc(var(--u)*3.6)}
+
+/* PREPARING rows */
+.rows{display:flex;flex-direction:column;gap:calc(var(--u)*.6)}
+.row{display:grid;grid-template-columns:calc(var(--u)*5.6) 1fr auto;align-items:center;gap:calc(var(--u)*.8);
+  padding:calc(var(--u)*.65) calc(var(--u)*.9);border-radius:calc(var(--u)*.8);background:rgba(255,255,255,.05);border:1px solid var(--line)}
+.row.next{border-color:rgba(255,176,32,.5);background:rgba(255,176,32,.09)}
+.row .no{font-size:calc(var(--u)*1.9);font-weight:900;font-variant-numeric:tabular-nums}
+.row.next .no{color:var(--gold)}
+.row .nm{font-size:calc(var(--u)*1.15);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .sub{font-size:calc(var(--u)*.88);color:var(--dim);margin-top:1px}
+.row .st{text-align:right;font-size:calc(var(--u)*.9);font-weight:700;white-space:nowrap}
+.row .st b{display:block;font-size:calc(var(--u)*1.25)}
+.chip{display:inline-block;margin-top:2px;padding:1px calc(var(--u)*.6);border-radius:99px;font-size:calc(var(--u)*.78);font-weight:800}
+.chip.cook{background:rgba(255,176,32,.2);color:var(--gold)}
+.chip.recv{background:rgba(255,255,255,.1);color:var(--dim)}
+.more{text-align:center;color:var(--dim);font-size:calc(var(--u)*1);padding-top:calc(var(--u)*.4)}
+
+/* MENU pages */
+.offer{flex:none;margin:calc(var(--u)*.9) calc(var(--u)*1.1) 0;padding:calc(var(--u)*.7) calc(var(--u)*1);border-radius:calc(var(--u)*.9);
+  background:linear-gradient(120deg,#ff6a3d,#ffb020);color:#1b1100;font-weight:800;font-size:calc(var(--u)*1.05);line-height:1.25}
+.offer small{display:block;font-weight:600;opacity:.85;font-size:calc(var(--u)*.88)}
+.mcat{font-size:calc(var(--u)*1.5);font-weight:900;margin-bottom:calc(var(--u)*.5)}
+.mi{display:flex;justify-content:space-between;align-items:baseline;gap:calc(var(--u)*.8);padding:calc(var(--u)*.62) 0;border-bottom:1px dashed var(--line)}
+.mi:last-child{border-bottom:none}
+.mi .n{font-size:calc(var(--u)*1.12);font-weight:700}
+.mi .d{font-size:calc(var(--u)*.85);color:var(--faint);margin-top:2px}
+.mi .p{font-size:calc(var(--u)*1.3);font-weight:900;color:var(--gold);white-space:nowrap}
+.fade{animation:fade .6s ease}
+@keyframes fade{from{opacity:0;transform:translateY(calc(var(--u)*.6))}to{opacity:1;transform:none}}
+.dots{flex:none;display:flex;justify-content:center;gap:6px;padding:calc(var(--u)*.6)}
+.dots i{width:calc(var(--u)*.6);height:calc(var(--u)*.6);border-radius:50%;background:var(--line)}
+.dots i.on{background:var(--blue);width:calc(var(--u)*1.6);border-radius:99px}
+
+/* ── ticker ── */
+.ticker{flex:none;height:calc(var(--u)*3);display:flex;align-items:center;overflow:hidden;border-top:1px solid var(--line);background:rgba(255,176,32,.08)}
+.track{display:flex;white-space:nowrap;animation:tick 60s linear infinite;will-change:transform}
+.track span{padding:0 calc(var(--u)*2.5);font-size:calc(var(--u)*1.1);color:var(--dim)}
+.track span b{color:var(--gold)}
+@keyframes tick{to{transform:translateX(-50%)}}
+
+#loading{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:var(--bg);font-size:16px}
+
+/* small screens (phones/tablets): stack the three panels and allow scrolling */
+@media (max-width:900px){
+  html,body{overflow:auto}
+  .page{position:static;min-height:100vh}
+  .grid{grid-template-columns:1fr;display:flex;flex-direction:column}
+  .card{min-height:40vh}
+  :root{--u:15px}
 }
-
-.page {
-  position:fixed;
-  top:0; left:0; right:0;
-  bottom:40px; 
-  display:flex;
-  flex-direction:column;
-  background:
-    radial-gradient(ellipse at 15% 40%, rgba(30,5,80,.5) 0%, transparent 55%),
-    radial-gradient(ellipse at 85% 70%, rgba(10,25,60,.5) 0%, transparent 55%),
-    #0a0a0a;
-}
-
-/* ── TOP BAR ─────────────────────────────────────────── */
-.top-bar {
-  flex-shrink:0;
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  padding:14px 32px;
-  background:rgba(255,255,255,.04);
-  border-bottom:1px solid rgba(255,255,255,.07);
-}
-
-.rest-name {
-  font-size:24px;
-  font-weight:900;
-  background:linear-gradient(135deg,#f39c12,#e74c3c);
-  -webkit-background-clip:text;
-  -webkit-text-fill-color:transparent;
-}
-
-.clock-wrap { text-align:center; }
-#clock-time {
-  font-size:32px;
-  font-weight:700;
-  font-family:'Courier New',monospace;
-}
-
-#clock-date {
-  font-size:12px;
-  color:rgba(255,255,255,.4);
-  margin-top:2px;
-}
-
-.open-pill {
-  display:flex;
-  align-items:center;
-  gap:7px;
-  background:rgba(39,174,96,.15);
-  border:1px solid rgba(39,174,96,.3);
-  padding:7px 16px;
-  border-radius:20px;
-  font-size:13px;
-  font-weight:600;
-  color:#27ae60;
-}
-
-.live-dot {
-  width:7px; height:7px;
-  border-radius:50%;
-  background:#27ae60;
-  animation:blink 2s infinite;
-}
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
-
-/* ── MAIN GRID ───────────────────────────────────────── */
-.main-grid {
-  flex:1;
-  display:grid;
-  grid-template-columns:1fr 380px;
-  min-height:0;
-  overflow:hidden;
-}
-
-/* ── LEFT: Queue ─────────────────────────────────────── */
-.left-col {
-  display:flex;
-  flex-direction:column;
-  padding:18px 18px 14px 28px;
-  gap:14px;
-  overflow:hidden;
-}
-
-/* Now Serving Banner */
-.now-serving {
-  flex-shrink:0;
-  background:linear-gradient(135deg,#f39c12,#e67e22);
-  border-radius:14px;
-  padding:16px 22px;
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  box-shadow:0 6px 28px rgba(243,156,18,.3);
-  animation:glow 3s ease-in-out infinite;
-}
-@keyframes glow {
-  0%,100%{box-shadow:0 6px 28px rgba(243,156,18,.25)}
-  50%{box-shadow:0 8px 40px rgba(243,156,18,.55)}
-}
-
-.ns-tag {
-  font-size:11px; font-weight:700;
-  text-transform:uppercase; letter-spacing:2px;
-  color:rgba(0,0,0,.5); margin-bottom:5px;
-}
-
-.ns-numbers {
-  display:flex; gap:14px;
-}
-
-.ns-number {
-  font-size:44px; font-weight:900;
-  color:#000; line-height:1;
-}
-
-.ns-right { text-align:right; }
-.ns-tables { font-size:13px; color:rgba(0,0,0,.5); margin-bottom:4px; }
-.ns-ready  { font-size:15px; font-weight:700; color:#000; }
-.ns-none   { font-size:18px; color:rgba(0,0,0,.55); font-weight:600; }
-
-/* Queue list */
-.queue-section {
-  flex:1;
-  display:flex;
-  flex-direction:column;
-  min-height:0;
-  overflow:hidden;
-}
-
-.queue-label {
-  font-size:11px; font-weight:700;
-  text-transform:uppercase; letter-spacing:1.5px;
-  color:rgba(255,255,255,.3);
-  margin-bottom:10px; flex-shrink:0;
-}
-
-.queue-rows {
-  flex:1;
-  overflow-y:auto;
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-}
-.queue-rows::-webkit-scrollbar { display:none; }
-
-.q-row {
-  display:grid;
-  grid-template-columns:70px 1fr 95px 85px;
-  align-items:center;
-  gap:4px;
-  background:rgba(255,255,255,.05);
-  border:1px solid rgba(255,255,255,.07);
-  border-radius:11px;
-  padding:11px 16px;
-}
-.q-row.next { border-color:rgba(243,156,18,.4); background:rgba(243,156,18,.08); }
-.q-row.soon { border-color:rgba(52,152,219,.3);  background:rgba(52,152,219,.05); }
-
-.q-ticket { font-size:22px; font-weight:900; color:white; }
-.q-row.next .q-ticket { color:#f39c12; }
-
-.q-name  { font-size:14px; font-weight:700; color:white; }
-.q-party { font-size:12px; color:rgba(255,255,255,.5); margin-top:2px; }
-
-.q-wait      { text-align:center; }
-.q-wait-num  { font-size:18px; font-weight:800; color:#27ae60; }
-.q-row.next .q-wait-num { color:#f39c12; }
-.q-wait-lbl  { font-size:10px; color:rgba(255,255,255,.3); }
-
-.q-badge { text-align:right; }
-.q-pill {
-  display:inline-block;
-  padding:4px 10px;
-  border-radius:16px;
-  font-size:11px; font-weight:700;
-}
-.pill-next { background:rgba(243,156,18,.2); color:#f39c12; border:1px solid rgba(243,156,18,.4); }
-.pill-soon { background:rgba(52,152,219,.15); color:#3498db; border:1px solid rgba(52,152,219,.3); }
-.pill-wait { background:rgba(255,255,255,.07); color:rgba(255,255,255,.4); border:1px solid rgba(255,255,255,.1); }
-
-.queue-empty {
-  flex:1; display:flex;
-  align-items:center; justify-content:center;
-  flex-direction:column; gap:10px;
-  color:rgba(255,255,255,.2); font-size:15px;
-}
-
-/* ── RIGHT: Menu ─────────────────────────────────────── */
-.right-col {
-  border-left:1px solid rgba(255,255,255,.07);
-  background:rgba(255,255,255,.02);
-  display:flex; flex-direction:column;
-  overflow:hidden;
-}
-
-.menu-hdr {
-  flex-shrink:0;
-  padding:14px 18px 10px;
-  font-size:11px; font-weight:700;
-  text-transform:uppercase; letter-spacing:1.5px;
-  color:rgba(255,255,255,.3);
-  border-bottom:1px solid rgba(255,255,255,.06);
-}
-
-.cat-tabs {
-  flex-shrink:0;
-  display:flex; gap:7px;
-  overflow-x:auto; padding:10px 16px;
-  border-bottom:1px solid rgba(255,255,255,.06);
-}
-.cat-tabs::-webkit-scrollbar { display:none; }
-
-.cat-tab {
-  padding:5px 14px; border-radius:16px;
-  font-size:12px; font-weight:600;
-  white-space:nowrap;
-  background:rgba(255,255,255,.06);
-  color:rgba(255,255,255,.4);
-  border:1px solid transparent;
-  cursor:pointer;
-  transition:all .3s;
-}
-.cat-tab.active {
-  background:rgba(243,156,18,.15);
-  color:#f39c12;
-  border-color:rgba(243,156,18,.3);
-}
-
-.menu-list {
-  flex:1; overflow-y:auto; padding:8px 16px;
-}
-.menu-list::-webkit-scrollbar { display:none; }
-
-.menu-row {
-  display:flex; justify-content:space-between;
-  align-items:center; padding:10px 0;
-  border-bottom:1px solid rgba(255,255,255,.04);
-}
-.menu-row:last-child { border-bottom:none; }
-
-.mi-name { font-size:13px; font-weight:600; color:white; margin-bottom:3px; }
-.mi-desc { font-size:11px; color:rgba(255,255,255,.35); }
-.mi-price{ font-size:19px; font-weight:800; color:#f39c12; flex-shrink:0; margin-left:8px; }
-
-/* ── TICKER ──────────────────────────────────────────── */
-.ticker-track {
-  display:flex; gap:80px;
-  white-space:nowrap;
-  animation:ticker 35s linear infinite;
-}
-@keyframes ticker {
-  from{transform:translateX(0)}
-  to{transform:translateX(-50%)}
-}
-.ticker-item { font-size:13px; color:rgba(255,255,255,.6); flex-shrink:0; }
-.ticker-item strong { color:#f39c12; }
 </style>
 </head>
 <body>
 
 <div class="page" id="app" style="display:none">
-  <!-- TOP BAR -->
-  <div class="top-bar">
-    <div class="rest-name" id="rest-name">🍽️ Restaurant</div>
-    <div class="clock-wrap">
-      <div id="clock-time">00:00:00</div>
-      <div id="clock-date"></div>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px;">
-      <div id="user-badge" style="display:none;"></div>
-      <button onclick="if(window.POS_GAPI&&POS_GAPI.getSheetId()){window.open('https://docs.google.com/spreadsheets/d/'+POS_GAPI.getSheetId()+'/edit','_blank')}" 
-        style="background:rgba(39,174,96,.15);border:1px solid rgba(39,174,96,.3);color:#27ae60;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
-        📊 Sheet
-      </button>
-      <button onclick="location.reload()" 
-        style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.7);padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
-        🔄
-      </button>
-    </div>
-    <div class="open-pill">
-      <div class="live-dot"></div>
-      Now Open
-    </div>
+  <div class="top">
+    <div class="brand" id="brand">🍽️ Restaurant</div>
+    <div class="clock"><b id="clk">00:00</b><span id="date"></span></div>
+    <div class="status open" id="status"><i></i><span id="statusTxt">Open</span></div>
   </div>
 
-  <!-- MAIN GRID -->
-  <div class="main-grid">
-    <!-- LEFT: Queue -->
-    <div class="left-col">
-      <div class="now-serving">
-        <div>
-          <div class="ns-tag">🔔 Now Serving</div>
-          <div class="ns-numbers" id="ns-numbers">
-            <div class="ns-none">Waiting for orders…</div>
-          </div>
-        </div>
-        <div class="ns-right">
-          <div class="ns-tables" id="ns-tables"></div>
-          <div class="ns-ready" id="ns-ready">Your order will appear here when ready</div>
-          <div id="ns-online" style="margin-top:8px;font-size:15px;font-weight:800;color:#4c1d95;"></div>
-        </div>
-      </div>
+  <div class="grid">
+    <section class="card ready">
+      <div class="hd"><span>✅ Ready now</span><small id="readyHint">Please collect</small></div>
+      <div class="body" id="readyBody"></div>
+    </section>
 
-      <div class="queue-section">
-        <div class="queue-label">Waiting Queue</div>
-        <div class="queue-rows" id="queue-rows">
-          <div class="queue-empty">
-            <div style="font-size:36px">✅</div>
-            <div>No current queue — please ask staff</div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <section class="card prep">
+      <div class="hd"><span>👨‍🍳 Being prepared</span><small id="prepCount"></small></div>
+      <div class="body" id="prepBody"></div>
+    </section>
 
-    <!-- RIGHT: Menu -->
-    <div class="right-col">
-      <div class="menu-hdr" id="menu-hdr">📋 Today's Menu</div>
-      <div class="cat-tabs" id="cat-tabs"></div>
-      <div class="menu-list" id="menu-list"></div>
-    </div>
+    <section class="card menu">
+      <div class="hd"><span>📋 Menu</span><small id="menuHint"></small></div>
+      <div id="offerBox"></div>
+      <div class="body" id="menuBody"></div>
+      <div class="dots" id="dots"></div>
+    </section>
   </div>
+
+  <div class="ticker"><div class="track" id="track"></div></div>
 </div>
 
-<div id="loading-placeholder" style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:sans-serif;background:#0a0a0a;color:white;">
-  <div style="font-size:40px">📺</div>
-  <div style="font-size:16px;font-weight:700">Lobby Waiting Screen</div>
-  <div style="font-size:13px;color:#888">Connecting to TV queue channel...</div>
-</div>
-
-<!-- TICKER -->
-<div class="ticker-wrap">
-  <div class="ticker-track" id="ticker-track"></div>
-</div>
+<div id="loading"><div style="font-size:44px">📺</div><div style="font-weight:700">Lobby display</div><div style="color:#889;font-size:13px">Connecting…</div></div>
 
 <script>
-var CURRENCY = "Rs.";
-var REST_NAME = (window.POS_SHOP && POS_SHOP.display()) || "Restaurant";
+(function () {
+  "use strict";
+  var CURRENCY = "";
+  var SETTINGS = {};
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
 
-var DEFAULT_MENU = {
-  "Main Course": [
-    { name:"Burger Deluxe",   desc:"Beef, cheddar, sauce, fries",    price:1299 },
-    { name:"Steak",           desc:"8oz ribeye, choice of sides",     price:2499 },
-    { name:"Fish & Chips",    desc:"Beer-battered cod",              price:1399 },
-    { name:"Pasta Carbonara", desc:"Creamy bacon pasta",             price:1199 },
-    { name:"Caesar Salad",   desc:"Romaine, parmesan, croutons",     price:999  },
-  ],
-  "Appetizers": [
-    { name:"Spring Rolls",   desc:"Crispy vegetable rolls",          price:699  },
-    { name:"Chicken Wings",  desc:"Buffalo or BBQ — 6 pieces",       price:899  },
-    { name:"Garlic Bread",   desc:"Toasted with cheese",             price:499  },
-  ],
-  "Beverages": [
-    { name:"Coca Cola",      desc:"Regular or Diet",                  price:299  },
-    { name:"Fresh Juice",    desc:"Orange, apple or berry",           price:499  },
-    { name:"Coffee",         desc:"Espresso, latte, cappuccino",      price:249  },
-    { name:"Water",          desc:"Still or sparkling",               price:0    },
-  ],
-  "Desserts": [
-    { name:"Chocolate Cake", desc:"Rich dark chocolate with cream",   price:699  },
-    { name:"Ice Cream",      desc:"Three scoops, choice of flavour",  price:499  },
-  ],
-};
-
-var menuData   = DEFAULT_MENU;
-var activeCat  = 0;
-var catRotateT = null;
-
-var TICKERS = [
-  "🎉 Ask your waiter about today's specials",
-  "📱 Scan the QR code to order from your table",
-  "⭐ Enjoyed your visit? Leave us a Google review!",
-  "🚗 Free parking available at the rear",
-  "🎂 Celebrating something? Ask about our surprise dessert!",
-  "⏰ Happy Hour — ask staff for today's deals",
-  "🍽️ Private dining and catering available — ask the manager",
-  "✅ All our dishes are freshly prepared to order",
-];
-
-(function buildTicker() {
-  var msgs = TICKERS.concat(TICKERS); 
-  var track = document.getElementById("ticker-track");
-  if (track) {
-    track.innerHTML = msgs.map(function(m) {
-      return '<span class="ticker-item">' + m + '&nbsp;&nbsp;&nbsp;<strong>·</strong>&nbsp;&nbsp;&nbsp;</span>';
-    }).join("");
+  /* ── helpers ─────────────────────────────────────────── */
+  // The ticket number is the last 3 digits of the order's timestamp ID, so it matches the number printed on the receipt
+  // (receipt: ORD-123456, online page: "Your ticket #456") and never changes while the order moves through the queue.
+  function ticketOf(o) {
+    if (window.POS_ORDER && POS_ORDER.ticket) { var t = POS_ORDER.ticket(o); if (t) return t; }
+    var id = String(o.OrderID || o.orderId || "");
+    var m = id.match(/(\d{10,13})/);
+    var digits = m ? m[1] : id.replace(/\D/g, "");
+    return digits ? "#" + digits.slice(-3).padStart(3, "0") : "#—";
   }
-})();
-
-function updateClock() {
-  var now = new Date();
-  var clockTimeEl = document.getElementById("clock-time");
-  var clockDateEl = document.getElementById("clock-date");
-  if (clockTimeEl) {
-    clockTimeEl.textContent = now.toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  function money(n) { n = Number(n) || 0; return n === 0 ? "Free" : (CURRENCY ? CURRENCY + " " : "") + n.toLocaleString(); }
+  function minsAgo(t) { var ms = t ? Date.now() - new Date(t).getTime() : 0; return isFinite(ms) && ms > 0 ? Math.round(ms / 60000) : 0; }
+  function itemCount(o) {
+    try { var a = typeof o.Items === "string" ? JSON.parse(o.Items) : o.Items; return (a || []).reduce(function (s, i) { return s + (Number(i.qty || i.quantity) || 1); }, 0); } catch (e) { return 0; }
   }
-  if (clockDateEl) {
-    clockDateEl.textContent = now.toLocaleDateString("en-GB", {weekday:"long",day:"numeric",month:"long",year:"numeric"});
-  }
-}
-
-function renderMenu() {
-  var cats = Object.keys(menuData);
-  var tabsEl = document.getElementById("cat-tabs");
-  if (tabsEl) {
-    tabsEl.innerHTML = cats.map(function(cat, i) {
-      return '<div class="cat-tab ' + (i === activeCat ? "active" : "") + '" onclick="switchCat(' + i + ')">' + cat + '</div>';
-    }).join("");
+  function describe(o) {                       // what to show on the screen for one order
+    var type = (window.POS_ORDER && POS_ORDER.type(o)) || null;
+    var t = parseInt(o.TableNumber, 10);
+    var who = String(o.CustomerName || "").trim();
+    if (type === "delivery") return { kind: "delivery", what: "🛵 Driver", who: who };
+    if (type === "pickup")   return { kind: "pickup",   what: "🛍️ Online pickup", who: who };
+    if (t === 0)             return { kind: "take",     what: "🥡 Takeaway", who: who };
+    return { kind: "dine", what: "Table " + o.TableNumber, who: who };
   }
 
-  var items = menuData[cats[activeCat]] || [];
-  var listEl = document.getElementById("menu-list");
-  if (!listEl) return;
-  if (items.length === 0) {
-    listEl.innerHTML = '<div style="padding:20px;text-align:center;color:rgba(255,255,255,.3)">No items in this category</div>';
-    return;
+  /* ── clock + open/closed ─────────────────────────────── */
+  function toMin(hhmm) { var m = String(hhmm || "").match(/^(\d{1,2}):(\d{2})/); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+  function tick() {
+    var d = new Date();
+    $("clk").textContent = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    $("date").textContent = d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+    var st = $("status"), txt = $("statusTxt");
+    if (!navigator.onLine || lastFail > 2) { st.className = "status off"; txt.textContent = "Reconnecting…"; return; }
+    var o = toMin(SETTINGS.open_time), c = toMin(SETTINGS.close_time);
+    if (o != null && c != null) {
+      var n = d.getHours() * 60 + d.getMinutes();
+      var open = o <= c ? (n >= o && n < c) : (n >= o || n < c);
+      st.className = "status " + (open ? "open" : "closed"); txt.textContent = open ? "Now open" : "Closed";
+    } else { st.className = "status open"; txt.textContent = "Welcome"; }
   }
-  listEl.innerHTML = items.map(function(item) {
-    var priceStr = item.price === 0
-      ? '<span style="font-size:14px;color:rgba(255,255,255,.4)">Free</span>'
-      : CURRENCY + " " + Number(item.price).toLocaleString();
-    return '<div class="menu-row">' +
-      '<div><div class="mi-name">' + item.name + '</div>' +
-      '<div class="mi-desc">' + item.desc + '</div></div>' +
-      '<div class="mi-price">' + priceStr + '</div>' +
-    '</div>';
-  }).join("");
-}
+  setInterval(tick, 1000);
 
-function switchCat(i) {
-  activeCat = i;
-  clearInterval(catRotateT);
-  startCatRotate();
-  renderMenu();
-}
-
-function startCatRotate() {
-  catRotateT = setInterval(function() {
-    activeCat = (activeCat + 1) % Object.keys(menuData).length;
-    renderMenu();
-  }, 8000);
-}
-
-function renderQueue(queueItems, nowServingItems) {
-  var nsNumbers = document.getElementById("ns-numbers");
-  var nsTables  = document.getElementById("ns-tables");
-  var nsReady   = document.getElementById("ns-ready");
-
-  if (!nsNumbers || !nsTables || !nsReady) return;
-
-  var nsOnline = document.getElementById("ns-online");
-  var dine   = (nowServingItems || []).filter(function(s) { return !s.online; });
-  var onDel  = (nowServingItems || []).filter(function(s) { return s.online === "delivery"; });
-  var onPick = (nowServingItems || []).filter(function(s) { return s.online === "pickup"; });
-
-  if (nowServingItems && nowServingItems.length > 0) {
-    nsNumbers.innerHTML = nowServingItems.map(function(s) {
-      return '<div class="ns-number"' + (s.online ? ' style="background:#7c3aed;color:#fff;padding:0 10px;border-radius:10px;"' : '') + '>' + s.ticket + '</div>';
-    }).join("");
-    nsTables.textContent = dine.map(function(s) {
-      return parseInt(s.table, 10) === 0 ? "🥡 Takeaway" : "Table " + s.table;
-    }).join("  ·  ");
-    nsReady.textContent  = dine.length ? "✅ Please proceed to your table or counter" : "";
-  } else {
-    nsNumbers.innerHTML  = '<div class="ns-none">No orders ready yet</div>';
-    nsTables.textContent = "";
-    nsReady.textContent  = "Your order will appear here when ready";
-  }
-  // Separate group for ONLINE orders (kept apart from dine-in tables)
-  if (nsOnline) {
-    var parts = [];
-    if (onDel.length)  parts.push("🛵 Driver collection: " + onDel.map(function(s) { return s.ticket; }).join(", "));
-    if (onPick.length) parts.push("🛍️ Online pickup: " + onPick.map(function(s) { return s.ticket; }).join(", "));
-    nsOnline.innerHTML = parts.join("<br>");
-  }
-
-  var el = document.getElementById("queue-rows");
-  if (!el) return;
-  if (!queueItems || queueItems.length === 0) {
-    el.innerHTML = '<div class="queue-empty">' +
-      '<div style="font-size:36px">✅</div>' +
-      '<div>No current queue — please ask staff</div>' +
-    '</div>';
-    return;
-  }
-
-  el.innerHTML = queueItems.map(function(q, i) {
-    var cls   = i === 0 ? "next" : i === 1 ? "soon" : "";
-    var pill  = i === 0 ? '<span class="q-pill pill-next">🔔 Up Next</span>'
-              : i === 1 ? '<span class="q-pill pill-soon">⏳ Soon</span>'
-              : '<span class="q-pill pill-wait">Waiting</span>';
-    return '<div class="q-row ' + cls + '">' +
-      '<div class="q-ticket">' + q.ticket + '</div>' +
-      '<div><div class="q-name">' + (q.online ? (q.online === "delivery" ? "🛵 " : "🛍️ ") : "") + q.name + '</div>' +
-         '<div class="q-party">' + (q.online ? (q.online === "delivery" ? "Online · delivery" : "Online · pickup") : (q.party + ' guest' + (q.party !== 1 ? "s" : ""))) + '</div></div>' +
-      '<div class="q-wait"><div class="q-wait-num">~' + q.wait + ' min</div>' +
-         '<div class="q-wait-lbl">est. wait</div></div>' +
-      '<div class="q-badge">' + pill + '</div>' +
-    '</div>';
-  }).join("");
-}
-
-var ticketBase = 40;
-
-async function loadLiveData() {
-  if (!window.POS_GAPI || !window.POS_GAPI.getSheetId || !window.POS_GAPI.getSheetId()) return;
-
-  try {
-    var menuRes = await window.POS_GAPI.Menu.getAll();
-    if (menuRes && menuRes.data && menuRes.data.length > 0) {
-      var built = {};
-      menuRes.data.forEach(function(item) {
-        var cat = item.Category || "Other";
-        if (!built[cat]) built[cat] = [];
-        built[cat].push({
-          name : item.Name,
-          desc : item.Description || "",
-          price: parseFloat(item.Price) || 0,
-        });
+  /* ── READY + PREPARING ───────────────────────────────── */
+  var lastSig = "", seenReady = {}, firstLoad = true, lastFail = 0;
+  var audioCtx = null;
+  function unlockAudio() { try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === "suspended") audioCtx.resume(); } catch (e) {} }
+  ["click", "keydown", "touchstart"].forEach(function (ev) { window.addEventListener(ev, unlockAudio, { once: true }); });
+  function chime() {
+    try {
+      if (!audioCtx || audioCtx.state !== "running") return;
+      [880, 1175].forEach(function (f, i) {
+        var o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime + i * .18;
+        o.type = "sine"; o.frequency.value = f; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.25, t + .02); g.gain.exponentialRampToValueAtTime(.001, t + .5);
+        o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t + .55);
       });
-      if (Object.keys(built).length > 0) {
-        menuData = built;
-        activeCat = 0;
-        renderMenu();
-      }
-    }
-  } catch(e) { console.error("Menu sync fail:", e); }
+    } catch (e) {}
+  }
 
-  try {
-    var ordersRes = await window.POS_GAPI.Orders.getAll();
-    if (ordersRes && ordersRes.data) {
-      var nowServing = ordersRes.data
-        .filter(function(o) { return o.Status === "ready"; })
-        .map(function(o, i) {
-          return { ticket: "A" + (ticketBase + i), table: o.TableNumber,
-                   online: (window.POS_ORDER && POS_ORDER.type(o)) || null };
-        });
-
-      var queue = ordersRes.data
-        .filter(function(o) { return o.Status === "new" || o.Status === "preparing"; })
-        .map(function(o, i) {
-          var elapsed = o.OrderTime
-            ? Math.round((Date.now() - new Date(o.OrderTime).getTime()) / 60000)
-            : 3;
-          var wait = Math.max(5, 25 - elapsed);
-          return {
-            ticket: "A" + (ticketBase + nowServing.length + i),
-            name  : o.CustomerName || (parseInt(o.TableNumber, 10) === 0 ? "Takeaway" : "Table " + o.TableNumber),
-            online: (window.POS_ORDER && POS_ORDER.type(o)) || null,
-            party : 2,
-            wait  : wait,
-          };
-        });
-
-      renderQueue(queue, nowServing);
-    }
-  } catch(e) { console.error("Orders sync fail:", e); }
-}
-
-(function initApp() {
-  updateClock();
-  setInterval(updateClock, 1000);
-  
-  function startAuth() {
-    if (typeof POS_AUTH === "undefined") {
-      console.error("POS_AUTH failed to load");
-      return;
-    }
-    POS_AUTH.init("waiting-display", {
-      onReady: function(session) {
-        var root = document.getElementById("app");
-        if (root) root.style.display = "block";
-        var loader = document.getElementById("loading-placeholder");
-        if (loader) loader.style.display = "none";
-
-        var settings = window.POS_GAPI.getSettings();
-        if (settings) {
-          if (settings.restaurant_name) {
-            REST_NAME = settings.restaurant_name;
-            var nameEl = document.getElementById("rest-name");
-            if (nameEl) nameEl.textContent = "🍽️ " + REST_NAME;
-          }
-          if (settings.currency) {
-            CURRENCY = settings.currency;
-            var menuHdrEl = document.getElementById("menu-hdr");
-            if (menuHdrEl) menuHdrEl.textContent = "📋 Today's Menu — " + CURRENCY;
-          }
-        }
-
-        renderMenu();
-        startCatRotate();
-        loadLiveData();
-        setInterval(loadLiveData, (window.POS_IS_LAN ? 3000 : 8000));
-        if (window.POS_ONLIVE) POS_ONLIVE(loadLiveData, "order.");
-      },
-      onError: function(msg) { console.error("Auth error:", msg); }
+  function renderOrders(list) {
+    var ready = [], prep = [];
+    list.forEach(function (o) {
+      var s = String(o.Status || "").toLowerCase();
+      if (s === "ready") ready.push(o); else if (s === "new" || s === "preparing") prep.push(o);
     });
+    var byTime = function (a, b) { return new Date(a.OrderTime || 0) - new Date(b.OrderTime || 0); };
+    ready.sort(byTime); prep.sort(byTime);
+
+    // skip the redraw (and the flicker) when nothing visible changed
+    var sig = JSON.stringify([ready.map(function (o) { return [o.OrderID, o.TableNumber]; }), prep.map(function (o) { return [o.OrderID, o.Status, minsAgo(o.OrderTime)]; })]);
+    if (sig === lastSig) return;
+    lastSig = sig;
+
+    var fresh = [];
+    ready.forEach(function (o) { var id = o.OrderID; if (!seenReady[id]) { seenReady[id] = Date.now(); if (!firstLoad) fresh.push(id); } });
+    if (fresh.length) chime();
+    firstLoad = false;
+
+    // READY
+    var rb = $("readyBody");
+    $("readyHint").textContent = ready.length ? ready.length + (ready.length === 1 ? " order" : " orders") : "Please collect";
+    if (!ready.length) {
+      rb.innerHTML = '<div class="empty"><em>🍽️</em><div>Your number will appear here<br>when your order is ready</div></div>';
+    } else {
+      var cap = 12, shown = ready.slice(0, cap);
+      rb.innerHTML = '<div class="tickets">' + shown.map(function (o) {
+        var d = describe(o), isFresh = Date.now() - seenReady[o.OrderID] < 15000 && fresh.indexOf(o.OrderID) > -1;
+        return '<div class="tk ' + d.kind + (isFresh ? " fresh" : "") + '"><div class="no">' + esc(ticketOf(o)) + '</div><div class="what">' + esc(d.what) + '</div>' + (d.who ? '<div class="who">' + esc(d.who) + '</div>' : "") + '</div>';
+      }).join("") + '</div>' + (ready.length > cap ? '<div class="more">+' + (ready.length - cap) + ' more ready</div>' : "");
+    }
+
+    // PREPARING
+    var pb = $("prepBody");
+    $("prepCount").textContent = prep.length ? prep.length + " in queue" : "";
+    if (!prep.length) {
+      pb.innerHTML = '<div class="empty"><em>✨</em><div>No orders waiting<br>Order now — we\'re ready!</div></div>';
+    } else {
+      var pc = 9, ps = prep.slice(0, pc);
+      pb.innerHTML = '<div class="rows">' + ps.map(function (o, i) {
+        var d = describe(o), m = minsAgo(o.OrderTime), n = itemCount(o), cooking = String(o.Status).toLowerCase() === "preparing";
+        return '<div class="row' + (i === 0 ? " next" : "") + '"><div class="no">' + esc(ticketOf(o)) + '</div>' +
+          '<div style="min-width:0"><div class="nm">' + esc(d.what) + (d.who ? " · " + esc(d.who) : "") + '</div><div class="sub">' + (n ? n + (n === 1 ? " item" : " items") : "Order received") + '</div></div>' +
+          '<div class="st"><b>' + m + ' min</b><span class="chip ' + (cooking ? "cook" : "recv") + '">' + (cooking ? "Cooking" : "Received") + '</span></div></div>';
+      }).join("") + '</div>' + (prep.length > pc ? '<div class="more">+' + (prep.length - pc) + ' more in the queue</div>' : "");
+    }
   }
 
-  if (typeof POS_AUTH !== "undefined") {
-    startAuth();
-  } else {
-    var tries = 0;
-    var iv = setInterval(function() {
-      tries++;
-      if (typeof POS_AUTH !== "undefined") { clearInterval(iv); startAuth(); }
-      else if (tries > 50) { clearInterval(iv); startAuth(); }
-    }, 100);
+  /* ── MENU (auto-paging through every category) ───────── */
+  var menuPages = [], pageIx = 0, pageTimer = null, menuSig = "";
+  var PER_PAGE = 6;
+  function buildPages(items) {
+    var cats = {}, order = [];
+    items.forEach(function (it) {
+      var avail = it.Available; if (avail === 0 || avail === "0" || String(avail).toLowerCase() === "false" || String(avail).toLowerCase() === "no") return;
+      var c = it.Category || "Menu"; if (!cats[c]) { cats[c] = []; order.push(c); }
+      cats[c].push({ name: it.Name, desc: it.Description || "", price: parseFloat(it.Price) || 0 });
+    });
+    var pages = [];
+    order.forEach(function (c) {
+      var arr = cats[c], np = Math.ceil(arr.length / PER_PAGE);
+      for (var p = 0; p < np; p++) pages.push({ cat: c, part: np > 1 ? (p + 1) + "/" + np : "", items: arr.slice(p * PER_PAGE, (p + 1) * PER_PAGE) });
+    });
+    return pages;
   }
+  function showPage() {
+    var mb = $("menuBody"), dots = $("dots");
+    if (!menuPages.length) { mb.innerHTML = '<div class="empty"><em>📋</em><div>Menu coming soon</div></div>'; dots.innerHTML = ""; return; }
+    if (pageIx >= menuPages.length) pageIx = 0;
+    var pg = menuPages[pageIx];
+    mb.innerHTML = '<div class="fade"><div class="mcat">' + esc(pg.cat) + (pg.part ? ' <small style="font-size:.6em;color:var(--faint)">' + pg.part + '</small>' : "") + '</div>' +
+      pg.items.map(function (i) { return '<div class="mi"><div style="min-width:0"><div class="n">' + esc(i.name) + '</div>' + (i.desc ? '<div class="d">' + esc(i.desc) + '</div>' : "") + '</div><div class="p">' + money(i.price) + '</div></div>'; }).join("") + '</div>';
+    dots.innerHTML = menuPages.length > 1 ? menuPages.map(function (_, i) { return '<i class="' + (i === pageIx ? "on" : "") + '"></i>'; }).join("") : "";
+    $("menuHint").textContent = menuPages.length > 1 ? (pageIx + 1) + " / " + menuPages.length : "";
+  }
+  function startPaging() {
+    clearInterval(pageTimer);
+    pageTimer = setInterval(function () { if (menuPages.length > 1) { pageIx = (pageIx + 1) % menuPages.length; showPage(); } }, 9000);
+  }
+
+  /* ── offer + ticker ──────────────────────────────────── */
+  function offerLive() {
+    var on = String(SETTINGS.offer_active == null ? "true" : SETTINGS.offer_active).toLowerCase() !== "false";
+    var txt = String(SETTINGS.offer_text || "").trim(), title = String(SETTINGS.offer_title || "").trim();
+    if (!on || !(txt || title)) return null;
+    var until = String(SETTINGS.offer_until || "").trim();
+    if (until) { var d = new Date(), today = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); if (today > until) return null; }
+    return { title: title, text: txt };
+  }
+  function renderExtras() {
+    var of = offerLive();
+    $("offerBox").innerHTML = of ? '<div class="offer">🎉 ' + esc(of.title || of.text) + (of.title && of.text ? '<small>' + esc(of.text) + '</small>' : "") + '</div>' : "";
+    var msgs = [];
+    if (of) msgs.push("<b>🎉 " + esc(of.title || of.text) + "</b>" + (of.title && of.text ? " — " + esc(of.text) : ""));
+    msgs.push("🔔 Watch for your ticket number under <b>READY NOW</b>");
+    msgs.push("🧾 Your ticket number is on your receipt");
+    msgs.push("📱 Ordered online? Show your ticket number at the counter");
+    if (SETTINGS.restaurant_address) msgs.push("📍 " + esc(SETTINGS.restaurant_address));
+    if (SETTINGS.restaurant_phone) msgs.push("☎️ " + esc(SETTINGS.restaurant_phone));
+    var html = msgs.map(function (m) { return "<span>" + m + "</span>"; }).join("");
+    $("track").innerHTML = html + html;                 // doubled so the loop is seamless
+    $("track").style.animationDuration = Math.max(40, msgs.join("").length * .35) + "s";
+  }
+
+  /* ── data loading ────────────────────────────────────── */
+  var menuLoadedAt = 0;
+  async function loadMenu(force) {
+    if (!force && Date.now() - menuLoadedAt < 5 * 60 * 1000) return;     // the menu rarely changes: refresh every 5 minutes, not every poll
+    menuLoadedAt = Date.now();
+    try {
+      var r = await POS_GAPI.Menu.getAll();
+      if (r && r.data && r.data.length) {
+        var sig = JSON.stringify(r.data.map(function (i) { return [i.Name, i.Price, i.Category, i.Available, i.Description]; }));
+        if (sig !== menuSig) { menuSig = sig; menuPages = buildPages(r.data); pageIx = 0; showPage(); }
+      }
+    } catch (e) { console.error("menu:", e); }
+  }
+  async function loadOrders() {
+    try {
+      var r = await POS_GAPI.Orders.getAll();
+      if (r && r.data) { renderOrders(r.data); lastFail = 0; }
+    } catch (e) { lastFail++; console.error("orders:", e); }
+  }
+  var busy = false;
+  async function loadLive() {
+    if (busy || !window.POS_GAPI || !POS_GAPI.getSheetId || !POS_GAPI.getSheetId()) return;
+    busy = true;
+    try { await loadOrders(); await loadMenu(false); } finally { busy = false; }
+  }
+
+  function boot() {
+    $("app").style.display = "flex"; $("loading").style.display = "none";
+    try { SETTINGS = (POS_GAPI.getSettings && POS_GAPI.getSettings()) || {}; } catch (e) { SETTINGS = {}; }
+    var name = SETTINGS.restaurant_name || (window.POS_SHOP && POS_SHOP.display()) || "Restaurant";
+    $("brand").textContent = "🍽️ " + name; document.title = name + " — Waiting display";
+    if (SETTINGS.currency) CURRENCY = SETTINGS.currency;
+    renderExtras(); tick(); showPage(); startPaging();
+    loadMenu(true).then(loadLive);
+    setInterval(loadLive, window.POS_IS_LAN ? 3000 : 8000);
+    setInterval(function () { try { SETTINGS = POS_GAPI.getSettings() || SETTINGS; renderExtras(); } catch (e) {} }, 60000);   // picks up offer / hours changes
+    if (window.POS_ONLIVE) POS_ONLIVE(loadLive, "order.");
+    // quick hands-off recovery: if the screen has been up for a day, reload once at 4am
+    setInterval(function () { var d = new Date(); if (d.getHours() === 4 && d.getMinutes() === 0) location.reload(); }, 60000);
+  }
+
+  function start() {
+    if (typeof POS_AUTH === "undefined") { console.error("POS_AUTH failed to load"); return; }
+    POS_AUTH.init("waiting-display", { onReady: boot, onError: function (m) { console.error("Auth error:", m); } });
+  }
+  if (typeof POS_AUTH !== "undefined") start();
+  else { var tries = 0, iv = setInterval(function () { if (typeof POS_AUTH !== "undefined" || ++tries > 50) { clearInterval(iv); start(); } }, 100); }
 })();
 </script>
 </body>
