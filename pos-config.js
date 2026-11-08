@@ -1254,6 +1254,13 @@ window.POS_ONLIVE = function (fn, filter) {
 // Online orders (Customer App) carry WaiterName "Online Delivery" / "Online Pickup".
 // ============================================================
 window.POS_ORDER = {
+  // Short number shown on receipts, the lobby screen and the customer's order page: last 3 digits of the order's timestamp ID.
+  ticket(o) {
+    const id = String((o && (o.OrderID || o.orderId)) || "");
+    const m = id.match(/(\d{10,13})/);
+    const d = m ? m[1] : id.replace(/\D/g, "");
+    return d ? "#" + d.slice(-3).padStart(3, "0") : "";
+  },
   isOnline(o) { return /^online/i.test(String((o && (o.WaiterName || o.waiterName)) || "")); },
   type(o) {                                   // "delivery" | "pickup" | null (not online)
     if (!this.isOnline(o)) return null;
@@ -1334,7 +1341,9 @@ window.POS_SCAN = (function () {
 
     (async function () {
       if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        say("Camera is blocked on this address. Open the app from the secure https:// address shown in the control panel (see “Camera scanner” there). You can still type the phone or member ID below.", true); return;
+        say("Camera is blocked on this address (it starts with http://).", true);
+        if (location.protocol === "http:") { var sb = document.createElement("button"); sb.textContent = "🔒 Open secure version (camera)"; sb.style.cssText = "margin-top:8px;padding:10px 16px;border:none;border-radius:10px;background:#2e7d32;color:#fff;font-size:15px;font-weight:700"; sb.onclick = function () { location.href = "https://" + location.hostname + ":3443" + location.pathname; }; msg.appendChild(document.createElement("br")); msg.appendChild(sb); }
+        return;
       }
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
