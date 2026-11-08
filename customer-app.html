@@ -1106,6 +1106,8 @@
                             <div className="tracking-title">
                                 {cancelled ? "Order Cancelled" : isDelivered ? "Order Complete!" : isReady ? (omode === "delivery" ? "On The Way!" : "Ready for Pickup!") : "Preparing Your Order"}
                             </div>
+                            <div style={{ fontSize: 13, color: "#888", marginTop: 6 }}>Your ticket number</div>
+                            <div style={{ fontSize: 44, fontWeight: 900, letterSpacing: 2, lineHeight: 1.1 }}>{(() => { const m = String(placedOrder.orderId).match(/(\d{10,13})/); const d = m ? m[1] : String(placedOrder.orderId).replace(/\D/g, ""); return d ? "#" + d.slice(-3).padStart(3, "0") : ""; })()}</div>
                             <div className="tracking-sub">Order #{placedOrder.orderId}</div>
                             <div style={{ marginTop: '12px' }}>
                                 <span className="live-badge"><span className="live-dot"></span> Live Kitchen Sync</span>
