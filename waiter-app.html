@@ -558,6 +558,7 @@
                 <div style="text-align:center; margin-bottom:10px;">
                     <div style="font-size:16px; font-weight:bold;">${POS_SHOP.upper()}</div>
                     <div style="font-size:10px; margin-top:4px;">Date: ${new Date().toLocaleString()}</div>
+                    ${(window.POS_ORDER && POS_ORDER.ticket(orderData)) ? `<div style="font-size:22px;font-weight:900;margin:4px 0;">Ticket ${POS_ORDER.ticket(orderData)}</div>` : ""}
                     <div style="font-size:10px;">Order: #${orderData.OrderID || orderData.orderId} · ${parseInt(orderData.TableNumber) > 0 ? 'Table ' + orderData.TableNumber : 'Takeaway / Counter'}</div>
                     <div style="font-size:10px;">Server: ${orderData.WaiterName || orderData.waiter || 'Staff'}</div>
                 </div>
@@ -1484,12 +1485,15 @@
                         memberId    : member ? member.MemberID : ""
                     };
 
+                    let realId = generatedId;
                     if (api.Orders && typeof api.Orders.create === "function") {
-                        await api.Orders.create(newOrder);
+                        const created = await api.Orders.create(newOrder);
+                        if (created && created.data && created.data.orderId) realId = created.data.orderId;   // the saved ID, so the receipt matches the lobby screen
                     }
+                    newOrder.orderId = realId;
 
                     setCompletedPaymentModal({
-                        orderId: generatedId,
+                        orderId: realId,
                         table: "Takeaway",
                         total,
                         tendered,
