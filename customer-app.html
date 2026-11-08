@@ -972,19 +972,65 @@
         const isDoneStatus = ["delivered", "completed", "closed"].includes(orderStatus);
         const activeOrder = !!placedOrder && !isDoneStatus && orderStatus !== "cancelled";
         const nav = <BottomNav screen={screen} setScreen={setScreen} activeOrder={activeOrder} />;
+        // Header (shop name, account, delivery/pickup, notices) stays on top of every tab
+        const headBlock = (
+            <React.Fragment>
+                <div className="hero">
+                    <div className="hero-top">
+                        <div className="hero-logo">🍽️ {shopName || "Order Online"}</div>
+                        {googleClientId && <button className="mode-btn" style={{ marginRight: 8, display: "flex", alignItems: "center", gap: 6 }} onClick={() => openAcct("signin")}>{acct && acct.member ? <React.Fragment><Avatar acct={acct} size={24} /> {(acct.member.name || "").split(" ")[0]}</React.Fragment> : "👤 Sign in / Register"}</button>}
+                        <div className="hero-mode-toggle">
+                            <button className={`mode-btn ${mode === 'delivery' ? 'active' : ''}`} disabled={!deliveryOn} title={deliveryOn ? "" : "Delivery is off right now"} onClick={() => setMode('delivery')}>🚗 Delivery</button>
+                            <button className={`mode-btn ${mode === 'pickup' ? 'active' : ''}`} onClick={() => setMode('pickup')}>🏃 Pickup</button>
+                        </div>
+                    </div>
+                    <div className="hero-title">Order Fresh Food</div>
+                    <div className="hero-sub">Hot & delicious, {mode === 'delivery' ? 'delivered to your door' : 'ready for collection'}</div>
+                    <div className="hero-badges">
+                        <span className="hero-badge">⏱ 20-30 min</span>
+                        {mode === "delivery" && <span className="hero-badge">🚗 {currency}{deliveryFeeCfg} delivery</span>}
+                        {!deliveryOn && <span className="hero-badge">🚫 Delivery off — pickup only</span>}
+                        {hours.openTime && hours.closeTime && <span className="hero-badge">🕒 {fmtTime(hours.openTime)} – {fmtTime(hours.closeTime)}</span>}
+                        <span className="hero-badge">⭐ 4.9 (450+ reviews)</span>
+                    </div>
+                </div>
+
+                {closed && (
+                    <div className="closed-card">
+                        <div className="cc-ico">🔒</div>
+                        <div>
+                            <div className="cc-title">We're closed right now</div>
+                            <div className="cc-text">{hours.openTime ? "Orders open at " + fmtTime(hours.openTime) + (hours.closeTime ? " and close at " + fmtTime(hours.closeTime) : "") + "." : "Please check back later."} You can still browse the menu.</div>
+                        </div>
+                    </div>
+                )}
+
+                {offer && offerHidden !== (offer.title + "|" + offer.text) && (
+                    <div className={"offer-card" + (offer.kind === "notice" ? " notice" : "")}>
+                        <div className="oc-ico">{offer.kind === "notice" ? "📢" : "🎉"}</div>
+                        <div>
+                            {offer.title && <div className="oc-title">{offer.title}</div>}
+                            {offer.text && <div className="oc-text">{offer.text}</div>}
+                        </div>
+                        <button className="oc-close" aria-label="Dismiss" onClick={() => { const k = offer.title + "|" + offer.text; setOfferHidden(k); try { sessionStorage.setItem("gt_offer_hidden", k); } catch (e) {} }}>×</button>
+                    </div>
+                )}
+            </React.Fragment>
+        );
         const accountModal = showAcct ? <AccountModal clientId={googleClientId} acct={acct} setAcct={setAcct} startTab={acctTab} onClose={() => setShowAcct(false)} /> : null;
 
         if (screen === "qr") {
-            return <div className="app">{accountModal}<QrScreen acct={acct} onOpen={openAcct} />{nav}</div>;
+            return <div className="app">{accountModal}{headBlock}<QrScreen acct={acct} onOpen={openAcct} />{nav}</div>;
         }
         if (screen === "recent") {
-            return <div className="app">{accountModal}<RecentScreen acct={acct} currency={currency} onOpen={openAcct} localOrders={localOrders} />{nav}</div>;
+            return <div className="app">{accountModal}{headBlock}<RecentScreen acct={acct} currency={currency} onOpen={openAcct} localOrders={localOrders} />{nav}</div>;
         }
         if (screen === "tracking") {
             if (!placedOrder) {
                 return (
                     <div className="app">
-                        <div style={{ padding: "60px 24px", textAlign: "center" }}>
+                        {headBlock}
+                        <div style={{ padding: "40px 24px", textAlign: "center" }}>
                             <div style={{ fontSize: 56 }}>📦</div>
                             <h2>No active order</h2>
                             <p style={{ color: "#777" }}>When you place an order, you can follow it here.</p>
@@ -1012,6 +1058,7 @@
             return (
                 <div className="app">
                     {accountModal}
+                    {headBlock}
                     <div className="tracking-panel">
                         <div className="tracking-header">
                             <div className="tracking-icon">{cancelled ? "❌" : isDelivered ? "🎉" : isReady ? (omode === "delivery" ? "🚗" : "📦") : "👨‍🍳"}</div>
@@ -1133,46 +1180,7 @@
         return (
             <div className="app">
                 {accountModal}
-                <div className="hero">
-                    <div className="hero-top">
-                        <div className="hero-logo">🍽️ {shopName || "Order Online"}</div>
-                        {googleClientId && <button className="mode-btn" style={{ marginRight: 8, display: "flex", alignItems: "center", gap: 6 }} onClick={() => openAcct("signin")}>{acct && acct.member ? <React.Fragment><Avatar acct={acct} size={24} /> {(acct.member.name || "").split(" ")[0]}</React.Fragment> : "👤 Sign in / Register"}</button>}
-                        <div className="hero-mode-toggle">
-                            <button className={`mode-btn ${mode === 'delivery' ? 'active' : ''}`} disabled={!deliveryOn} title={deliveryOn ? "" : "Delivery is off right now"} onClick={() => setMode('delivery')}>🚗 Delivery</button>
-                            <button className={`mode-btn ${mode === 'pickup' ? 'active' : ''}`} onClick={() => setMode('pickup')}>🏃 Pickup</button>
-                        </div>
-                    </div>
-                    <div className="hero-title">Order Fresh Food</div>
-                    <div className="hero-sub">Hot & delicious, {mode === 'delivery' ? 'delivered to your door' : 'ready for collection'}</div>
-                    <div className="hero-badges">
-                        <span className="hero-badge">⏱ 20-30 min</span>
-                        {mode === "delivery" && <span className="hero-badge">🚗 {currency}{deliveryFeeCfg} delivery</span>}
-                        {!deliveryOn && <span className="hero-badge">🚫 Delivery off — pickup only</span>}
-                        {hours.openTime && hours.closeTime && <span className="hero-badge">🕒 {fmtTime(hours.openTime)} – {fmtTime(hours.closeTime)}</span>}
-                        <span className="hero-badge">⭐ 4.9 (450+ reviews)</span>
-                    </div>
-                </div>
-
-                {closed && (
-                    <div className="closed-card">
-                        <div className="cc-ico">🔒</div>
-                        <div>
-                            <div className="cc-title">We're closed right now</div>
-                            <div className="cc-text">{hours.openTime ? "Orders open at " + fmtTime(hours.openTime) + (hours.closeTime ? " and close at " + fmtTime(hours.closeTime) : "") + "." : "Please check back later."} You can still browse the menu.</div>
-                        </div>
-                    </div>
-                )}
-
-                {offer && offerHidden !== (offer.title + "|" + offer.text) && (
-                    <div className={"offer-card" + (offer.kind === "notice" ? " notice" : "")}>
-                        <div className="oc-ico">{offer.kind === "notice" ? "📢" : "🎉"}</div>
-                        <div>
-                            {offer.title && <div className="oc-title">{offer.title}</div>}
-                            {offer.text && <div className="oc-text">{offer.text}</div>}
-                        </div>
-                        <button className="oc-close" aria-label="Dismiss" onClick={() => { const k = offer.title + "|" + offer.text; setOfferHidden(k); try { sessionStorage.setItem("gt_offer_hidden", k); } catch (e) {} }}>×</button>
-                    </div>
-                )}
+                {headBlock}
 
                 <div className="search-bar">
                     <span className="search-icon">🔍</span>
