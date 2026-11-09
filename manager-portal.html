@@ -297,170 +297,248 @@
         { item: "Parmesan", unit: "kg", qty: 0.5, reorder: 1, status: "critical" },
     ];
 
-    function Dashboard() {
-        const [ordersList, setOrdersList] = useState([]);
-        const [tablesList, setTablesList] = useState([]);
-        const [currency, setCurrency] = useState("Rs.");
+    // ── Dashboard: real shop numbers for a chosen period (Today / 7 days / 30 days) ──
+    const dkey = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");   // LOCAL date (the old code used UTC, which is wrong near midnight in Sri Lanka)
+    const DONE_ST = ["closed", "paid"];
+    const DEAD_ST = ["cancelled", "canceled", "void", "refunded"];
+    const OPEN_ST = ["new", "preparing", "ready"];
 
-        const loadStats = async () => {
+    function Dashboard() {
+        const [orders, setOrders] = useState([]);
+        const [tables, setTables] = useState([]);
+        const [stock, setStock] = useState([]);
+        const [drivers, setDrivers] = useState([]);
+        const [currency, setCurrency] = useState("");
+        const [period, setPeriod] = useState("today");
+        const [updated, setUpdated] = useState(null);
+
+        const load = async () => {
             if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
             try {
-                const settings = window.POS_GAPI.getSettings();
-                if (settings && settings.currency) setCurrency(settings.currency + " ");
-
-                const [ordRes, tblRes] = await Promise.all([
-                    window.POS_GAPI.getRows("Orders"),
-                    window.POS_GAPI.getRows("Tables")
-                ]);
-                if (ordRes) setOrdersList(ordRes.filter(o => o !== null && o !== undefined));
-                if (tblRes) setTablesList(tblRes.filter(t => t !== null && t !== undefined));
-            } catch(e) { console.error("Dashboard stats sync error:", e); }
+                const s = window.POS_GAPI.getSettings();
+                if (s && s.currency) setCurrency(s.currency + " ");
+                const g = window.POS_GAPI;
+                const [o, t] = await Promise.all([g.getRows("Orders"), g.getRows("Tables")]);
+                if (o) setOrders(o.filter(Boolean));
+                if (t) setTables(t.filter(Boolean));
+                setUpdated(new Date());
+                // slower-moving extras: never let a missing tab break the dashboard
+                g.getRows("Inventory").then(r => r && setStock(r.filter(Boolean))).catch(() => {});
+                g.getRows("Drivers").then(r => r && setDrivers(r.filter(Boolean))).catch(() => {});
+            } catch (e) { console.error("Dashboard stats sync error:", e); }
         };
+        useEffect(() => { load(); const iv = setInterval(load, 8000); return () => clearInterval(iv); }, []);
 
-        useEffect(() => {
-            loadStats();
-            const iv = setInterval(loadStats, 6000);
-            return () => clearInterval(iv);
-        }, []);
+        const fmt = (n) => currency + Math.round(n || 0).toLocaleString();
+        const days = period === "today" ? 1 : period === "7d" ? 7 : 30;
+        const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - (days - 1));
+        const startMs = start.getTime();
 
-        const todayStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-        const todayOrders = ordersList.filter(o => o.OrderTime && o.OrderTime.startsWith(todayStr));
-        const todayRevenue = todayOrders.reduce((sum, o) => sum + (parseFloat(o.Total) || 0), 0);
-        const todayCount = todayOrders.length;
-        const avgOrderValue = todayCount > 0 ? (todayRevenue / todayCount) : 0;
+        const typeOf = (o) => {
+            const ty = window.POS_ORDER && POS_ORDER.type(o);
+            if (ty === "delivery") return "delivery";
+            if (ty === "pickup") return "pickup";
+            return parseInt(o.TableNumber, 10) === 0 ? "takeaway" : "dine";
+        };
+        const total = (o) => parseFloat(o.Total) || 0;
+        const status = (o) => String(o.Status || "").toLowerCase();
 
-        const occupiedTablesCount = tablesList.filter(t => t.Status === "occupied" || t.Status === "delivered" || t.Status === "paid").length;
-        const totalTablesCount = tablesList.length || 12;
+        const inPeriod = orders.filter(o => { const t = new Date(o.OrderTime).getTime(); return isFinite(t) && t >= startMs && !DEAD_ST.includes(status(o)); });
+        const sales = inPeriod.reduce((a, o) => a + total(o), 0);
+        const collected = inPeriod.filter(o => DONE_ST.includes(status(o))).reduce((a, o) => a + total(o), 0);
+        const count = inPeriod.length;
+        const avg = count ? sales / count : 0;
+        const openNow = orders.filter(o => OPEN_ST.includes(status(o))).length;
+        const occupied = tables.filter(t => ["occupied", "delivered", "paid"].includes(String(t.Status || "").toLowerCase())).length;
+        const tableCount = tables.length || 0;
 
-        const getWeeklyRevenue = () => {
-            const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-            const revenueByDay = { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 };
-            
-            ordersList.forEach(o => {
-                if (!o.OrderTime) return;
-                const date = new Date(o.OrderTime);
-                if (isNaN(date.getTime())) return;
-                const dayName = days[(date.getDay() + 6) % 7];
-                if (dayName) {
-                    revenueByDay[dayName] += (parseFloat(o.Total) || 0);
-                }
+        // previous period of the same length, for the ▲▼ comparison
+        const prevStart = startMs - days * 86400000;
+        const prevSales = orders.filter(o => { const t = new Date(o.OrderTime).getTime(); return isFinite(t) && t >= prevStart && t < startMs && !DEAD_ST.includes(status(o)); }).reduce((a, o) => a + total(o), 0);
+        const delta = prevSales > 0 ? Math.round(((sales - prevSales) / prevSales) * 100) : null;
+
+        // chart: by hour for today, by day for 7/30 days
+        let bars = [];
+        if (days === 1) {
+            const h = Array.from({ length: 24 }, () => 0);
+            inPeriod.forEach(o => { h[new Date(o.OrderTime).getHours()] += total(o); });
+            let a = h.findIndex(v => v > 0), b = 23 - [...h].reverse().findIndex(v => v > 0);
+            if (a < 0) { a = 8; b = 22; } a = Math.max(0, Math.min(a, 9)); b = Math.min(23, Math.max(b, 20));
+            for (let i = a; i <= b; i++) bars.push({ label: (i % 12 || 12) + (i < 12 ? "a" : "p"), v: h[i] });
+        } else {
+            const m = {}; for (let i = 0; i < days; i++) { const d = new Date(startMs); d.setDate(d.getDate() + i); m[dkey(d)] = { d, v: 0 }; }
+            inPeriod.forEach(o => { const k = dkey(new Date(o.OrderTime)); if (m[k]) m[k].v += total(o); });
+            bars = Object.values(m).map(x => ({ label: days <= 7 ? x.d.toLocaleDateString("en-GB", { weekday: "short" }) : String(x.d.getDate()), v: x.v, today: dkey(x.d) === dkey(new Date()) }));
+        }
+        const maxBar = Math.max(...bars.map(b => b.v), 1);
+
+        // channels
+        const chDefs = [["dine", "🍽️ Dine-in", "#667eea"], ["takeaway", "🥡 Takeaway", "#f39c12"], ["pickup", "🛍️ Online pickup", "#9b59b6"], ["delivery", "🛵 Online delivery", "#27ae60"]];
+        const ch = {}; chDefs.forEach(([k]) => ch[k] = { n: 0, v: 0 });
+        inPeriod.forEach(o => { const c = ch[typeOf(o)]; c.n++; c.v += total(o); });
+
+        // items (quantity + revenue)
+        const itemMap = {};
+        inPeriod.forEach(o => {
+            let arr = []; try { arr = typeof o.Items === "string" ? JSON.parse(o.Items) : o.Items; } catch (e) {}
+            (Array.isArray(arr) ? arr : []).forEach(it => {
+                const name = it.name || it.Name; if (!name) return;
+                const q = parseInt(it.qty || it.quantity, 10) || 1, p = parseFloat(it.price || it.Price) || 0;
+                const r = itemMap[name] || (itemMap[name] = { name, q: 0, rev: 0 }); r.q += q; r.rev += q * p;
             });
-            
-            return days.map(d => ({ day: d, revenue: parseFloat(revenueByDay[d].toFixed(0)) }));
+        });
+        const topItems = Object.values(itemMap).sort((a, b) => b.q - a.q).slice(0, 6);
+        const maxQ = Math.max(...topItems.map(i => i.q), 1);
+
+        // busiest hours
+        const hours = Array.from({ length: 24 }, () => 0); inPeriod.forEach(o => { hours[new Date(o.OrderTime).getHours()]++; });
+        const busiest = hours.map((n, h) => ({ n, h })).filter(x => x.n > 0).sort((a, b) => b.n - a.n).slice(0, 3);
+        const hr = (h) => (h % 12 || 12) + (h < 12 ? " AM" : " PM");
+
+        // staff (dine-in + till), loyalty
+        const staffMap = {};
+        inPeriod.forEach(o => { if (typeOf(o) === "pickup" || typeOf(o) === "delivery") return; const w = String(o.WaiterName || "—").replace(/\s*\(Till\)\s*$/i, " (Till)"); const r = staffMap[w] || (staffMap[w] = { w, n: 0, v: 0 }); r.n++; r.v += total(o); });
+        const staff = Object.values(staffMap).sort((a, b) => b.v - a.v).slice(0, 6);
+        const withMember = inPeriod.filter(o => o.MemberID).length;
+        const memberSales = inPeriod.filter(o => o.MemberID).reduce((a, o) => a + total(o), 0);
+
+        const lowStock = stock.filter(i => (parseFloat(i.Quantity) || 0) <= (parseFloat(i.ReorderLevel) || 0)).sort((a, b) => (parseFloat(a.Quantity) || 0) - (parseFloat(b.Quantity) || 0));
+        const rated = drivers.filter(d => parseFloat(d.Rating) > 0).sort((a, b) => parseFloat(b.Rating) - parseFloat(a.Rating));
+
+        const recent = [...orders].filter(o => o.OrderTime).sort((a, b) => new Date(b.OrderTime) - new Date(a.OrderTime)).slice(0, 8);
+
+        const exportCsv = () => {
+            const q = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+            const rows = [["OrderID", "Time", "Type", "Table", "Server", "Customer", "Status", "Total", "MemberID"]].concat(
+                inPeriod.sort((a, b) => new Date(a.OrderTime) - new Date(b.OrderTime)).map(o => [o.OrderID, o.OrderTime, typeOf(o), o.TableNumber, o.WaiterName, o.CustomerName, o.Status, total(o), o.MemberID || ""]));
+            const blob = new Blob(["﻿" + rows.map(r => r.map(q).join(",")).join("\n")], { type: "text/csv" });
+            const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "sales-" + period + "-" + dkey(new Date()) + ".csv"; a.click();
         };
 
-        const weeklyData = getWeeklyRevenue();
-        const maxRevenue = Math.max(...weeklyData.map(d => d.revenue), 1);
-
-        const getTopItems = () => {
-            const itemCounts = {};
-            ordersList.forEach(o => {
-                let itemsArray = [];
-                try { itemsArray = JSON.parse(o.Items); } catch(e){}
-                if (Array.isArray(itemsArray)) {
-                    itemsArray.forEach(it => {
-                        const name = it.name || it.Name;
-                        if (name) {
-                            itemCounts[name] = (itemCounts[name] || 0) + (parseInt(it.qty || it.quantity) || 1);
-                        }
-                    });
-                }
-            });
-            return Object.entries(itemCounts)
-                .map(([name, count]) => ({ name, count }))
-                .sort((a,b) => b.count - a.count)
-                .slice(0, 5);
-        };
-
-        const topItemsList = getTopItems();
-        const maxItemCount = Math.max(...topItemsList.map(i => i.count), 1);
+        const card = { background: "white", borderRadius: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", padding: 20 };
+        const h3 = { fontSize: 16, fontWeight: 700, marginBottom: 14 };
+        const grid = (cols) => ({ display: "grid", gridTemplateColumns: cols, gap: 16, marginBottom: 20 });
+        const pill = (k, label) => <button key={k} onClick={() => setPeriod(k)} style={{ padding: "8px 18px", border: "none", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", background: period === k ? "#667eea" : "#eef0fb", color: period === k ? "#fff" : "#555" }}>{label}</button>;
+        const badgeFor = (s) => ["closed", "paid", "served", "delivered"].includes(s) ? "badge-green" : s === "ready" ? "badge-blue" : ["preparing", "new"].includes(s) ? "badge-yellow" : DEAD_ST.includes(s) ? "badge-red" : "badge-gray";
+        const labelFor = (o) => { const t = typeOf(o); return t === "delivery" ? "🛵 Delivery" : t === "pickup" ? "🛍️ Pickup" : t === "takeaway" ? "🥡 Takeaway" : "Table " + o.TableNumber; };
 
         return (
             <>
-                <div className="stats-grid">
-                    <div className="stat-card">
-                        <div className="stat-card-label">Today's Revenue</div>
-                        <div className="stat-card-value">{currency}{todayRevenue.toLocaleString()}</div>
-                        <div className="stat-card-change change-up">↑ Live Sync</div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-card-label">Orders Today</div>
-                        <div className="stat-card-value">{todayCount}</div>
-                        <div className="stat-card-change change-up">↑ Live Sync</div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-card-label">Avg Order Value</div>
-                        <div className="stat-card-value">{currency}{avgOrderValue.toFixed(2)}</div>
-                        <div className="stat-card-change change-up">Live calculation</div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-card-label">Tables Occupied</div>
-                        <div className="stat-card-value">{occupiedTablesCount} / {totalTablesCount}</div>
-                        <div className="stat-card-change change-up">{Math.round((occupiedTablesCount/totalTablesCount)*100)}% occupancy</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+                    <div style={{ display: "flex", gap: 8 }}>{pill("today", "Today")}{pill("7d", "Last 7 days")}{pill("30d", "Last 30 days")}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <span style={{ fontSize: 12, color: "#999" }}>{updated ? "Updated " + updated.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "Loading…"}</span>
+                        <button onClick={exportCsv} style={{ padding: "8px 14px", border: "1px solid #d9dcf5", background: "#fff", borderRadius: 8, fontWeight: 600, cursor: "pointer", fontSize: 13 }}>⬇ Export CSV</button>
                     </div>
                 </div>
 
-                <div className="charts-grid">
-                    <div className="chart-card">
-                        <div className="chart-title">Weekly Revenue</div>
-                        <div className="bar-chart">
-                            {weeklyData.map((d, i) => (
-                                <div key={i} className="bar-group">
-                                    <div className="bar-value">{currency}{d.revenue}</div>
-                                    <div className="bar" style={{ height: `${(d.revenue / maxRevenue) * 110}px` }}/>
-                                    <div className="bar-label">{d.day}</div>
+                <div className="stats-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))" }}>
+                    <div className="stat-card"><div className="stat-card-label">Sales</div><div className="stat-card-value">{fmt(sales)}</div>
+                        <div className="stat-card-change" style={{ color: delta == null ? "#888" : delta >= 0 ? "#27ae60" : "#e74c3c" }}>{delta == null ? "No earlier data to compare" : (delta >= 0 ? "▲ " : "▼ ") + Math.abs(delta) + "% vs previous " + (days === 1 ? "day" : days + " days")}</div></div>
+                    <div className="stat-card"><div className="stat-card-label">Money collected</div><div className="stat-card-value">{fmt(collected)}</div>
+                        <div className="stat-card-change" style={{ color: "#888" }}>{sales > 0 ? Math.round((collected / sales) * 100) + "% of sales paid & closed" : "—"}</div></div>
+                    <div className="stat-card"><div className="stat-card-label">Orders</div><div className="stat-card-value">{count}</div>
+                        <div className="stat-card-change" style={{ color: "#888" }}>Avg {fmt(avg)} per order</div></div>
+                    <div className="stat-card"><div className="stat-card-label">Open right now</div><div className="stat-card-value">{openNow}</div>
+                        <div className="stat-card-change" style={{ color: openNow ? "#f39c12" : "#888" }}>{openNow ? "in kitchen / waiting" : "all caught up"}</div></div>
+                    <div className="stat-card"><div className="stat-card-label">Tables occupied</div><div className="stat-card-value">{occupied}{tableCount ? " / " + tableCount : ""}</div>
+                        <div className="stat-card-change" style={{ color: "#888" }}>{tableCount ? Math.round((occupied / tableCount) * 100) + "% occupancy" : "no tables set up"}</div></div>
+                </div>
+
+                <div style={grid("2fr 1fr")}>
+                    <div style={card}>
+                        <div style={h3}>{days === 1 ? "Sales by hour" : "Sales per day"}</div>
+                        <div className="bar-chart" style={{ height: 170, gap: days > 7 ? 3 : 8 }}>
+                            {bars.map((b, i) => (
+                                <div key={i} className="bar-group" title={b.label + ": " + fmt(b.v)}>
+                                    <div className="bar-value">{bars.length <= 12 && b.v > 0 ? fmt(b.v) : ""}</div>
+                                    <div className="bar" style={{ height: Math.max(3, (b.v / maxBar) * 120), background: b.today ? "#f39c12" : "#667eea" }} />
+                                    <div className="bar-label" style={{ fontSize: days > 7 ? 9 : 11 }}>{b.label}</div>
                                 </div>
                             ))}
                         </div>
+                        {busiest.length > 0 && <div style={{ marginTop: 14, fontSize: 13, color: "#666" }}>🔥 Busiest: {busiest.map(x => hr(x.h) + " (" + x.n + ")").join("  ·  ")}</div>}
                     </div>
-                    <div className="chart-card">
-                        <div className="chart-title">Top Selling Items</div>
-                        {topItemsList.length === 0 ? (
-                            <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>No sales data available yet</div>
-                        ) : topItemsList.map((item, i) => (
-                            <div key={i} className="top-item-row">
-                                <div className="top-item-name">{item.name}</div>
-                                <div className="top-item-bar">
-                                    <div className="top-item-fill" style={{ width: `${(item.count / maxItemCount) * 100}%` }}/>
+                    <div style={card}>
+                        <div style={h3}>Where sales come from</div>
+                        {sales === 0 ? <div style={{ color: "#999", padding: "30px 0", textAlign: "center" }}>No sales in this period</div> : (
+                            <>
+                                <div style={{ display: "flex", height: 14, borderRadius: 7, overflow: "hidden", marginBottom: 14 }}>
+                                    {chDefs.map(([k, , col]) => ch[k].v > 0 ? <div key={k} style={{ width: (ch[k].v / sales) * 100 + "%", background: col }} /> : null)}
                                 </div>
-                                <div className="top-item-count">{item.count}</div>
+                                {chDefs.map(([k, label, col]) => (
+                                    <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", fontSize: 14, borderBottom: "1px solid #f5f5f5" }}>
+                                        <span><i style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: col, marginRight: 8 }}></i>{label} <span style={{ color: "#999" }}>({ch[k].n})</span></span>
+                                        <strong>{fmt(ch[k].v)}</strong>
+                                    </div>
+                                ))}
+                            </>
+                        )}
+                    </div>
+                </div>
+
+                <div style={grid("repeat(auto-fit,minmax(300px,1fr))")}>
+                    <div style={card}>
+                        <div style={h3}>Top selling items</div>
+                        {topItems.length === 0 ? <div style={{ color: "#999", padding: "20px 0", textAlign: "center" }}>No sales data yet</div> : topItems.map((it, i) => (
+                            <div key={i} className="top-item-row">
+                                <div className="top-item-name" style={{ minWidth: 110 }}>{it.name}</div>
+                                <div className="top-item-bar"><div className="top-item-fill" style={{ width: (it.q / maxQ) * 100 + "%" }} /></div>
+                                <div className="top-item-count" style={{ minWidth: 90, textAlign: "right" }}>{it.q} <span style={{ fontWeight: 500, color: "#999", fontSize: 12 }}>· {fmt(it.rev)}</span></div>
+                            </div>
+                        ))}
+                    </div>
+                    <div style={card}>
+                        <div style={h3}>Staff sales</div>
+                        {staff.length === 0 ? <div style={{ color: "#999", padding: "20px 0", textAlign: "center" }}>No orders yet</div> : staff.map((s, i) => (
+                            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #f5f5f5", fontSize: 14 }}>
+                                <span>{i === 0 ? "🏆 " : ""}{s.w} <span style={{ color: "#999" }}>({s.n} orders)</span></span><strong>{fmt(s.v)}</strong>
+                            </div>
+                        ))}
+                    </div>
+                    <div style={card}>
+                        <div style={h3}>Loyalty &amp; delivery</div>
+                        <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontSize: 14, borderBottom: "1px solid #f5f5f5" }}><span>⭐ Orders with a member</span><strong>{withMember}{count ? " (" + Math.round((withMember / count) * 100) + "%)" : ""}</strong></div>
+                        <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontSize: 14, borderBottom: "1px solid #f5f5f5" }}><span>⭐ Member sales</span><strong>{fmt(memberSales)}</strong></div>
+                        <div style={{ fontWeight: 700, fontSize: 13, margin: "14px 0 6px", color: "#666" }}>Driver ratings</div>
+                        {rated.length === 0 ? <div style={{ color: "#999", fontSize: 13 }}>No driver ratings yet</div> : rated.slice(0, 5).map((d, i) => (
+                            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 14 }}><span>🏍️ {d.Name}</span><strong>★ {parseFloat(d.Rating).toFixed(1)}</strong></div>
+                        ))}
+                    </div>
+                    <div style={card}>
+                        <div style={h3}>Low stock {lowStock.length ? <span className="badge badge-red" style={{ marginLeft: 6 }}>{lowStock.length}</span> : null}</div>
+                        {lowStock.length === 0 ? <div style={{ color: "#27ae60", padding: "20px 0", textAlign: "center" }}>✓ Everything above reorder level</div> : lowStock.slice(0, 7).map((i, k) => (
+                            <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", fontSize: 14, borderBottom: "1px solid #f5f5f5" }}>
+                                <span>{i.Name}</span><strong style={{ color: (parseFloat(i.Quantity) || 0) <= 0 ? "#e74c3c" : "#f39c12" }}>{parseFloat(i.Quantity) || 0} {i.Unit} <span style={{ color: "#aaa", fontWeight: 500 }}>/ min {i.ReorderLevel}</span></strong>
                             </div>
                         ))}
                     </div>
                 </div>
 
                 <div className="table-card">
-                    <div className="table-card-header">
-                        <div className="table-card-title">Recent Orders</div>
-                    </div>
+                    <div className="table-card-header"><div className="table-card-title">Latest orders</div></div>
+                    <div style={{ overflowX: "auto" }}>
                     <table className="data-table">
-                        <thead>
-                            <tr><th>Order ID</th><th>Table</th><th>Waiter</th><th>Items</th><th>Total</th><th>Status</th><th>Time</th></tr>
-                        </thead>
+                        <thead><tr><th>Ticket</th><th>Type</th><th>Server / Customer</th><th>Items</th><th>Total</th><th>Status</th><th>Time</th></tr></thead>
                         <tbody>
-                            {ordersList.slice(0, 5).map((order, i) => {
-                                let badgeClass = "badge-gray";
-                                if (order.Status === "served") badgeClass = "badge-green";
-                                else if (order.Status === "ready") badgeClass = "badge-blue";
-                                else if (order.Status === "preparing") badgeClass = "badge-yellow";
-
-                                let count = 0;
-                                try { count = JSON.parse(order.Items).length; } catch(e){}
-
+                            {recent.length === 0 ? <tr><td colSpan="7" style={{ textAlign: "center", color: "#999" }}>No orders yet</td></tr> : recent.map((o, i) => {
+                                let n = 0; try { n = (typeof o.Items === "string" ? JSON.parse(o.Items) : o.Items).length; } catch (e) {}
+                                const s = status(o);
                                 return (
                                     <tr key={i}>
-                                        <td><strong>{order.OrderID}</strong></td>
-                                        <td>Table {order.TableNumber}</td>
-                                        <td>{order.WaiterName}</td>
-                                        <td>{count} dishes</td>
-                                        <td><strong>{currency}{parseFloat(order.Total).toFixed(2)}</strong></td>
-                                        <td><span className={`badge ${badgeClass}`}>{order.Status}</span></td>
-                                        <td style={{ color: '#888' }}>{order.OrderTime ? new Date(order.OrderTime).toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"}) : "—"}</td>
+                                        <td><strong>{(window.POS_ORDER && POS_ORDER.ticket(o)) || o.OrderID}</strong></td>
+                                        <td>{labelFor(o)}</td>
+                                        <td>{o.CustomerName || o.WaiterName || "—"}{o.MemberID ? " ⭐" : ""}</td>
+                                        <td>{n} {n === 1 ? "dish" : "dishes"}</td>
+                                        <td><strong>{fmt(total(o))}</strong></td>
+                                        <td><span className={"badge " + badgeFor(s)}>{o.Status}</span></td>
+                                        <td style={{ color: "#888" }}>{new Date(o.OrderTime).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
                                     </tr>
                                 );
                             })}
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </>
         );
@@ -2042,7 +2120,7 @@
         };
 
         const titles = { 
-          overview: { title: "Dashboard", sub: "Live database analysis" }, 
+          overview: { title: "Dashboard", sub: "Live sales, orders and stock" }, 
           menu: { title: "Menu Management", sub: "Add, edit, and delete dishes" }, 
           inventory: { title: "Inventory", sub: "Track and manage stock levels" }, 
           staff: { title: "Staff Management", sub: "Add or delete team members" }, 
