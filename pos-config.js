@@ -529,53 +529,56 @@ window.POS_GAPI = (() => {
   }
 
   // ── Centralized Automatic Recipe-to-Stock Deduction Engine ──
+  // Takes stock off when dishes are sold. Unit-aware: a recipe line "200 g flour" takes 0.2 off a stock counted in kg.
+  //  1) recipe lines linked to an inventory item (itemId + qty + unit)  -> exact
+  //  2) older free-text lines                                           -> matched by name; amount like "150g" is converted
+  //  3) dishes with no recipe but a linked stock item (e.g. cola)       -> 1 per sale
   async function _deductInventoryForItems(orderedItems) {
     try {
-      const recipes = await getRows("Recipes");
-      const inventory = await getRows("Inventory");
-      
+      const [recipes, inventory, menu] = await Promise.all([getRows("Recipes"), getRows("Inventory"), getRows("MenuItems")]);
+      const C = window.POS_COST;
+      const take = {};                                     // ItemID -> amount to remove (in that item's own unit)
+      const add = (it, n) => { if (it && n > 0) take[it.ItemID] = (take[it.ItemID] || 0) + n; };
+      const byId = {}; inventory.forEach(i => { byId[i.ItemID] = i; });
+
       for (const item of orderedItems) {
         const dishName = item.name || item.Name;
-        const qty = parseInt(item.qty || item.quantity || 1, 10);
+        const qty = parseInt(item.qty || item.quantity || 1, 10) || 1;
         if (!dishName) continue;
-
-        // Find matching recipe
-        const recipeRow = recipes.find(r => r.DishName && r.DishName.toLowerCase() === dishName.toLowerCase());
-        if (!recipeRow || !recipeRow.Ingredients) continue;
-
+        const dn = dishName.toLowerCase();
+        const recipeRow = recipes.find(r => r.DishName && r.DishName.toLowerCase() === dn);
         let ingredients = [];
-        try {
-          ingredients = JSON.parse(recipeRow.Ingredients);
-        } catch(e) { continue; }
+        if (recipeRow && recipeRow.Ingredients) { try { ingredients = JSON.parse(recipeRow.Ingredients); } catch (e) { ingredients = []; } }
+        if (!Array.isArray(ingredients)) ingredients = [];
 
-        if (!Array.isArray(ingredients)) continue;
-
-        for (const ing of ingredients) {
-          if (!ing.name) continue;
-
-          // Loose match: matches recipe's "Beef patty (180g)" to stock's "Beef Patties"
-          const invItem = inventory.find(inv => {
-            const invN = String(inv.Name || "").toLowerCase();
-            const ingN = String(ing.name || "").toLowerCase();
-            return ingN.includes(invN) || invN.includes(ingN);
-          });
-
-          if (invItem) {
-            const amtStr = String(ing.amount || "1");
-            const numMatch = amtStr.match(/^([\d.]+)/);
-            const deductPerUnit = numMatch ? parseFloat(numMatch[1]) : 1;
-            const totalDeduct = deductPerUnit * qty;
-
-            const currentStock = parseFloat(invItem.Quantity) || 0;
-            const newStock = Math.max(0, currentStock - totalDeduct);
-
-            // Update Sheets
-            await updateRow("Inventory", 0, invItem.ItemID, {
-              Quantity: parseFloat(newStock.toFixed(2)),
-              LastUpdated: new Date().toISOString()
-            });
+        if (ingredients.length) {
+          for (const ing of ingredients) {
+            if (!ing.name && !ing.itemId) continue;
+            if (ing.itemId && byId[ing.itemId]) {                       // 1) linked
+              const inv = byId[ing.itemId];
+              const n = C.convert(parseFloat(ing.qty) || 0, ing.unit, inv.Unit);
+              add(inv, (n == null ? (parseFloat(ing.qty) || 0) : n) * qty);
+              continue;
+            }
+            const ingN = String(ing.name || "").toLowerCase();          // 2) free text
+            const inv = inventory.find(v => { const invN = String(v.Name || "").toLowerCase(); return invN && (ingN.includes(invN) || invN.includes(ingN)); });
+            if (!inv) continue;
+            const m = String(ing.amount || "1").trim().match(/^([\d.]+)\s*([a-zA-Z]*)/);
+            const num = m ? parseFloat(m[1]) : 1, unit = m ? m[2] : "";
+            if (!unit) { add(inv, num * qty); continue; }
+            const n = C.convert(num, unit, inv.Unit);
+            if (n != null) add(inv, n * qty);                           // incompatible units (e.g. pcs vs kg) are skipped, not guessed
           }
+        } else {
+          const mi = menu.find(m => m.Name && m.Name.toLowerCase() === dn);   // 3) sold as-is
+          if (mi && mi.StockItemID && byId[mi.StockItemID]) add(byId[mi.StockItemID], qty);
         }
+      }
+
+      for (const id of Object.keys(take)) {
+        const inv = byId[id];
+        const left = Math.max(0, (parseFloat(inv.Quantity) || 0) - take[id]);
+        await updateRow("Inventory", 0, id, { Quantity: parseFloat(left.toFixed(3)), LastUpdated: new Date().toISOString() });
       }
     } catch(e) {
       console.error("Auto-inventory deduction engine failed:", e);
@@ -1372,4 +1375,65 @@ window.POS_SCAN = (function () {
     return { close: close };
   }
   return { open: open };
+})();
+
+
+// ── Stock units + cost calculator (shared by the manager portal and the till deduction) ──
+// Categories: raw (ingredient you buy), mix (pre-mix made from raw items / other mixes), direct (sold as-is, e.g. cola).
+// "Cost" on an inventory item is ALWAYS what it costs you per its unit; selling prices live only in Menu.
+window.POS_COST = (function () {
+  const FAM = { kg: ["mass", 1000], g: ["mass", 1], L: ["vol", 1000], l: ["vol", 1000], ml: ["vol", 1], tsp: ["vol", 5], tbsp: ["vol", 15], cup: ["vol", 240] };
+  const norm = (u) => { u = String(u || "").trim(); const l = u.toLowerCase(); return l === "kgs" ? "kg" : l === "gm" || l === "gram" || l === "grams" ? "g" : l === "litre" || l === "liter" || l === "ltr" ? "L" : l === "pc" || l === "pcs" || l === "piece" || l === "pieces" ? "pcs" : l === "slice" || l === "slices" ? "slices" : (l === "l" ? "L" : l); };
+  // qty of `from` expressed in `to`; null when the units can't be converted (e.g. pcs <-> kg)
+  function convert(qty, from, to) {
+    const f = norm(from), t = norm(to);
+    if (!f || !t || f === t) return qty;
+    const a = FAM[f], b = FAM[t];
+    if (a && b && a[0] === b[0]) return qty * a[1] / b[1];
+    return null;
+  }
+  function formulaOf(it) { try { const f = typeof it.MixFormula === "string" ? JSON.parse(it.MixFormula || "[]") : it.MixFormula; return Array.isArray(f) ? f : []; } catch (e) { return []; } }
+  // cost per ONE unit of `it`; { cost, incomplete } (incomplete = some ingredient has no cost / bad units)
+  function costInfo(it, byId, stack) {
+    stack = stack || [];
+    if (!it) return { cost: 0, incomplete: true };
+    if ((it.Category || "raw") !== "mix") { const c = parseFloat(it.Cost) || 0; return { cost: c, incomplete: c <= 0 }; }
+    if (stack.includes(it.ItemID)) return { cost: 0, incomplete: true };      // a mix that contains itself
+    const yieldQty = parseFloat(it.MixYield) || 0;
+    let total = 0, incomplete = yieldQty <= 0;
+    formulaOf(it).forEach(line => {
+      const sub = byId[line.itemId]; if (!sub) { incomplete = true; return; }
+      const q = convert(parseFloat(line.qty) || 0, line.unit || sub.Unit, sub.Unit);
+      if (q == null) { incomplete = true; return; }
+      const ci = costInfo(sub, byId, stack.concat(it.ItemID));
+      if (ci.incomplete) incomplete = true;
+      total += q * ci.cost;
+    });
+    return { cost: yieldQty > 0 ? total / yieldQty : 0, incomplete };
+  }
+  // cost of one portion of a dish from its linked recipe lines
+  function recipeCost(ingredients, byId) {
+    let total = 0, unlinked = 0, incomplete = false;
+    (ingredients || []).forEach(ing => {
+      if (!ing || (!ing.name && !ing.itemId)) return;
+      const inv = ing.itemId && byId[ing.itemId];
+      if (!inv) { unlinked++; return; }
+      const q = convert(parseFloat(ing.qty) || 0, ing.unit || inv.Unit, inv.Unit);
+      if (q == null) { incomplete = true; return; }
+      const ci = costInfo(inv, byId);
+      if (ci.incomplete) incomplete = true;
+      total += q * ci.cost;
+    });
+    return { cost: total, unlinked, incomplete };
+  }
+  // what a batch of `batchQty` of a mix will use: [{item, qty (in the item's own unit)}]
+  function batchNeeds(mix, batchQty, byId) {
+    const y = parseFloat(mix.MixYield) || 0; if (y <= 0) return [];
+    return formulaOf(mix).map(line => {
+      const sub = byId[line.itemId]; if (!sub) return null;
+      const q = convert(parseFloat(line.qty) || 0, line.unit || sub.Unit, sub.Unit);
+      return q == null ? null : { item: sub, qty: q * (batchQty / y) };
+    }).filter(Boolean);
+  }
+  return { convert, norm, formulaOf, costInfo, recipeCost, batchNeeds, UNITS: ["kg", "g", "L", "ml", "pcs", "slices", "tsp", "tbsp", "cup", "portion"] };
 })();
