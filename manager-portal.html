@@ -286,16 +286,7 @@
         { name: "Lisa Park", role: "Manager", status: "active", orders: 0, tips: "—" },
     ];
 
-    const INVENTORY = [
-        { item: "Beef Patties", unit: "kg", qty: 4.5, reorder: 5, status: "low" },
-        { item: "Chicken Breast", unit: "kg", qty: 8.0, reorder: 4, status: "ok" },
-        { item: "Pasta", unit: "kg", qty: 12.0, reorder: 3, status: "ok" },
-        { item: "Cheddar Cheese", unit: "kg", qty: 1.2, reorder: 2, status: "critical" },
-        { item: "Brioche Buns", unit: "pcs", qty: 24, reorder: 30, status: "low" },
-        { item: "Coca Cola (can)", unit: "pcs", qty: 120, reorder: 50, status: "ok" },
-        { item: "Cooking Oil", unit: "L", qty: 15, reorder: 5, status: "ok" },
-        { item: "Parmesan", unit: "kg", qty: 0.5, reorder: 1, status: "critical" },
-    ];
+
 
     // ── Dashboard: real shop numbers for a chosen period (Today / 7 days / 30 days) ──
     const dkey = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");   // LOCAL date (the old code used UTC, which is wrong near midnight in Sri Lanka)
@@ -558,7 +549,23 @@
       const [recipesList, setRecipesList] = useState([]);
       const [isEditMode, setIsEditMode] = useState(false);
       const [cookingRequired, setCookingRequired] = useState(true);
-      const [form, setForm]           = useState({ name:"", category:"Main Course", price:"", description:"", emoji:"🍽️", prepTime:"10 min" });
+      const [form, setForm]           = useState({ name:"", category:"Main Course", price:"", description:"", emoji:"🍽️", prepTime:"10 min", stockItemId:"" });
+      const C = window.POS_COST;
+      const [inv, setInv]             = useState([]);
+      const [recFull, setRecFull]     = useState([]);   // [{row, ings}]
+      const [targetMargin, setTargetMargin] = useState("");
+      const [showMatch, setShowMatch] = useState(false);
+      const [matches, setMatches]     = useState([]);
+      const invById = {}; inv.forEach(r => { invById[r.ItemID] = { ...r, Category: r.Category || "raw" }; });
+      const parseIngs = (v) => { try { const a = typeof v === "string" ? JSON.parse(v || "[]") : v; return Array.isArray(a) ? a : []; } catch(e) { return []; } };
+      // cost of one portion of a dish: recipe if it has one, otherwise its linked direct item
+      const costOf = (item) => {
+        const rec = recFull.find(r => (r.row.DishName || "").toLowerCase() === (item.name || "").toLowerCase());
+        const lines = rec ? rec.ings.filter(i => i && (i.name || i.itemId)) : [];
+        if (lines.length && item.prepTime !== "Bypass Prep") { const rc = C.recipeCost(lines, invById); return { has: true, cost: rc.cost, partial: rc.unlinked > 0 || rc.incomplete, src: "recipe" }; }
+        if (item.stockItemId && invById[item.stockItemId]) { const ci = C.costInfo(invById[item.stockItemId], invById); return { has: true, cost: ci.cost, partial: ci.incomplete, src: "item" }; }
+        return { has: false, cost: 0, partial: false };
+      };
 
       const load = async () => {
         if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
@@ -567,14 +574,14 @@
         if (settings && settings.currency) setCurrency(settings.currency);
 
         try {
-          const res = await window.POS_GAPI.Menu.getAll();
+          const res = { data: await window.POS_GAPI.getRows("MenuItems") };
           if (res && res.data) {
               setItems(res.data
                 .filter(i => i !== null && i !== undefined)
                 .map(i => ({
                   id: i.ItemID, name: i.Name || "", category: i.Category || "Main Course",
                   price: parseFloat(i.Price)||0, status: String(i.Available).toLowerCase()==="false"?"inactive":"active",
-                  description: i.Description||"", emoji: i.Emoji||"🍽️", prepTime: i.PrepTime || ""
+                  description: i.Description||"", emoji: i.Emoji||"🍽️", prepTime: i.PrepTime || "", stockItemId: i.StockItemID || ""
                 }))
               );
           }
@@ -585,7 +592,9 @@
                 .filter(r => r !== null && r !== undefined)
                 .map(r => r.DishName || "")
               );
+              setRecFull(recs.filter(Boolean).map(r => ({ row: r, ings: parseIngs(r.Ingredients) })));
           }
+          setInv(await window.POS_GAPI.getRows("Inventory"));
         } catch(e) { console.error("Menu list load error:", e); }
       };
 
@@ -608,7 +617,8 @@
          setIsEditMode(false);
          setEditItem(null);
          setCookingRequired(true);
-         setForm({ name:"", category:"Main Course", price:"", description:"", emoji:"🍽️", prepTime:"10 min" });
+         setForm({ name:"", category:"Main Course", price:"", description:"", emoji:"🍽️", prepTime:"10 min", stockItemId:"" });
+         setTargetMargin("");
          setShowModal(true);
       };
 
@@ -622,8 +632,10 @@
             price: item.price,
             description: item.description || "",
             emoji: item.emoji || "🍽️",
-            prepTime: item.prepTime === "Bypass Prep" ? "10 min" : item.prepTime
+            prepTime: item.prepTime === "Bypass Prep" ? "10 min" : item.prepTime,
+            stockItemId: item.stockItemId || ""
          });
+         setTargetMargin("");
          setShowModal(true);
       };
 
@@ -640,16 +652,18 @@
                     Price: parseFloat(form.price),
                     Description: form.description || "",
                     Emoji: form.emoji || "🍽️",
-                    PrepTime: targetPrep
+                    PrepTime: targetPrep,
+                    StockItemID: form.stockItemId || ""
                 });
                 toast("📝 Menu item updated successfully!");
             } else {
-                await window.POS_GAPI.Menu.add({
+                const added = await window.POS_GAPI.Menu.add({
                   name: form.name, category: form.category,
                   price: parseFloat(form.price), description: form.description||"",
                   emoji: form.emoji||"🍽️",
                   prepTime: targetPrep
                 });
+                if (form.stockItemId && added && added.data) await window.POS_GAPI.updateRow("MenuItems", 0, added.data.itemId, { StockItemID: form.stockItemId });
                 toast("✅ Menu item added successfully!");
             }
             await load();
@@ -668,7 +682,7 @@
         if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
           try {
             await window.POS_GAPI.Menu.update({ itemId: id, available: newAvail });
-            toast("✅ Item status updated!");
+            toast(newAvail ? "✅ Now selling" : "⛔ Hidden from till & customer app");
           } catch(e) { console.error("Toggle failed:", e); }
         }
       };
@@ -735,6 +749,34 @@
         setShowRecipe(true);
       };
 
+      const parseAmt = (txt) => { const m = String(txt||"").match(/(\d+(?:\.\d+)?)\s*(kg|g|ml|l|pcs|pc|tsp|tbsp|cup|slices?)\b/i); return m ? { qty: m[1], unit: C.norm(m[2]) } : null; };
+      const baseName = (n) => String(n||"").toLowerCase().replace(/\(.*?\)/g,"").replace(/[\d.]+\s*(kg|g|ml|l|pcs|pc)\b/g,"").replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim();
+      const openMatch = () => {
+        const list = [];
+        recFull.forEach(r => r.ings.forEach((ing, idx) => {
+          if (!ing || ing.itemId || !ing.name) return;
+          const bn = baseName(ing.name); let best = null;
+          inv.forEach(it => { const n = baseName(it.Name); if (!n || !bn) return; if (n === bn) best = it; else if (!best && (bn.includes(n) || n.includes(bn))) best = it; });
+          const amt = parseAmt(ing.amount) || parseAmt(ing.name) || null;
+          list.push({ dish: r.row.DishName, idx, name: ing.name, amount: ing.amount||"", itemId: best ? best.ItemID : "", qty: amt ? amt.qty : "", unit: amt ? amt.unit : (best ? best.Unit : "g") });
+        }));
+        setMatches(list); setShowMatch(true);
+      };
+      const setMatch = (k, patch) => setMatches(m => m.map((x,i) => i===k ? { ...x, ...patch } : x));
+      const applyMatch = async () => {
+        setSaving(true);
+        try {
+          const dishes = [...new Set(matches.filter(m=>m.itemId).map(m=>m.dish))];
+          for (const d of dishes) {
+            const rec = recFull.find(r => r.row.DishName === d); const ings = rec.ings.map(x => ({ ...x }));
+            matches.filter(m => m.dish===d && m.itemId).forEach(m => { const it = invById[m.itemId]; ings[m.idx] = { name: it.Name, amount: (m.qty+" "+m.unit).trim(), itemId: it.ItemID, qty: parseFloat(m.qty)||0, unit: m.unit }; });
+            await window.POS_GAPI.Recipes.save({ dishName: d, prepTime: rec.row.PrepTime, cookTime: rec.row.CookTime, difficulty: rec.row.Difficulty, ingredients: JSON.stringify(ings), steps: typeof rec.row.Steps === "string" ? rec.row.Steps : JSON.stringify(rec.row.Steps||[]) });
+          }
+          toast("✅ Linked " + matches.filter(m=>m.itemId).length + " ingredients"); await load(); setShowMatch(false);
+        } catch(e) { alert("Could not save: " + e.message); }
+        setSaving(false);
+      };
+
       const addIngredient   = () => setRecipe(r=>({...r, ingredients:[...r.ingredients,{name:"",amount:""}]}));
       const removeIngredient = (i) => setRecipe(r=>({...r, ingredients:r.ingredients.filter((_,j)=>j!==i)}));
       const updateIngredient = (i,field,val) => setRecipe(r=>({...r, ingredients:r.ingredients.map((ing,j)=>j===i?{...ing,[field]:val}:ing)}));
@@ -752,7 +794,7 @@
               prepTime   : recipe.prepTime,
               cookTime   : recipe.cookTime,
               difficulty : recipe.difficulty,
-              ingredients: JSON.stringify(recipe.ingredients.filter(i=>i.name)),
+              ingredients: JSON.stringify(recipe.ingredients.filter(i=>i.name||i.itemId).map(i => i.itemId ? { name:i.name, amount:((i.qty||"")+" "+(i.unit||"")).trim(), itemId:i.itemId, qty:parseFloat(i.qty)||0, unit:i.unit } : { name:i.name, amount:i.amount })),
               steps: JSON.stringify(recipe.steps.filter(s=>s.title)),
             });
             toast("✅ Recipe saved successfully!");
@@ -776,12 +818,13 @@
               <div style={{display:"flex",gap:"10px"}}>
                 <input className="search-input" placeholder="🔍 Search items..."
                        value={search} onChange={e=>setSearch(e.target.value)} />
+                <button className="btn btn-ghost" onClick={openMatch}>🔗 Match ingredients</button>
                 <button className="btn btn-primary" onClick={handleOpenAddModal}>+ Add Item</button>
               </div>
             </div>
             <table className="data-table">
               <thead>
-                <tr><th>Name</th><th>Category</th><th>Price ({currency})</th><th>Status</th><th>Prep Required?</th><th>Recipe</th><th>Actions</th></tr>
+                <tr><th>Name</th><th>Category</th><th>Price ({currency})</th><th>Cost</th><th>Margin</th><th>Status</th><th>Prep Required?</th><th>Recipe</th><th>Actions</th></tr>
               </thead>
               <tbody>
                 {filtered.map(item => (
@@ -789,7 +832,18 @@
                     <td><strong>{item.name}</strong></td>
                     <td><span className="badge badge-blue">{item.category}</span></td>
                     <td><strong>{currency} {parseFloat(item.price).toLocaleString()}</strong></td>
-                    <td><span className={`badge ${item.status==="active"?"badge-green":"badge-gray"}`}>{item.status}</span></td>
+                    {(() => { const c = costOf(item); if (!c.has) return <><td style={{color:"#bbb"}}>—</td><td style={{color:"#bbb"}}>—</td></>;
+                      const m = item.price - c.cost, pc = item.price>0 ? m/item.price*100 : 0, col = pc>=50?"#27ae60":pc>=25?"#f39c12":"#e74c3c";
+                      return <><td>{currency} {Math.round(c.cost*100)/100}{c.partial && <div style={{fontSize:"10px",color:"#e67e22"}}>⚠ partial</div>}</td>
+                        <td style={{fontWeight:700,color:col}}>{currency} {Math.round(m*100)/100}<div style={{fontSize:"11px"}}>{Math.round(pc)}%</div></td></>; })()}
+                    <td>
+                      <label style={{display:"flex",alignItems:"center",gap:"8px",cursor:"pointer"}} title="Turn off when you run out — hides it from the till and customer app">
+                        <span onClick={()=>toggleStatus(item.id)} style={{width:"42px",height:"24px",borderRadius:"12px",background:item.status==="active"?"#27ae60":"#c0c0c0",position:"relative",transition:"all .2s",flexShrink:0}}>
+                          <span style={{position:"absolute",top:"3px",left:item.status==="active"?"21px":"3px",width:"18px",height:"18px",borderRadius:"50%",background:"#fff",transition:"all .2s"}}></span>
+                        </span>
+                        <span style={{fontSize:"12px",fontWeight:700,color:item.status==="active"?"#27ae60":"#999"}}>{item.status==="active"?"Selling":"Not selling"}</span>
+                      </label>
+                    </td>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                         <input type="checkbox" checked={item.prepTime !== "Bypass Prep"} 
@@ -810,10 +864,6 @@
                       )}
                     </td>
                     <td style={{display:"flex",gap:"6px"}}>
-                      <button className="btn btn-ghost" style={{padding:"5px 10px",fontSize:"12px"}}
-                              onClick={()=>toggleStatus(item.id)}>
-                        {item.status==="active"?"Disable":"Enable"}
-                      </button>
                       <button className="btn btn-primary" style={{padding:"5px 10px",fontSize:"12px",background:"#667eea"}}
                               onClick={()=>handleOpenEditModal(item)}>
                         📝 Edit
@@ -864,6 +914,21 @@
                     <label style={{margin:0, cursor:"pointer", fontWeight: "700"}}>🍳 Kitchen Prep Required? (Needs Cooking)</label>
                   </div>
 
+                  <div className="form-group" style={{gridColumn:"1/-1"}}>
+                    <label>🛒 Linked stock item (for items sold as-is, e.g. Cola) — optional</label>
+                    <select value={form.stockItemId} onChange={e=>setForm({...form,stockItemId:e.target.value})}>
+                      <option value="">— none (uses its recipe) —</option>
+                      {inv.filter(r=>r.Category==="direct").map(r=><option key={r.ItemID} value={r.ItemID}>{r.Name}</option>)}
+                    </select>
+                  </div>
+                  {(() => { const c = costOf({ name: form.name, prepTime: cookingRequired?"x":"Bypass Prep", stockItemId: form.stockItemId }); const pr = parseFloat(form.price)||0;
+                    if (!c.has) return <div style={{gridColumn:"1/-1",fontSize:"12px",color:"#999",marginBottom:"10px"}}>No cost yet — add a recipe or link a stock item to see margin.</div>;
+                    const tm = parseFloat(targetMargin); const sug = tm>0 && tm<100 ? Math.ceil(c.cost/(1-tm/100)) : null;
+                    return <div style={{gridColumn:"1/-1",background:"#f0fdf4",borderRadius:"10px",padding:"10px 12px",fontSize:"13px",marginBottom:"10px"}}>
+                      <b>Cost {currency} {Math.round(c.cost*100)/100}</b>{pr>0 && <span> · profit {currency} {Math.round((pr-c.cost)*100)/100} · margin <b>{Math.round((pr-c.cost)/pr*100)}%</b></span>}{c.partial && <span style={{color:"#e67e22"}}> ⚠ partial</span>}
+                      <div style={{marginTop:"8px",display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>Target margin <input type="number" value={targetMargin} onChange={e=>setTargetMargin(e.target.value)} style={{width:"70px",padding:"6px",borderRadius:"8px",border:"2px solid #e8e8e8"}} /> %
+                        {sug && <button className="btn btn-success" style={{padding:"5px 10px",fontSize:"12px"}} onClick={()=>setForm({...form,price:sug})}>Use {currency} {sug}</button>}</div>
+                    </div>; })()}
                   {cookingRequired && (
                     <div className="form-group" style={{gridColumn:"1/-1"}}>
                       <label>Estimated Prep Time</label>
@@ -881,6 +946,33 @@
                 <div className="modal-actions">
                   <button className="btn btn-ghost" onClick={()=>setShowModal(false)}>Cancel</button>
                   <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving?"Saving...":"Save Item"}</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showMatch && (
+            <div className="modal-overlay">
+              <div className="modal recipe-modal">
+                <h3>🔗 Match recipe ingredients to stock</h3>
+                <div style={{fontSize:"13px",color:"#666",marginBottom:"12px"}}>Pick the stock item for each old free-text ingredient so costs and automatic stock deduction work. Leave blank to skip. Check the quantities.</div>
+                {matches.length===0 && <div style={{padding:"20px",textAlign:"center",color:"#27ae60"}}>✓ Every recipe ingredient is already linked.</div>}
+                <div style={{maxHeight:"55vh",overflowY:"auto"}}>
+                {matches.map((m,k)=>(
+                  <div key={k} style={{display:"grid",gridTemplateColumns:"1.2fr 1.4fr 70px 74px",gap:"6px",marginBottom:"6px",alignItems:"center",fontSize:"13px"}}>
+                    <div><b>{m.name}</b><div style={{fontSize:"11px",color:"#999"}}>{m.dish}{m.amount?" · "+m.amount:""}</div></div>
+                    <select value={m.itemId} onChange={e=>setMatch(k,{itemId:e.target.value,unit:(invById[e.target.value]&&m.unit===""?invById[e.target.value].Unit:m.unit)})} style={{padding:"8px",borderRadius:"8px",border:"2px solid #e8e8e8"}}>
+                      <option value="">— skip —</option>
+                      {inv.filter(r=>(r.Category||"raw")!=="direct"||String(r.ForKitchen)!=="0").map(r=><option key={r.ItemID} value={r.ItemID}>{r.Name}{r.Category==="mix"?" (mix)":""}</option>)}
+                    </select>
+                    <input type="number" value={m.qty} placeholder="qty" onChange={e=>setMatch(k,{qty:e.target.value})} style={{padding:"8px",borderRadius:"8px",border:"2px solid #e8e8e8"}} />
+                    <select value={m.unit} onChange={e=>setMatch(k,{unit:e.target.value})} style={{padding:"8px",borderRadius:"8px",border:"2px solid #e8e8e8"}}>{C.UNITS.map(u=><option key={u}>{u}</option>)}</select>
+                  </div>
+                ))}
+                </div>
+                <div className="modal-actions">
+                  <button className="btn btn-ghost" onClick={()=>setShowMatch(false)}>Close</button>
+                  {matches.length>0 && <button className="btn btn-success" onClick={applyMatch} disabled={saving}>{saving?"Saving...":"✅ Apply matches ("+matches.filter(m=>m.itemId).length+")"}</button>}
                 </div>
               </div>
             </div>
@@ -919,18 +1011,32 @@
                 {/* Ingredients */}
                 <div className="recipe-section">
                   <div className="recipe-section-title">Ingredients</div>
-                  {recipe.ingredients.map((ing,i)=>(
-                    <div key={i} className="ingredient-row-edit">
-                      <input style={{padding:"8px 10px",border:"2px solid #e8e8e8",borderRadius:"8px",fontSize:"13px"}}
-                             value={ing.name} placeholder="e.g. Beef patty (180g)"
-                             onChange={e=>updateIngredient(i,"name",e.target.value)} />
-                      <input style={{padding:"8px 10px",border:"2px solid #e8e8e8",borderRadius:"8px",fontSize:"13px",width:"90px"}}
-                             value={ing.amount} placeholder="e.g. 1 pc"
-                             onChange={e=>updateIngredient(i,"amount",e.target.value)} />
+                  {recipe.ingredients.map((ing,i)=>{
+                    const it = ing.itemId && invById[ing.itemId];
+                    const q = it ? C.convert(parseFloat(ing.qty)||0, ing.unit||it.Unit, it.Unit) : null;
+                    const lc = it && q != null ? q * C.costInfo(it, invById).cost : 0;
+                    const inp = {padding:"8px 10px",border:"2px solid #e8e8e8",borderRadius:"8px",fontSize:"13px"};
+                    return (
+                    <div key={i} style={{display:"grid",gridTemplateColumns:"1.4fr 1.2fr 70px 74px 64px auto",gap:"6px",marginBottom:"6px",alignItems:"center"}}>
+                      <select style={inp} value={ing.itemId||""} onChange={e=>{ const n=invById[e.target.value]; setRecipe(r=>({...r, ingredients:r.ingredients.map((x,j)=>j===i?(n?{itemId:n.ItemID,name:n.Name,qty:x.qty||"",unit:n.Unit}:{name:x.name,amount:x.amount||""}):x)})); }}>
+                        <option value="">✏️ Other (type name)</option>
+                        {inv.filter(r=>(r.Category||"raw")!=="direct"||String(r.ForKitchen)!=="0").map(r=><option key={r.ItemID} value={r.ItemID}>{r.Name}{r.Category==="mix"?" (mix)":""}</option>)}
+                      </select>
+                      {it ? <div style={{fontSize:"13px",color:"#555"}}>{it.Name}</div>
+                          : <input style={inp} value={ing.name||""} placeholder="e.g. Beef patty (180g)" onChange={e=>updateIngredient(i,"name",e.target.value)} />}
+                      {it ? <input type="number" style={inp} value={ing.qty} placeholder="qty" onChange={e=>updateIngredient(i,"qty",e.target.value)} />
+                          : <input style={{...inp,gridColumn:"3 / span 2"}} value={ing.amount||""} placeholder="e.g. 1 pc" onChange={e=>updateIngredient(i,"amount",e.target.value)} />}
+                      {it && <select style={inp} value={ing.unit||it.Unit} onChange={e=>updateIngredient(i,"unit",e.target.value)}>{C.UNITS.map(u=><option key={u}>{u}</option>)}</select>}
+                      <span style={{fontSize:"12px",textAlign:"right",color: it && q==null ? "#e74c3c" : "#888"}}>{it ? (q==null ? "unit?" : currency+" "+(Math.round(lc*100)/100)) : "no cost"}</span>
                       <button className="remove-btn" onClick={()=>removeIngredient(i)}>✕</button>
-                    </div>
-                  ))}
+                    </div>);
+                  })}
                   <button className="recipe-btn" onClick={addIngredient} style={{marginTop:"4px"}}>+ Add Ingredient</button>
+                  {(() => { const rc = C.recipeCost(recipe.ingredients.filter(i=>i.name||i.itemId), invById); const pr = editItem.price||0;
+                    return <div style={{marginTop:"10px",padding:"10px 12px",background:"#f0fdf4",borderRadius:"10px",fontSize:"13px"}}>
+                      <b>Food cost per portion: {currency} {Math.round(rc.cost*100)/100}</b>{pr>0 && rc.cost>0 ? <span> · {Math.round(rc.cost/pr*100)}% of the {currency} {pr} price · margin {Math.round((pr-rc.cost)/pr*100)}%</span> : null}
+                      {(rc.unlinked>0||rc.incomplete) && <div style={{color:"#e67e22",marginTop:"4px"}}>⚠ {rc.unlinked>0?rc.unlinked+" ingredient(s) not linked to stock. ":""}{rc.incomplete?"Some items have no cost or a mismatched unit.":""}</div>}
+                    </div>; })()}
                 </div>
 
                 {/* Steps */}
@@ -992,249 +1098,273 @@
       );
     }
 
+    // ── Inventory: raw ingredients, pre-mixes and direct items. Cost is what YOU pay (per unit); selling prices live in Menu Management. ──
+    const INV_TYPES = { raw: ["🧂 Raw ingredient", "badge-blue"], mix: ["🥣 Pre-mix", "badge-yellow"], direct: ["🛒 Direct item", "badge-green"] };
+
     function Inventory() {
-        const [inv, setInv] = useState([]);
+        const C = window.POS_COST;
+        const [rows, setRows] = useState([]);
         const [loading, setLoading] = useState(true);
-        const [showAddModal, setShowAddModal] = useState(false);
-        const [showEditModal, setShowEditModal] = useState(false);
+        const [loadErr, setLoadErr] = useState("");
+        const [currency, setCurrency] = useState("");
+        const [filter, setFilter] = useState("all");
+        const [modal, setModal] = useState(null);          // null | "edit" | "topup" | "batch"
         const [editItem, setEditItem] = useState(null);
         const [saving, setSaving] = useState(false);
-        const [form, setForm] = useState({ name: "", unit: "kg", qty: "", reorder: "", supplier: "", cost: "" });
-        
-        const criticalItems = inv.filter(i => i.status === 'critical' || i.status === 'low');
+        const blank = { type: "raw", name: "", unit: "kg", qty: "", reorder: "", supplier: "", cost: "", forKitchen: true, yieldQty: "", formula: [] };
+        const [form, setForm] = useState(blank);
+        const [top, setTop] = useState({ qty: "", cost: "", average: true });
+        const [batchQty, setBatchQty] = useState("");
 
-        const loadInventory = async () => {
+        const load = async () => {
             if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
             try {
+                const s = window.POS_GAPI.getSettings(); if (s && s.currency) setCurrency(s.currency + " ");
                 const res = await window.POS_GAPI.Inventory.getAll();
-                if (res && res.data) {
-                    setInv(res.data
-                      .filter(i => i !== null && i !== undefined)
-                      .map(i => ({
-                        id: i.ItemID,
-                        item: i.Name,
-                        qty: parseFloat(i.Quantity) || 0,
-                        unit: i.Unit || "pcs",
-                        reorder: parseFloat(i.ReorderLevel) || 10,
-                        supplier: i.Supplier || "Unknown",
-                        cost: parseFloat(i.Cost) || 0,
-                        status: i.AlertStatus || "ok"
-                      }))
-                    );
-                } else {
-                    setInv(INVENTORY);
-                }
-            } catch(e) { 
-                console.error("Inventory load error:", e);
-                setInv(INVENTORY);
-            }
+                setRows((res.data || []).filter(Boolean).map(r => ({ ...r, Category: r.Category || "raw" })));
+                setLoadErr("");
+            } catch (e) { console.error("Inventory load error:", e); setLoadErr("Could not load stock: " + e.message); }
             setLoading(false);
         };
+        useEffect(() => { load(); }, []);
 
-        useEffect(() => {
-            loadInventory();
-        }, []);
+        const byId = {}; rows.forEach(r => { byId[r.ItemID] = r; });
+        const money = (n) => currency + (Math.round((n || 0) * 100) / 100).toLocaleString();
+        const info = (r) => C.costInfo(r, byId);
+        const view = rows.filter(r => filter === "all" || r.Category === filter);
+        const lowCount = rows.filter(r => r.AlertStatus === "critical" || r.AlertStatus === "low" || r.AlertStatus === "out");
 
-        const handleOpenAdd = () => {
-            setForm({ name: "", unit: "kg", qty: "", reorder: "", supplier: "", cost: "" });
-            setShowAddModal(true);
+        // ── add / edit ──
+        const openAdd = (type) => { setEditItem(null); setForm({ ...blank, type: type || "raw", unit: type === "direct" ? "pcs" : "kg" }); setModal("edit"); };
+        const openEdit = (r) => {
+            setEditItem(r);
+            setForm({ type: r.Category || "raw", name: r.Name || "", unit: r.Unit || "kg", qty: r.Quantity, reorder: r.ReorderLevel, supplier: r.Supplier || "",
+                cost: r.Cost, forKitchen: String(r.ForKitchen) !== "0", yieldQty: r.MixYield || "", formula: C.formulaOf(r).map(l => ({ ...l })) });
+            setModal("edit");
         };
-
-        const handleOpenEdit = (item) => {
-            setEditItem(item);
-            setForm({
-                name: item.item,
-                unit: item.unit,
-                qty: item.qty,
-                reorder: item.reorder,
-                supplier: item.supplier,
-                cost: item.cost
-            });
-            setShowEditModal(true);
-        };
-
-        const handleSaveNewItem = async () => {
-            if (!form.name || !form.qty || !form.reorder) return;
-            setSaving(true);
-            try {
-                const id = window.POS_GAPI.uid("INV");
-                const now = new Date().toISOString();
-                await window.POS_GAPI.appendRow("Inventory", [
-                    id, form.name, form.unit, parseFloat(form.qty), parseFloat(form.reorder), now, form.supplier || "", parseFloat(form.cost) || 0
-                ]);
-                await loadInventory();
-                setShowAddModal(false);
-            } catch(e) { alert("Failed to add inventory: " + e.message); }
-            setSaving(false);
-        };
-
-        const handleSaveEditItem = async () => {
-            if (!form.name || !form.qty || !form.reorder || !editItem) return;
-            setSaving(true);
-            try {
-                await window.POS_GAPI.updateRow("Inventory", 0, editItem.id, {
-                    Name: form.name,
-                    Unit: form.unit,
-                    Quantity: parseFloat(form.qty),
-                    ReorderLevel: parseFloat(form.reorder),
-                    Supplier: form.supplier || "",
-                    Cost: parseFloat(form.cost) || 0,
-                    LastUpdated: new Date().toISOString()
-                });
-                await loadInventory();
-                setShowEditModal(false);
-                setEditItem(null);
-            } catch(e) { alert("Failed to update inventory: " + e.message); }
-            setSaving(false);
-        };
-
-        const handleDeleteItem = async (itemId) => {
-            if (!confirm("Are you sure you want to permanently delete this inventory stock item?")) return;
-            try {
-                await window.POS_GAPI.Inventory.delete(itemId);
-                await loadInventory();
-            } catch(e) { alert("Failed to delete stock item: " + e.message); }
-        };
-
-        const restockItem = async (item) => {
-            if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
-                try {
-                    await window.POS_GAPI.Inventory.update({
-                        itemId: item.id,
-                        quantity: item.qty + 10
-                    });
-                    await loadInventory();
-                } catch(e) { console.error("Failed to restock:", e); }
+        const saveItem = async () => {
+            if (!form.name.trim()) return alert("Please enter a name.");
+            if (form.type === "mix") {
+                if (!(parseFloat(form.yieldQty) > 0)) return alert("Enter how much finished mix this formula makes (the 'Makes' box).");
+                if (!form.formula.filter(l => l.itemId).length) return alert("Add at least one ingredient to the mix.");
             }
+            setSaving(true);
+            try {
+                const fields = {
+                    Name: form.name.trim(), Unit: form.unit, Quantity: parseFloat(form.qty) || 0, ReorderLevel: parseFloat(form.reorder) || 0,
+                    Supplier: form.supplier || "", Cost: form.type === "mix" ? 0 : (parseFloat(form.cost) || 0),
+                    Category: form.type, ForKitchen: form.type === "direct" ? (form.forKitchen ? 1 : 0) : 1,
+                    MixYield: form.type === "mix" ? (parseFloat(form.yieldQty) || 0) : "",
+                    MixFormula: form.type === "mix" ? JSON.stringify(form.formula.filter(l => l.itemId).map(l => ({ itemId: l.itemId, qty: parseFloat(l.qty) || 0, unit: l.unit }))) : "",
+                    LastUpdated: new Date().toISOString()
+                };
+                if (editItem) await window.POS_GAPI.updateRow("Inventory", 0, editItem.ItemID, fields);
+                else {
+                    const id = window.POS_GAPI.uid("INV");
+                    await window.POS_GAPI.appendRow("Inventory", [id, fields.Name, fields.Unit, fields.Quantity, fields.ReorderLevel, fields.LastUpdated, fields.Supplier, fields.Cost]);
+                    await window.POS_GAPI.updateRow("Inventory", 0, id, { Category: fields.Category, ForKitchen: fields.ForKitchen, MixYield: fields.MixYield, MixFormula: fields.MixFormula });
+                }
+                await load(); setModal(null);
+            } catch (e) { alert("Could not save: " + e.message); }
+            setSaving(false);
+        };
+        const del = async (r) => {
+            const usedIn = rows.filter(m => m.Category === "mix" && C.formulaOf(m).some(l => l.itemId === r.ItemID)).map(m => m.Name);
+            if (usedIn.length && !confirm(r.Name + " is used in the mix: " + usedIn.join(", ") + ".\nDeleting it will leave those mixes incomplete. Delete anyway?")) return;
+            if (!usedIn.length && !confirm("Permanently delete " + r.Name + "?")) return;
+            try { await window.POS_GAPI.Inventory.delete(r.ItemID); await load(); } catch (e) { alert("Delete failed: " + e.message); }
         };
 
-        if (loading) {
-            return <div style={{padding:"20px",textAlign:"center",color:"#888"}}>Loading inventory...</div>;
-        }
+        // ── top up (raw / direct): add stock and record the new purchase price ──
+        const openTop = (r) => { setEditItem(r); setTop({ qty: "", cost: r.Cost || "", average: true }); setModal("topup"); };
+        const doTop = async () => {
+            const add = parseFloat(top.qty); if (!(add > 0)) return alert("Enter how much you are adding.");
+            const price = parseFloat(top.cost); const have = parseFloat(editItem.Quantity) || 0, oldCost = parseFloat(editItem.Cost) || 0;
+            let newCost = oldCost;
+            if (price >= 0 && top.cost !== "") newCost = (top.average && have > 0 && oldCost > 0) ? ((have * oldCost + add * price) / (have + add)) : price;
+            setSaving(true);
+            try {
+                await window.POS_GAPI.updateRow("Inventory", 0, editItem.ItemID, { Quantity: Math.round((have + add) * 1000) / 1000, Cost: Math.round(newCost * 10000) / 10000, LastUpdated: new Date().toISOString() });
+                await load(); setModal(null);
+            } catch (e) { alert("Top up failed: " + e.message); }
+            setSaving(false);
+        };
+
+        // ── make a batch of a mix: uses up its raw ingredients, adds finished mix to stock ──
+        const openBatch = (r) => { setEditItem(r); setBatchQty(""); setModal("batch"); };
+        const needs = editItem && modal === "batch" ? C.batchNeeds(editItem, parseFloat(batchQty) || 0, byId) : [];
+        const short = needs.filter(n => (parseFloat(n.item.Quantity) || 0) < n.qty - 1e-9);
+        const doBatch = async () => {
+            const q = parseFloat(batchQty); if (!(q > 0)) return alert("Enter how much mix you made.");
+            if (short.length && !confirm("Not enough stock of: " + short.map(s => s.item.Name).join(", ") + ".\nMake the batch anyway? (their stock will go to 0)")) return;
+            setSaving(true);
+            try {
+                for (const n of needs) await window.POS_GAPI.updateRow("Inventory", 0, n.item.ItemID, { Quantity: Math.max(0, Math.round(((parseFloat(n.item.Quantity) || 0) - n.qty) * 1000) / 1000), LastUpdated: new Date().toISOString() });
+                await window.POS_GAPI.updateRow("Inventory", 0, editItem.ItemID, { Quantity: Math.round(((parseFloat(editItem.Quantity) || 0) + q) * 1000) / 1000, LastUpdated: new Date().toISOString() });
+                await load(); setModal(null);
+            } catch (e) { alert("Batch failed (some stock may have changed — check the list): " + e.message); }
+            setSaving(false);
+        };
+
+        // formula editor helpers
+        const ingChoices = rows.filter(r => r.ItemID !== (editItem && editItem.ItemID) && (r.Category === "raw" || r.Category === "mix" || (r.Category === "direct" && String(r.ForKitchen) !== "0")));
+        const setLine = (i, patch) => setForm(f => ({ ...f, formula: f.formula.map((l, j) => j === i ? { ...l, ...patch } : l) }));
+        const formulaItem = { ItemID: "__new__", Category: "mix", MixYield: parseFloat(form.yieldQty) || 0, MixFormula: JSON.stringify(form.formula.filter(l => l.itemId)) };
+        const liveCost = form.type === "mix" ? C.costInfo(formulaItem, byId) : null;
+
+        if (loading) return <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>Loading inventory...</div>;
+        const tab = (k, label) => <button key={k} onClick={() => setFilter(k)} style={{ padding: "7px 16px", border: "none", borderRadius: 20, fontWeight: 700, fontSize: 13, cursor: "pointer", background: filter === k ? "#667eea" : "#eef0fb", color: filter === k ? "#fff" : "#555" }}>{label}</button>;
+        const sBtn = { padding: "5px 11px", fontSize: 12 };
 
         return (
             <>
-                {criticalItems.length > 0 && (
-                    <div className="inventory-alert">
-                        ⚠️ <strong>{criticalItems.length} items</strong> need restocking: {criticalItems.map(i => i.item).join(', ')}
-                    </div>
-                )}
+                {loadErr && <div className="inventory-alert" style={{ background: "#fdedec", borderColor: "#e74c3c", color: "#c0392b" }}>⚠️ {loadErr}</div>}
+                {lowCount.length > 0 && <div className="inventory-alert">⚠️ <strong>{lowCount.length} items</strong> need restocking: {lowCount.map(i => i.Name).join(", ")}</div>}
                 <div className="table-card">
-                    <div className="table-card-header">
-                        <div className="table-card-title">Stock Levels</div>
-                        <button className="btn btn-success" onClick={handleOpenAdd}>+ Add Stock Item</button>
+                    <div className="table-card-header" style={{ flexWrap: "wrap", gap: 10 }}>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{tab("all", "All (" + rows.length + ")")}{tab("raw", "🧂 Raw")}{tab("mix", "🥣 Pre-mixes")}{tab("direct", "🛒 Direct")}</div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                            <button className="btn btn-success" onClick={() => openAdd("raw")}>+ Raw ingredient</button>
+                            <button className="btn btn-primary" style={{ background: "#f59e0b" }} onClick={() => openAdd("mix")}>+ Pre-mix</button>
+                            <button className="btn btn-primary" onClick={() => openAdd("direct")}>+ Direct item</button>
+                        </div>
                     </div>
+                    <div style={{ overflowX: "auto" }}>
                     <table className="data-table">
-                        <thead><tr><th>Item</th><th>In Stock</th><th>Unit</th><th>Reorder At</th><th>Supplier</th><th>Cost</th><th>Status</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>Item</th><th>Type</th><th>In stock</th><th>Reorder at</th><th>Cost per unit</th><th>Status</th><th>Actions</th></tr></thead>
                         <tbody>
-                            {inv.map((item, i) => (
-                                <tr key={i}>
-                                    <td><strong>{item.item}</strong></td>
-                                    <td style={{ fontWeight: 700, color: item.status === 'critical' ? '#e74c3c' : item.status === 'low' ? '#f39c12' : '#27ae60' }}>{item.qty}</td>
-                                    <td>{item.unit}</td>
-                                    <td>{item.reorder} {item.unit}</td>
-                                    <td>{item.supplier}</td>
-                                    <td>Rs. {item.cost.toFixed(2)}</td>
-                                    <td><span className={`badge ${item.status === 'critical' ? 'badge-red' : item.status === 'low' ? 'badge-yellow' : 'badge-green'}`}>{item.status}</span></td>
-                                    <td style={{ display: 'flex', gap: '6px' }}>
-                                        <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: '12px' }}
-                                            onClick={() => restockItem(item)}>
-                                            + Restock 10
-                                        </button>
-                                        <button className="btn btn-primary" style={{ padding: '5px 12px', fontSize: '12px' }}
-                                            onClick={() => handleOpenEdit(item)}>
-                                            📝 Edit
-                                        </button>
-                                        <button className="btn btn-danger" style={{ padding: '5px 12px', fontSize: '12px' }}
-                                            onClick={() => handleDeleteItem(item.id)}>
-                                            🗑️ Delete
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
+                            {view.length === 0 && <tr><td colSpan="7" style={{ textAlign: "center", color: "#999", padding: 24 }}>Nothing here yet</td></tr>}
+                            {view.map(r => {
+                                const ci = info(r), st = r.AlertStatus || "ok", t = INV_TYPES[r.Category] || INV_TYPES.raw;
+                                return (
+                                    <tr key={r.ItemID}>
+                                        <td><strong>{r.Name}</strong>{r.Supplier ? <div style={{ fontSize: 11, color: "#999" }}>{r.Supplier}</div> : null}
+                                            {r.Category === "direct" && String(r.ForKitchen) !== "0" ? <div style={{ fontSize: 11, color: "#27ae60" }}>also used in recipes</div> : null}</td>
+                                        <td><span className={"badge " + t[1]}>{t[0]}</span></td>
+                                        <td style={{ fontWeight: 700, color: st === "critical" || st === "out" ? "#e74c3c" : st === "low" ? "#f39c12" : "#27ae60" }}>{parseFloat(r.Quantity) || 0} {r.Unit}</td>
+                                        <td>{r.ReorderLevel} {r.Unit}</td>
+                                        <td>{money(ci.cost)} / {r.Unit}{r.Category === "mix" ? <div style={{ fontSize: 11, color: ci.incomplete ? "#e67e22" : "#999" }}>{ci.incomplete ? "⚠ some ingredient has no cost" : "auto from formula"}</div> : ci.incomplete ? <div style={{ fontSize: 11, color: "#e67e22" }}>⚠ no cost set</div> : null}</td>
+                                        <td><span className={"badge " + (st === "ok" ? "badge-green" : st === "low" ? "badge-yellow" : "badge-red")}>{st}</span></td>
+                                        <td><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                            {r.Category === "mix"
+                                                ? <button className="btn btn-primary" style={{ ...sBtn, background: "#f59e0b" }} onClick={() => openBatch(r)}>🥣 Make batch</button>
+                                                : <button className="btn btn-ghost" style={sBtn} onClick={() => openTop(r)}>＋ Top up</button>}
+                                            <button className="btn btn-primary" style={sBtn} onClick={() => openEdit(r)}>📝 Edit</button>
+                                            <button className="btn btn-danger" style={sBtn} onClick={() => del(r)}>🗑️</button>
+                                        </div></td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
+                    </div>
                 </div>
+                <div style={{ fontSize: 12, color: "#888", margin: "-6px 4px 18px" }}>Cost = what you pay per unit. Selling prices are set in <b>Menu Management</b>, where each dish's cost and margin are shown.</div>
 
-                {/* Add Stock Item Modal */}
-                {showAddModal && (
+                {modal === "edit" && (
                     <div className="modal-overlay">
-                        <div className="modal">
-                            <h3>Add Inventory Stock Item</h3>
-                            <div className="form-grid">
-                                <div className="form-group" style={{ gridColumn: "1/-1" }}>
-                                    <label>Ingredient Name</label>
-                                    <input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="e.g. Beef Patties"/>
-                                </div>
-                                <div className="form-group">
-                                    <label>Stock Unit</label>
-                                    <select value={form.unit} onChange={e => setForm({...form, unit: e.target.value})}>
-                                        <option>kg</option><option>g</option><option>pcs</option>
-                                        <option>ml</option><option>L</option><option>slices</option>
-                                    </select>
-                                </div>
-                                <div className="form-group">
-                                    <label>Current Quantity</label>
-                                    <input type="number" value={form.qty} onChange={e => setForm({...form, qty: e.target.value})} placeholder="0"/>
-                                </div>
-                                <div className="form-group">
-                                    <label>Safety Reorder Limit</label>
-                                    <input type="number" value={form.reorder} onChange={e => setForm({...form, reorder: e.target.value})} placeholder="10"/>
-                                </div>
-                                <div className="form-group">
-                                    <label>Unit Cost (Rs.)</label>
-                                    <input type="number" value={form.cost} onChange={e => setForm({...form, cost: e.target.value})} placeholder="150"/>
-                                </div>
-                                <div className="form-group" style={{ gridColumn: "1/-1" }}>
-                                    <label>Supplier / Vendor Name</label>
-                                    <input value={form.supplier} onChange={e => setForm({...form, supplier: e.target.value})} placeholder="e.g. Prime Meats Ltd"/>
-                                </div>
+                        <div className="modal" style={{ width: 600, maxHeight: "92vh", overflowY: "auto" }}>
+                            <h3>{editItem ? "Edit" : "Add"} {INV_TYPES[form.type][0]}</h3>
+                            <div className="form-group">
+                                <label>Type</label>
+                                <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
+                                    <option value="raw">🧂 Raw ingredient — bought in (salt, flour, chicken…)</option>
+                                    <option value="mix">🥣 Pre-mix — made in the kitchen from raw items</option>
+                                    <option value="direct">🛒 Direct item — sold as it is (cola, water…)</option>
+                                </select>
                             </div>
+                            <div className="form-grid">
+                                <div className="form-group" style={{ gridColumn: "1/-1" }}><label>Name</label><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder={form.type === "mix" ? "e.g. Kottu spice mix" : "e.g. Salt"} /></div>
+                                <div className="form-group"><label>Stock unit</label>
+                                    <select value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })}>{C.UNITS.map(u => <option key={u}>{u}</option>)}</select></div>
+                                <div className="form-group"><label>In stock now ({form.unit})</label><input type="number" value={form.qty} onChange={e => setForm({ ...form, qty: e.target.value })} placeholder="0" /></div>
+                                <div className="form-group"><label>Reorder when below ({form.unit})</label><input type="number" value={form.reorder} onChange={e => setForm({ ...form, reorder: e.target.value })} placeholder="0" /></div>
+                                {form.type !== "mix" ? <div className="form-group"><label>Cost per {form.unit} ({currency || "price"})</label><input type="number" value={form.cost} onChange={e => setForm({ ...form, cost: e.target.value })} placeholder="what you pay" /></div>
+                                    : <div className="form-group"><label>Cost per {form.unit} (automatic)</label><input disabled value={liveCost ? money(liveCost.cost) : ""} /></div>}
+                                <div className="form-group" style={{ gridColumn: "1/-1" }}><label>Supplier (optional)</label><input value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} /></div>
+                                {form.type === "direct" && (
+                                    <label style={{ gridColumn: "1/-1", display: "flex", gap: 8, alignItems: "center", fontSize: 14, marginBottom: 12 }}>
+                                        <input type="checkbox" style={{ width: 18, height: 18 }} checked={form.forKitchen} onChange={e => setForm({ ...form, forKitchen: e.target.checked })} />
+                                        Also use this in recipes (kitchen) — e.g. ketchup
+                                    </label>
+                                )}
+                            </div>
+
+                            {form.type === "mix" && (
+                                <div style={{ background: "#fffaf0", border: "1px solid #fde3b0", borderRadius: 12, padding: 14, marginBottom: 6 }}>
+                                    <div style={{ fontWeight: 700, marginBottom: 8 }}>Formula — one batch uses:</div>
+                                    {form.formula.map((l, i) => {
+                                        const sub = byId[l.itemId]; const q = sub ? C.convert(parseFloat(l.qty) || 0, l.unit || sub.Unit, sub.Unit) : null;
+                                        const lc = sub && q != null ? q * C.costInfo(sub, byId).cost : 0;
+                                        return (
+                                            <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 80px 74px auto auto", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                                                <select value={l.itemId || ""} onChange={e => { const s = byId[e.target.value]; setLine(i, { itemId: e.target.value, unit: s ? s.Unit : l.unit }); }} style={{ padding: 8, borderRadius: 8, border: "2px solid #e8e8e8" }}>
+                                                    <option value="">— choose item —</option>
+                                                    {ingChoices.map(c => <option key={c.ItemID} value={c.ItemID}>{c.Name}{c.Category === "mix" ? " (mix)" : ""}</option>)}
+                                                </select>
+                                                <input type="number" value={l.qty} placeholder="qty" onChange={e => setLine(i, { qty: e.target.value })} style={{ padding: 8, borderRadius: 8, border: "2px solid #e8e8e8", width: "100%" }} />
+                                                <select value={l.unit || (sub && sub.Unit) || "g"} onChange={e => setLine(i, { unit: e.target.value })} style={{ padding: 8, borderRadius: 8, border: "2px solid #e8e8e8" }}>{C.UNITS.map(u => <option key={u}>{u}</option>)}</select>
+                                                <span style={{ fontSize: 12, color: q == null && sub ? "#e74c3c" : "#888", minWidth: 60, textAlign: "right" }}>{q == null && sub ? "unit?" : money(lc)}</span>
+                                                <button className="remove-btn" onClick={() => setForm(f => ({ ...f, formula: f.formula.filter((_, j) => j !== i) }))}>✕</button>
+                                            </div>
+                                        );
+                                    })}
+                                    <button className="recipe-btn" onClick={() => setForm(f => ({ ...f, formula: [...f.formula, { itemId: "", qty: "", unit: "g" }] }))}>+ Add ingredient</button>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 14 }}>
+                                        <b>This formula makes</b>
+                                        <input type="number" value={form.yieldQty} onChange={e => setForm({ ...form, yieldQty: e.target.value })} style={{ width: 90, padding: 8, borderRadius: 8, border: "2px solid #e8e8e8" }} placeholder="e.g. 1" />
+                                        <b>{form.unit} of finished mix</b>
+                                    </div>
+                                    {liveCost && <div style={{ marginTop: 10, fontWeight: 700, color: liveCost.incomplete ? "#e67e22" : "#27ae60" }}>→ {money(liveCost.cost)} per {form.unit}{liveCost.incomplete ? "  ⚠ some ingredients have no cost yet" : ""}</div>}
+                                </div>
+                            )}
+
                             <div className="modal-actions">
-                                <button className="btn btn-ghost" onClick={() => setShowAddModal(false)}>Cancel</button>
-                                <button className="btn btn-primary" onClick={handleSaveNewItem} disabled={saving}>{saving?"Saving...":"✓ Save Ingredient"}</button>
+                                <button className="btn btn-ghost" onClick={() => setModal(null)}>Cancel</button>
+                                <button className="btn btn-primary" onClick={saveItem} disabled={saving}>{saving ? "Saving..." : "✓ Save"}</button>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* Edit Stock Item Modal */}
-                {showEditModal && (
+                {modal === "topup" && editItem && (
                     <div className="modal-overlay">
                         <div className="modal">
-                            <h3>Edit Inventory Stock Item</h3>
+                            <h3>＋ Top up {editItem.Name}</h3>
+                            <div style={{ fontSize: 13, color: "#666", marginBottom: 14 }}>In stock: <b>{parseFloat(editItem.Quantity) || 0} {editItem.Unit}</b> · current cost {money(parseFloat(editItem.Cost) || 0)} per {editItem.Unit}</div>
                             <div className="form-grid">
-                                <div className="form-group" style={{ gridColumn: "1/-1" }}>
-                                    <label>Ingredient Name</label>
-                                    <input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="e.g. Beef Patties"/>
-                                </div>
-                                <div className="form-group">
-                                    <label>Stock Unit</label>
-                                    <select value={form.unit} onChange={e => setForm({...form, unit: e.target.value})}>
-                                        <option>kg</option><option>g</option><option>pcs</option>
-                                        <option>ml</option><option>L</option><option>slices</option>
-                                    </select>
-                                </div>
-                                <div className="form-group">
-                                    <label>Current Quantity</label>
-                                    <input type="number" value={form.qty} onChange={e => setForm({...form, qty: e.target.value})} placeholder="0"/>
-                                </div>
-                                <div className="form-group">
-                                    <label>Safety Reorder Limit</label>
-                                    <input type="number" value={form.reorder} onChange={e => setForm({...form, reorder: e.target.value})} placeholder="10"/>
-                                </div>
-                                <div className="form-group">
-                                    <label>Unit Cost (Rs.)</label>
-                                    <input type="number" value={form.cost} onChange={e => setForm({...form, cost: e.target.value})} placeholder="150"/>
-                                </div>
-                                <div className="form-group" style={{ gridColumn: "1/-1" }}>
-                                    <label>Supplier / Vendor Name</label>
-                                    <input value={form.supplier} onChange={e => setForm({...form, supplier: e.target.value})} placeholder="e.g. Prime Meats Ltd"/>
-                                </div>
+                                <div className="form-group"><label>Quantity added ({editItem.Unit})</label><input type="number" autoFocus value={top.qty} onChange={e => setTop({ ...top, qty: e.target.value })} /></div>
+                                <div className="form-group"><label>New cost per {editItem.Unit}</label><input type="number" value={top.cost} onChange={e => setTop({ ...top, cost: e.target.value })} /></div>
                             </div>
+                            <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}><input type="checkbox" style={{ width: 16, height: 16 }} checked={top.average} onChange={e => setTop({ ...top, average: e.target.checked })} /> Average with the stock I already have (recommended)</label>
+                            {(() => { const a = parseFloat(top.qty), p = parseFloat(top.cost), h = parseFloat(editItem.Quantity) || 0, o = parseFloat(editItem.Cost) || 0; if (!(a > 0) || !(p >= 0) || top.cost === "") return null; const nc = (top.average && h > 0 && o > 0) ? (h * o + a * p) / (h + a) : p; return <div style={{ marginTop: 10, fontWeight: 700, color: "#27ae60" }}>→ stock {h + a} {editItem.Unit}, cost {money(nc)} per {editItem.Unit}</div>; })()}
                             <div className="modal-actions">
-                                <button className="btn btn-ghost" onClick={() => setShowEditModal(false)}>Cancel</button>
-                                <button className="btn btn-primary" onClick={handleSaveEditItem} disabled={saving}>{saving?"Updating...":"✓ Save Changes"}</button>
+                                <button className="btn btn-ghost" onClick={() => setModal(null)}>Cancel</button>
+                                <button className="btn btn-primary" onClick={doTop} disabled={saving}>{saving ? "Saving..." : "✓ Add stock"}</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {modal === "batch" && editItem && (
+                    <div className="modal-overlay">
+                        <div className="modal">
+                            <h3>🥣 Make a batch — {editItem.Name}</h3>
+                            <div style={{ fontSize: 13, color: "#666", marginBottom: 14 }}>In stock: <b>{parseFloat(editItem.Quantity) || 0} {editItem.Unit}</b> · cost {money(info(editItem).cost)} per {editItem.Unit}</div>
+                            <div className="form-group"><label>How much mix did you make? ({editItem.Unit})</label><input type="number" autoFocus value={batchQty} onChange={e => setBatchQty(e.target.value)} /></div>
+                            {needs.length > 0 && (
+                                <div style={{ background: "#f9fafb", borderRadius: 10, padding: 12, fontSize: 13 }}>
+                                    <div style={{ fontWeight: 700, marginBottom: 6 }}>This will use up:</div>
+                                    {needs.map((n, i) => { const have = parseFloat(n.item.Quantity) || 0, bad = have < n.qty - 1e-9; return (
+                                        <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", color: bad ? "#e74c3c" : "#333" }}>
+                                            <span>{n.item.Name}</span><span>{Math.round(n.qty * 1000) / 1000} {n.item.Unit} <span style={{ color: bad ? "#e74c3c" : "#999" }}>(have {have}){bad ? " ⚠ short" : ""}</span></span>
+                                        </div>); })}
+                                    <div style={{ marginTop: 8, fontWeight: 700 }}>Batch cost: {money(info(editItem).cost * (parseFloat(batchQty) || 0))}</div>
+                                </div>
+                            )}
+                            <div className="modal-actions">
+                                <button className="btn btn-ghost" onClick={() => setModal(null)}>Cancel</button>
+                                <button className="btn btn-primary" style={{ background: "#f59e0b" }} onClick={doBatch} disabled={saving}>{saving ? "Saving..." : "✓ Make batch"}</button>
                             </div>
                         </div>
                     </div>
