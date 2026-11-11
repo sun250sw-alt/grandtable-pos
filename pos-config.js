@@ -580,9 +580,34 @@ window.POS_GAPI = (() => {
         const left = Math.max(0, (parseFloat(inv.Quantity) || 0) - take[id]);
         await updateRow("Inventory", 0, id, { Quantity: parseFloat(left.toFixed(3)), LastUpdated: new Date().toISOString() });
       }
+      await syncAvailability();
     } catch(e) {
       console.error("Auto-inventory deduction engine failed:", e);
     }
+  }
+
+  // Hide a dish when the stock behind it can't make one more portion; show it again once restocked.
+  // Only dishes this routine switched off (MenuItems.AutoOff=1) are ever switched back on — manual choices are left alone.
+  async function syncAvailability() {
+    try {
+      await _loadSettings();
+      if (String(_settings.auto_stock_off || "true").toLowerCase() === "false") return 0;
+      const C = window.POS_COST; if (!C) return 0;
+      const [inv, menu, recs] = await Promise.all([getRows("Inventory"), getRows("MenuItems"), getRows("Recipes")]);
+      const byId = {}; inv.forEach(r => { byId[r.ItemID] = r; });
+      const recBy = {}; recs.forEach(r => { let a = []; try { a = typeof r.Ingredients === "string" ? JSON.parse(r.Ingredients || "[]") : r.Ingredients; } catch (e) {} recBy[String(r.DishName || "").toLowerCase()] = Array.isArray(a) ? a : []; });
+      let n = 0;
+      for (const m of menu) {
+        const lines = (recBy[String(m.Name || "").toLowerCase()] || []).filter(l => l && l.itemId && byId[l.itemId]);
+        let short = false;
+        if (lines.length) short = lines.some(l => { const it = byId[l.itemId]; const need = C.convert(parseFloat(l.qty) || 0, l.unit || it.Unit, it.Unit); return need != null && need > 0 && (parseFloat(it.Quantity) || 0) < need - 1e-9; });
+        else if (m.StockItemID && byId[m.StockItemID]) short = (parseFloat(byId[m.StockItemID].Quantity) || 0) < 1;
+        const on = m.Available === true || m.Available === 1 || String(m.Available).toLowerCase() === "true" || m.Available === "1";
+        if (on && short) { await updateRow("MenuItems", 0, m.ItemID, { Available: false, AutoOff: 1 }); n++; }
+        else if (!on && !short && String(m.AutoOff) === "1") { await updateRow("MenuItems", 0, m.ItemID, { Available: true, AutoOff: 0 }); n++; }
+      }
+      return n;
+    } catch (e) { console.error("syncAvailability:", e); return 0; }
   }
 
   function uid(prefix) {
@@ -656,7 +681,7 @@ window.POS_GAPI = (() => {
       const updates = {};
       if (data.name      !== undefined) updates.Name      = data.name;
       if (data.price     !== undefined) updates.Price     = data.price;
-      if (data.available !== undefined) updates.Available = data.available;
+      if (data.available !== undefined) { updates.Available = data.available; updates.AutoOff = 0; }   // a manual choice overrides the automatic one
       await updateRow("MenuItems", 0, data.itemId, updates);
       return { success:true, data:{ updated:true } };
     },
@@ -895,7 +920,7 @@ window.POS_GAPI = (() => {
 
   return {
     loadLibraries, signIn, silentSignIn, signOut, getSettings,
-    initUserSheet, setLanUser, getRows, appendRow, updateRow, deleteRow, uid,
+    initUserSheet, setLanUser, getRows, appendRow, updateRow, deleteRow, uid, syncAvailability,
     Orders, Menu, Tables, Inventory, Staff, Drivers,
     Deliveries, Recipes, Team, Settings, Analytics, poll, getSheetId, getAccessToken, getSession
   };
