@@ -2224,12 +2224,58 @@
     const ROTA_STAFF = ["John Doe","Sarah Lee","Mike Chen","Emma Brown","Tom Wilson"];
     const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
+    // ── Customer ratings (food + driver) from the customer app ──
+    function RatingsPage() {
+        const [rows, setRows] = useState(null);
+        const [err, setErr] = useState("");
+        useEffect(() => {
+            if (!window.POS_IS_LAN) { setErr("Ratings are available on the restaurant (LAN) server."); setRows([]); return; }
+            const load = () => fetch("/api/ratings").then(r => r.json()).then(j => setRows(j.data || [])).catch(e => { setErr("Could not load ratings: " + e.message); setRows([]); });
+            load(); const iv = setInterval(load, 30000); return () => clearInterval(iv);
+        }, []);
+        if (!rows) return <div style={{ padding: 20, textAlign: "center", color: "#888" }}>Loading ratings...</div>;
+        const avg = (k) => { const v = rows.map(r => Number(r[k])).filter(x => x > 0); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length * 10) / 10 : null; };
+        const stars = (n) => n > 0 ? "★".repeat(Math.round(n)) + "☆".repeat(5 - Math.round(n)) : "—";
+        const dist = [5, 4, 3, 2, 1].map(n => ({ n, c: rows.filter(r => Math.round(Number(r.FoodRating)) === n).length }));
+        const mx = Math.max(1, ...dist.map(d => d.c));
+        const byDriver = {}; rows.forEach(r => { if (r.DriverID && Number(r.DriverRating) > 0) { const d = byDriver[r.DriverID] = byDriver[r.DriverID] || { name: r.DriverName || r.DriverID, s: 0, c: 0 }; d.s += Number(r.DriverRating); d.c++; } });
+        const card = { background: "#fff", borderRadius: 14, padding: 18, boxShadow: "0 2px 10px rgba(0,0,0,.06)" };
+        return (
+            <>
+                {err && <div className="inventory-alert">{err}</div>}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 16, marginBottom: 18 }}>
+                    <div style={card}><div style={{ fontSize: 12, color: "#888" }}>Food rating</div><div style={{ fontSize: 34, fontWeight: 800 }}>{avg("FoodRating") || "—"}</div><div style={{ color: "#f5a623", fontSize: 18 }}>{stars(avg("FoodRating") || 0)}</div></div>
+                    <div style={card}><div style={{ fontSize: 12, color: "#888" }}>Driver rating</div><div style={{ fontSize: 34, fontWeight: 800 }}>{avg("DriverRating") || "—"}</div><div style={{ color: "#f5a623", fontSize: 18 }}>{stars(avg("DriverRating") || 0)}</div></div>
+                    <div style={card}><div style={{ fontSize: 12, color: "#888" }}>Total ratings</div><div style={{ fontSize: 34, fontWeight: 800 }}>{rows.length}</div></div>
+                    <div style={card}>{dist.map(d => <div key={d.n} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 3 }}><span style={{ width: 18 }}>{d.n}★</span><div style={{ flex: 1, background: "#eee", borderRadius: 4, height: 8 }}><div style={{ width: (d.c / mx * 100) + "%", background: "#f5a623", height: 8, borderRadius: 4 }}></div></div><span style={{ width: 22, textAlign: "right" }}>{d.c}</span></div>)}</div>
+                </div>
+                {Object.keys(byDriver).length > 0 && <div className="table-card" style={{ marginBottom: 18 }}>
+                    <div className="table-card-header"><div className="table-card-title">Drivers</div></div>
+                    <table className="data-table"><thead><tr><th>Driver</th><th>Average</th><th>Ratings</th></tr></thead><tbody>
+                        {Object.values(byDriver).map((d, i) => <tr key={i}><td><strong>{d.name}</strong></td><td>{Math.round(d.s / d.c * 10) / 10} <span style={{ color: "#f5a623" }}>{stars(d.s / d.c)}</span></td><td>{d.c}</td></tr>)}
+                    </tbody></table></div>}
+                <div className="table-card">
+                    <div className="table-card-header"><div className="table-card-title">Recent ratings & comments</div></div>
+                    <table className="data-table"><thead><tr><th>Date</th><th>Order</th><th>Food</th><th>Driver</th><th>Comment</th></tr></thead><tbody>
+                        {rows.length === 0 && <tr><td colSpan="5" style={{ textAlign: "center", color: "#999", padding: 24 }}>No ratings yet</td></tr>}
+                        {rows.slice(0, 100).map(r => <tr key={r.OrderID}>
+                            <td>{r.Date ? new Date(r.Date).toLocaleString() : ""}</td><td>{window.POS_ORDER ? POS_ORDER.ticket(r) : ""}</td>
+                            <td style={{ color: "#f5a623" }}>{stars(Number(r.FoodRating))}</td>
+                            <td>{Number(r.DriverRating) > 0 ? <span><span style={{ color: "#f5a623" }}>{stars(Number(r.DriverRating))}</span> <span style={{ fontSize: 11, color: "#888" }}>{r.DriverName}</span></span> : "—"}</td>
+                            <td style={{ maxWidth: 320 }}>{r.Comment}</td></tr>)}
+                    </tbody></table>
+                </div>
+            </>
+        );
+    }
+
     const NAV = [
         { icon: "📊", label: "Dashboard", section: "overview" },
         { icon: "📋", label: "Menu Management", section: "menu" },
         { icon: "📦", label: "Inventory", section: "inventory" },
         { icon: "👥", label: "Staff", section: "staff" },
         { icon: "📅", label: "Rota Manager", section: "rota" },
+        { icon: "⭐", label: "Ratings", section: "ratings" },
         { icon: "🕐", label: "Team Clockings", section: "clockings" },
         { icon: "⚙️", label: "Settings", section: "settings" }
     ];
@@ -2253,6 +2299,7 @@
           overview: { title: "Dashboard", sub: "Live sales, orders and stock" }, 
           menu: { title: "Menu Management", sub: "Add, edit, and delete dishes" }, 
           inventory: { title: "Inventory", sub: "Track and manage stock levels" }, 
+          ratings: { title: "Ratings", sub: "What customers say about the food and drivers" },
           staff: { title: "Staff Management", sub: "Add or delete team members" }, 
           rota: { title: "Rota Manager", sub: "Build and publish staff schedules" }, 
           clockings: { title: "Team Clockings", sub: "View all staff clock in/out records" },
@@ -2316,6 +2363,7 @@
                         {active === "inventory" && <Inventory />}
                         {active === "staff" && <StaffWithDrivers toast={triggerToast} />}
                         {active === "rota" && <RotaManager />}
+                        {active === "ratings" && <RatingsPage />}
                         {active === "clockings" && <TeamClockings />}
                         {active === "settings" && <SettingsPage toast={triggerToast} />}
                     </div>
