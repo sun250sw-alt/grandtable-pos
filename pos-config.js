@@ -623,7 +623,19 @@ window.POS_GAPI = (() => {
       if (data.subtotal !== undefined) updates.Subtotal = data.subtotal;   // totals were silently ignored before
       if (data.tax      !== undefined) updates.Tax      = data.tax;
       if (data.total    !== undefined) updates.Total    = data.total;
+      // Items added to an existing order take their stock off too (only the increase; removing an item doesn't put stock back)
+      let extra = [];
+      if (data.items) {
+        try {
+          const old = (await getRows("Orders")).find(o => o.OrderID === data.orderId);
+          let was = []; try { was = JSON.parse((old && old.Items) || "[]"); } catch (e) {}
+          const have = {}; (Array.isArray(was) ? was : []).forEach(i => { const k = String(i.name || i.Name || "").toLowerCase(); have[k] = (have[k] || 0) + (parseInt(i.qty || i.quantity || 1, 10) || 1); });
+          const now = {}; data.items.forEach(i => { const nm = i.name || i.Name; const k = String(nm || "").toLowerCase(); if (!k) return; now[k] = now[k] || { name: nm, qty: 0 }; now[k].qty += parseInt(i.qty || i.quantity || 1, 10) || 1; });
+          Object.keys(now).forEach(k => { const d = now[k].qty - (have[k] || 0); if (d > 0) extra.push({ name: now[k].name, qty: d }); });
+        } catch (e) { console.error("order diff:", e); }
+      }
       await updateRow("Orders", 0, data.orderId, updates);
+      if (extra.length) { try { await _deductInventoryForItems(extra); } catch (e) { console.error("Stock deduction bypassed:", e); } }
       return { success:true, data:{ updated:true } };
     },
   };
@@ -1262,7 +1274,7 @@ window.POS_ORDER = {
     const id = String((o && (o.OrderID || o.orderId)) || "");
     const m = id.match(/(\d{10,13})/);
     const d = m ? m[1] : id.replace(/\D/g, "");
-    return d ? "#" + d.slice(-3).padStart(3, "0") : "";
+    return d ? "#" + (d.length >= 13 ? d.slice(0, -3) : d).slice(-4).padStart(4, "0") : "";
   },
   isOnline(o) { return /^online/i.test(String((o && (o.WaiterName || o.waiterName)) || "")); },
   type(o) {                                   // "delivery" | "pickup" | null (not online)
