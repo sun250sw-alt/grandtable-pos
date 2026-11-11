@@ -294,6 +294,21 @@
     const DEAD_ST = ["cancelled", "canceled", "void", "refunded"];
     const OPEN_ST = ["new", "preparing", "ready"];
 
+    // cost of ONE portion of a dish by name (from its recipe, or its linked stock item); null when no cost is known
+    function dishCostMap(menu, recipes, inventory) {
+        const C = window.POS_COST, byId = {}; inventory.forEach(r => { byId[r.ItemID] = { ...r, Category: r.Category || "raw" }; });
+        const recBy = {}; recipes.forEach(r => { if (r.DishName) { let a = []; try { a = typeof r.Ingredients === "string" ? JSON.parse(r.Ingredients || "[]") : r.Ingredients; } catch (e) {} recBy[r.DishName.toLowerCase()] = Array.isArray(a) ? a.filter(i => i && (i.name || i.itemId)) : []; } });
+        const out = {};
+        menu.forEach(m => {
+            const k = String(m.Name || "").toLowerCase(); if (!k) return;
+            const lines = recBy[k] || [];
+            if (lines.length && String(m.PrepTime) !== "Bypass Prep") { const rc = C.recipeCost(lines, byId); if (rc.cost > 0) { out[k] = rc.cost; return; } }
+            if (m.StockItemID && byId[m.StockItemID]) { const ci = C.costInfo(byId[m.StockItemID], byId); if (ci.cost > 0) out[k] = ci.cost; }
+        });
+        return out;
+    }
+    const TARGET_KEYS = { sales: { today: "target_sales_day", week: "target_sales_week", month: "target_sales_month" }, profit: { today: "target_profit_day", week: "target_profit_week", month: "target_profit_month" } };
+
     function Dashboard() {
         const [orders, setOrders] = useState([]);
         const [tables, setTables] = useState([]);
@@ -302,6 +317,12 @@
         const [currency, setCurrency] = useState("");
         const [period, setPeriod] = useState("today");
         const [updated, setUpdated] = useState(null);
+        const [menu, setMenu] = useState([]);
+        const [recipes, setRecipes] = useState([]);
+        const [view, setView] = useState("both");             // chart shows: sales | profit | both
+        const [tgtOpen, setTgtOpen] = useState(false);
+        const [tgtForm, setTgtForm] = useState({});
+        const [, setSettingsTick] = useState(0);
 
         const load = async () => {
             if (!window.POS_GAPI || !window.POS_GAPI.getSheetId()) return;
@@ -316,14 +337,21 @@
                 // slower-moving extras: never let a missing tab break the dashboard
                 g.getRows("Inventory").then(r => r && setStock(r.filter(Boolean))).catch(() => {});
                 g.getRows("Drivers").then(r => r && setDrivers(r.filter(Boolean))).catch(() => {});
+                g.getRows("MenuItems").then(r => r && setMenu(r.filter(Boolean))).catch(() => {});
+                g.getRows("Recipes").then(r => r && setRecipes(r.filter(Boolean))).catch(() => {});
             } catch (e) { console.error("Dashboard stats sync error:", e); }
         };
         useEffect(() => { load(); const iv = setInterval(load, 8000); return () => clearInterval(iv); }, []);
 
         const fmt = (n) => currency + Math.round(n || 0).toLocaleString();
-        const days = period === "today" ? 1 : period === "7d" ? 7 : 30;
-        const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - (days - 1));
-        const startMs = start.getTime();
+        // calendar periods: today · this week (Mon–Sun) · this month
+        const start = new Date(); start.setHours(0, 0, 0, 0);
+        let prevStartD = new Date(start), days = 1;
+        if (period === "week") { start.setDate(start.getDate() - ((start.getDay() + 6) % 7)); days = 7; prevStartD = new Date(start); prevStartD.setDate(prevStartD.getDate() - 7); }
+        else if (period === "month") { start.setDate(1); days = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate(); prevStartD = new Date(start.getFullYear(), start.getMonth() - 1, 1); }
+        else { prevStartD.setDate(prevStartD.getDate() - 1); }
+        const startMs = start.getTime(), endMs = startMs + days * 86400000;
+        const prevLabel = period === "today" ? "yesterday" : period === "week" ? "last week" : "last month";
 
         const typeOf = (o) => {
             const ty = window.POS_ORDER && POS_ORDER.type(o);
@@ -334,7 +362,7 @@
         const total = (o) => parseFloat(o.Total) || 0;
         const status = (o) => String(o.Status || "").toLowerCase();
 
-        const inPeriod = orders.filter(o => { const t = new Date(o.OrderTime).getTime(); return isFinite(t) && t >= startMs && !DEAD_ST.includes(status(o)); });
+        const inPeriod = orders.filter(o => { const t = new Date(o.OrderTime).getTime(); return isFinite(t) && t >= startMs && t < endMs && !DEAD_ST.includes(status(o)); });
         const sales = inPeriod.reduce((a, o) => a + total(o), 0);
         const collected = inPeriod.filter(o => DONE_ST.includes(status(o))).reduce((a, o) => a + total(o), 0);
         const count = inPeriod.length;
@@ -344,24 +372,39 @@
         const tableCount = tables.length || 0;
 
         // previous period of the same length, for the ▲▼ comparison
-        const prevStart = startMs - days * 86400000;
-        const prevSales = orders.filter(o => { const t = new Date(o.OrderTime).getTime(); return isFinite(t) && t >= prevStart && t < startMs && !DEAD_ST.includes(status(o)); }).reduce((a, o) => a + total(o), 0);
+        const prevStart = prevStartD.getTime();
+        const prevOrders = orders.filter(o => { const t = new Date(o.OrderTime).getTime(); return isFinite(t) && t >= prevStart && t < startMs && !DEAD_ST.includes(status(o)); });
+        const prevSales = prevOrders.reduce((a, o) => a + total(o), 0);
         const delta = prevSales > 0 ? Math.round(((sales - prevSales) / prevSales) * 100) : null;
 
-        // chart: by hour for today, by day for 7/30 days
+        // profit = what the dishes sold for − what their ingredients cost (costs as they are now; dishes with no cost set count as unknown)
+        const costMap = dishCostMap(menu, recipes, stock);
+        const itemsOf = (o) => { let a = []; try { a = typeof o.Items === "string" ? JSON.parse(o.Items) : o.Items; } catch (e) {} return Array.isArray(a) ? a : []; };
+        const profitOf = (list) => { let rev = 0, cost = 0, known = 0; list.forEach(o => itemsOf(o).forEach(it => { const q = parseInt(it.qty || it.quantity, 10) || 1, r = q * (parseFloat(it.price || it.Price) || 0), c = costMap[String(it.name || it.Name || "").toLowerCase()]; rev += r; if (c != null) { cost += c * q; known += r; } })); return { rev, cost, known, profit: known - cost }; };
+        const pf = profitOf(inPeriod), prevPf = profitOf(prevOrders);
+        const hasCosts = Object.keys(costMap).length > 0;
+        const profit = pf.profit, coverage = pf.rev > 0 ? Math.round(pf.known / pf.rev * 100) : 100;
+        const pDelta = prevPf.profit > 0 ? Math.round(((profit - prevPf.profit) / prevPf.profit) * 100) : null;
+        const set = (window.POS_GAPI && window.POS_GAPI.getSettings && window.POS_GAPI.getSettings()) || {};
+        const tgt = (kind, per) => parseFloat(set[TARGET_KEYS[kind][per]]) || 0;
+        const tSales = tgt("sales", period), tProfit = tgt("profit", period), tSalesDay = tgt("sales", "today"), tProfitDay = tgt("profit", "today");
+
+        // chart: by hour for today, by day for week / month — sales and profit side by side
         let bars = [];
         if (days === 1) {
-            const h = Array.from({ length: 24 }, () => 0);
-            inPeriod.forEach(o => { h[new Date(o.OrderTime).getHours()] += total(o); });
-            let a = h.findIndex(v => v > 0), b = 23 - [...h].reverse().findIndex(v => v > 0);
+            const h = Array.from({ length: 24 }, () => ({ v: 0, p: 0 }));
+            inPeriod.forEach(o => { const x = h[new Date(o.OrderTime).getHours()]; x.v += total(o); x.p += profitOf([o]).profit; });
+            let a = h.findIndex(x => x.v > 0), b = 23 - [...h].reverse().findIndex(x => x.v > 0);
             if (a < 0) { a = 8; b = 22; } a = Math.max(0, Math.min(a, 9)); b = Math.min(23, Math.max(b, 20));
-            for (let i = a; i <= b; i++) bars.push({ label: (i % 12 || 12) + (i < 12 ? "a" : "p"), v: h[i] });
+            for (let i = a; i <= b; i++) bars.push({ label: (i % 12 || 12) + (i < 12 ? "a" : "p"), v: h[i].v, p: h[i].p });
         } else {
-            const m = {}; for (let i = 0; i < days; i++) { const d = new Date(startMs); d.setDate(d.getDate() + i); m[dkey(d)] = { d, v: 0 }; }
-            inPeriod.forEach(o => { const k = dkey(new Date(o.OrderTime)); if (m[k]) m[k].v += total(o); });
-            bars = Object.values(m).map(x => ({ label: days <= 7 ? x.d.toLocaleDateString("en-GB", { weekday: "short" }) : String(x.d.getDate()), v: x.v, today: dkey(x.d) === dkey(new Date()) }));
+            const m = {}; for (let i = 0; i < days; i++) { const d = new Date(startMs); d.setDate(d.getDate() + i); m[dkey(d)] = { d, v: 0, p: 0 }; }
+            inPeriod.forEach(o => { const x = m[dkey(new Date(o.OrderTime))]; if (x) { x.v += total(o); x.p += profitOf([o]).profit; } });
+            bars = Object.values(m).map(x => ({ label: days <= 7 ? x.d.toLocaleDateString("en-GB", { weekday: "short" }) : String(x.d.getDate()), v: x.v, p: x.p, today: dkey(x.d) === dkey(new Date()) }));
         }
-        const maxBar = Math.max(...bars.map(b => b.v), 1);
+        const showS = view !== "profit", showP = view !== "sales";
+        const lineS = days > 1 && showS ? tSalesDay : 0, lineP = days > 1 && showP && hasCosts ? tProfitDay : 0;
+        const maxBar = Math.max(...bars.map(b => Math.max(showS ? b.v : 0, showP ? Math.max(0, b.p) : 0)), lineS, lineP, 1);
 
         // channels
         const chDefs = [["dine", "🍽️ Dine-in", "#667eea"], ["takeaway", "🥡 Takeaway", "#f39c12"], ["pickup", "🛍️ Online pickup", "#9b59b6"], ["delivery", "🛵 Online delivery", "#27ae60"]];
@@ -416,7 +459,7 @@
         return (
             <>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
-                    <div style={{ display: "flex", gap: 8 }}>{pill("today", "Today")}{pill("7d", "Last 7 days")}{pill("30d", "Last 30 days")}</div>
+                    <div style={{ display: "flex", gap: 8 }}>{pill("today", "Today")}{pill("week", "This week")}{pill("month", "This month")}</div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <span style={{ fontSize: 12, color: "#999" }}>{updated ? "Updated " + updated.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "Loading…"}</span>
                         <button onClick={exportCsv} style={{ padding: "8px 14px", border: "1px solid #d9dcf5", background: "#fff", borderRadius: 8, fontWeight: 600, cursor: "pointer", fontSize: 13 }}>⬇ Export CSV</button>
@@ -425,7 +468,9 @@
 
                 <div className="stats-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))" }}>
                     <div className="stat-card"><div className="stat-card-label">Sales</div><div className="stat-card-value">{fmt(sales)}</div>
-                        <div className="stat-card-change" style={{ color: delta == null ? "#888" : delta >= 0 ? "#27ae60" : "#e74c3c" }}>{delta == null ? "No earlier data to compare" : (delta >= 0 ? "▲ " : "▼ ") + Math.abs(delta) + "% vs previous " + (days === 1 ? "day" : days + " days")}</div></div>
+                        <div className="stat-card-change" style={{ color: delta == null ? "#888" : delta >= 0 ? "#27ae60" : "#e74c3c" }}>{delta == null ? "No earlier data to compare" : (delta >= 0 ? "▲ " : "▼ ") + Math.abs(delta) + "% vs " + prevLabel}</div></div>
+                    <div className="stat-card"><div className="stat-card-label">Profit</div><div className="stat-card-value" style={{ color: hasCosts ? (profit >= 0 ? "#27ae60" : "#e74c3c") : "#bbb" }}>{hasCosts ? fmt(profit) : "—"}</div>
+                        <div className="stat-card-change" style={{ color: "#888" }}>{!hasCosts ? "Add costs in Inventory & recipes" : (pf.known > 0 ? Math.round(profit / pf.known * 100) + "% margin" : "no sales yet") + (pDelta != null ? "  ·  " + (pDelta >= 0 ? "▲" : "▼") + Math.abs(pDelta) + "% vs " + prevLabel : "") + (coverage < 100 && pf.rev > 0 ? "  ·  costs known for " + coverage + "% of sales" : "")}</div></div>
                     <div className="stat-card"><div className="stat-card-label">Money collected</div><div className="stat-card-value">{fmt(collected)}</div>
                         <div className="stat-card-change" style={{ color: "#888" }}>{sales > 0 ? Math.round((collected / sales) * 100) + "% of sales paid & closed" : "—"}</div></div>
                     <div className="stat-card"><div className="stat-card-label">Orders</div><div className="stat-card-value">{count}</div>
@@ -436,17 +481,50 @@
                         <div className="stat-card-change" style={{ color: "#888" }}>{tableCount ? Math.round((occupied / tableCount) * 100) + "% occupancy" : "no tables set up"}</div></div>
                 </div>
 
+                <div style={{ ...card, marginBottom: 20 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                        <div style={{ ...h3, marginBottom: 0 }}>🎯 {period === "today" ? "Today's" : period === "week" ? "This week's" : "This month's"} targets</div>
+                        <button className="btn btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => { const f = {}; ["sales", "profit"].forEach(k => ["today", "week", "month"].forEach(pp => { f[TARGET_KEYS[k][pp]] = set[TARGET_KEYS[k][pp]] || ""; })); setTgtForm(f); setTgtOpen(true); }}>⚙️ Set targets</button>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 18 }}>
+                        {[["Sales", sales, tSales, "#667eea"], ["Profit", profit, tProfit, "#27ae60"]].map(([lbl, val, t, col]) => {
+                            const pc = t > 0 ? Math.min(100, Math.max(0, val / t * 100)) : 0, hit = t > 0 && val >= t;
+                            return <div key={lbl}>
+                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}><b>{lbl}</b><span>{lbl === "Profit" && !hasCosts ? "needs costs" : t > 0 ? fmt(val) + " of " + fmt(t) + (hit ? " 🎉" : " · " + fmt(t - val) + " to go") : "no target set"}</span></div>
+                                <div style={{ height: 12, borderRadius: 6, background: "#eef0f5", overflow: "hidden" }}><div style={{ width: pc + "%", height: "100%", background: hit ? "#27ae60" : col, transition: "width .4s" }} /></div>
+                                {t > 0 && <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>{Math.round(pc)}% reached</div>}
+                            </div>;
+                        })}
+                    </div>
+                </div>
+
                 <div style={grid("2fr 1fr")}>
                     <div style={card}>
-                        <div style={h3}>{days === 1 ? "Sales by hour" : "Sales per day"}</div>
-                        <div className="bar-chart" style={{ height: 170, gap: days > 7 ? 3 : 8 }}>
-                            {bars.map((b, i) => (
-                                <div key={i} className="bar-group" title={b.label + ": " + fmt(b.v)}>
-                                    <div className="bar-value">{bars.length <= 12 && b.v > 0 ? fmt(b.v) : ""}</div>
-                                    <div className="bar" style={{ height: Math.max(3, (b.v / maxBar) * 120), background: b.today ? "#f39c12" : "#667eea" }} />
-                                    <div className="bar-label" style={{ fontSize: days > 7 ? 9 : 11 }}>{b.label}</div>
-                                </div>
-                            ))}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+                            <div style={{ ...h3, marginBottom: 0 }}>{view === "sales" ? "Sales" : view === "profit" ? "Profit" : "Sales & profit"} {days === 1 ? "by hour" : "per day"}</div>
+                            <div style={{ display: "flex", gap: 4, background: "#f1f2f8", padding: 3, borderRadius: 18 }}>
+                                {[["both", "Both"], ["sales", "Sales"], ["profit", "Profit"]].map(([k, l]) => <button key={k} onClick={() => setView(k)} style={{ padding: "5px 13px", border: "none", borderRadius: 15, fontSize: 12, fontWeight: 700, cursor: "pointer", background: view === k ? "#fff" : "transparent", color: view === k ? "#667eea" : "#777", boxShadow: view === k ? "0 1px 4px rgba(0,0,0,.12)" : "none" }}>{l}</button>)}
+                            </div>
+                        </div>
+                        <div style={{ position: "relative" }}>
+                            <div className="bar-chart" style={{ height: 170, gap: days > 7 ? 3 : 8 }}>
+                                {bars.map((b, i) => (
+                                    <div key={i} className="bar-group" title={b.label + " — sales " + fmt(b.v) + (hasCosts ? ", profit " + fmt(b.p) : "")}>
+                                        <div className="bar-value">{bars.length <= 8 ? (showS && b.v > 0 ? fmt(b.v) : showP && b.p > 0 ? fmt(b.p) : "") : ""}</div>
+                                        <div style={{ display: "flex", alignItems: "flex-end", gap: 2, width: "100%", height: 120 }}>
+                                            {showS && <div className="bar" style={{ flex: 1, height: Math.max(3, (b.v / maxBar) * 120), background: b.today ? "#f39c12" : "#667eea" }} />}
+                                            {showP && hasCosts && <div className="bar" style={{ flex: 1, height: Math.max(3, (Math.max(0, b.p) / maxBar) * 120), background: "#27ae60" }} />}
+                                        </div>
+                                        <div className="bar-label" style={{ fontSize: days > 7 ? 9 : 11 }}>{b.label}</div>
+                                    </div>
+                                ))}
+                            </div>
+                            {lineS > 0 && <div title={"Daily sales target " + fmt(lineS)} style={{ position: "absolute", left: 0, right: 0, bottom: 20 + (lineS / maxBar) * 120, borderTop: "2px dashed #667eea", opacity: .55, pointerEvents: "none" }}><span style={{ position: "absolute", right: 0, top: -16, fontSize: 10, color: "#667eea", fontWeight: 700 }}>sales target {fmt(lineS)}/day</span></div>}
+                            {lineP > 0 && <div title={"Daily profit target " + fmt(lineP)} style={{ position: "absolute", left: 0, right: 0, bottom: 20 + (lineP / maxBar) * 120, borderTop: "2px dashed #27ae60", opacity: .6, pointerEvents: "none" }}><span style={{ position: "absolute", left: 0, top: -16, fontSize: 10, color: "#27ae60", fontWeight: 700 }}>profit target {fmt(lineP)}/day</span></div>}
+                        </div>
+                        <div style={{ display: "flex", gap: 14, marginTop: 10, fontSize: 12, color: "#777" }}>
+                            {showS && <span><i style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "#667eea", marginRight: 6 }}></i>Sales</span>}
+                            {showP && <span><i style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "#27ae60", marginRight: 6 }}></i>Profit{!hasCosts ? " (set costs first)" : ""}</span>}
                         </div>
                         {busiest.length > 0 && <div style={{ marginTop: 14, fontSize: 13, color: "#666" }}>🔥 Busiest: {busiest.map(x => hr(x.h) + " (" + x.n + ")").join("  ·  ")}</div>}
                     </div>
@@ -531,6 +609,23 @@
                     </table>
                     </div>
                 </div>
+                {tgtOpen && (
+                    <div className="modal-overlay">
+                        <div className="modal">
+                            <h3>🎯 Sales &amp; profit targets</h3>
+                            <div style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>Leave blank for no target. The daily target is drawn as a dashed line on the week/month charts.</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "70px 1fr 1fr", gap: 8, alignItems: "center", fontSize: 13 }}>
+                                <span></span><b>Sales ({currency.trim()})</b><b>Profit ({currency.trim()})</b>
+                                {[["today", "Daily"], ["week", "Weekly"], ["month", "Monthly"]].map(([pp, l]) => <React.Fragment key={pp}><b>{l}</b>
+                                    {["sales", "profit"].map(k => <input key={k} type="number" min="0" value={tgtForm[TARGET_KEYS[k][pp]] || ""} onChange={e => setTgtForm({ ...tgtForm, [TARGET_KEYS[k][pp]]: e.target.value })} style={{ padding: 9, borderRadius: 8, border: "2px solid #e8e8e8" }} />)}</React.Fragment>)}
+                            </div>
+                            <div className="modal-actions">
+                                <button className="btn btn-ghost" onClick={() => setTgtOpen(false)}>Cancel</button>
+                                <button className="btn btn-primary" onClick={async () => { try { await window.POS_GAPI.Settings.update(tgtForm); setSettingsTick(x => x + 1); setTgtOpen(false); } catch (e) { alert("Could not save: " + e.message); } }}>✓ Save targets</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </>
         );
     }
@@ -555,6 +650,7 @@
       const [recFull, setRecFull]     = useState([]);   // [{row, ings}]
       const [targetMargin, setTargetMargin] = useState("");
       const [showMatch, setShowMatch] = useState(false);
+      const [autoOff, setAutoOff] = useState(true);
       const [matches, setMatches]     = useState([]);
       const invById = {}; inv.forEach(r => { invById[r.ItemID] = { ...r, Category: r.Category || "raw" }; });
       const parseIngs = (v) => { try { const a = typeof v === "string" ? JSON.parse(v || "[]") : v; return Array.isArray(a) ? a : []; } catch(e) { return []; } };
@@ -572,6 +668,7 @@
         
         const settings = window.POS_GAPI.getSettings();
         if (settings && settings.currency) setCurrency(settings.currency);
+        if (settings) setAutoOff(String(settings.auto_stock_off || "true").toLowerCase() !== "false");
 
         try {
           const res = { data: await window.POS_GAPI.getRows("MenuItems") };
@@ -581,7 +678,7 @@
                 .map(i => ({
                   id: i.ItemID, name: i.Name || "", category: i.Category || "Main Course",
                   price: parseFloat(i.Price)||0, status: String(i.Available).toLowerCase()==="false"?"inactive":"active",
-                  description: i.Description||"", emoji: i.Emoji||"🍽️", prepTime: i.PrepTime || "", stockItemId: i.StockItemID || ""
+                  description: i.Description||"", emoji: i.Emoji||"🍽️", prepTime: i.PrepTime || "", stockItemId: i.StockItemID || "", autoOff: String(i.AutoOff) === "1"
                 }))
               );
           }
@@ -678,7 +775,7 @@
         const item = items.find(i => i.id === id);
         if (!item) return;
         const newAvail = item.status === "active" ? false : true;
-        setItems(prev => prev.map(i => i.id===id ? {...i, status: newAvail?"active":"inactive"} : i));
+        setItems(prev => prev.map(i => i.id===id ? {...i, status: newAvail?"active":"inactive", autoOff:false} : i));
         if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
           try {
             await window.POS_GAPI.Menu.update({ itemId: id, available: newAvail });
@@ -695,7 +792,7 @@
                       PrepTime: nextPrep
                   });
                   toast("⚡ Cooking routing updated!");
-                  await load();
+                  await window.POS_GAPI.syncAvailability(); await load();
               }
           } catch(e) { alert("Toggle failed: " + e.message); }
       };
@@ -706,7 +803,7 @@
              if (window.POS_GAPI && window.POS_GAPI.getSheetId()) {
                  await window.POS_GAPI.Menu.delete(itemId);
                  toast("🗑️ Menu item deleted permanently!");
-                 await load();
+                 await window.POS_GAPI.syncAvailability(); await load();
              }
          } catch(e) { alert("Delete failed: " + e.message); }
       };
@@ -772,7 +869,7 @@
             matches.filter(m => m.dish===d && m.itemId).forEach(m => { const it = invById[m.itemId]; ings[m.idx] = { name: it.Name, amount: (m.qty+" "+m.unit).trim(), itemId: it.ItemID, qty: parseFloat(m.qty)||0, unit: m.unit }; });
             await window.POS_GAPI.Recipes.save({ dishName: d, prepTime: rec.row.PrepTime, cookTime: rec.row.CookTime, difficulty: rec.row.Difficulty, ingredients: JSON.stringify(ings), steps: typeof rec.row.Steps === "string" ? rec.row.Steps : JSON.stringify(rec.row.Steps||[]) });
           }
-          toast("✅ Linked " + matches.filter(m=>m.itemId).length + " ingredients"); await load(); setShowMatch(false);
+          toast("✅ Linked " + matches.filter(m=>m.itemId).length + " ingredients"); await window.POS_GAPI.syncAvailability(); await load(); setShowMatch(false);
         } catch(e) { alert("Could not save: " + e.message); }
         setSaving(false);
       };
@@ -804,7 +901,7 @@
             difficulty: recipe.difficulty,
             ingredients: recipe.ingredients, steps: recipe.steps,
           };
-          await load();
+          await window.POS_GAPI.syncAvailability(); await load();
           setShowRecipe(false);
         } catch(e) { alert("Recipe save failed: " + e.message); }
         setSaving(false);
@@ -818,6 +915,8 @@
               <div style={{display:"flex",gap:"10px"}}>
                 <input className="search-input" placeholder="🔍 Search items..."
                        value={search} onChange={e=>setSearch(e.target.value)} />
+                <label style={{display:"flex",alignItems:"center",gap:"6px",fontSize:"12px",color:"#555",cursor:"pointer"}} title="Hide a dish automatically when its ingredients run out, and show it again after restocking">
+                  <input type="checkbox" checked={autoOff} onChange={async e=>{ setAutoOff(e.target.checked); try { await window.POS_GAPI.Settings.update({auto_stock_off: e.target.checked ? "true":"false"}); if(e.target.checked){ await window.POS_GAPI.syncAvailability(); load(); } toast(e.target.checked?"Auto-hide when out of stock: ON":"Auto-hide when out of stock: OFF"); } catch(err){ alert(err.message); } }} /> Auto-hide when out of stock</label>
                 <button className="btn btn-ghost" onClick={openMatch}>🔗 Match ingredients</button>
                 <button className="btn btn-primary" onClick={handleOpenAddModal}>+ Add Item</button>
               </div>
@@ -841,7 +940,7 @@
                         <span onClick={()=>toggleStatus(item.id)} style={{width:"42px",height:"24px",borderRadius:"12px",background:item.status==="active"?"#27ae60":"#c0c0c0",position:"relative",transition:"all .2s",flexShrink:0}}>
                           <span style={{position:"absolute",top:"3px",left:item.status==="active"?"21px":"3px",width:"18px",height:"18px",borderRadius:"50%",background:"#fff",transition:"all .2s"}}></span>
                         </span>
-                        <span style={{fontSize:"12px",fontWeight:700,color:item.status==="active"?"#27ae60":"#999"}}>{item.status==="active"?"Selling":"Not selling"}</span>
+                        <span style={{fontSize:"12px",fontWeight:700,color:item.status==="active"?"#27ae60":"#999"}}>{item.status==="active"?"Selling":item.autoOff?"Out of stock":"Not selling"}</span>
                       </label>
                     </td>
                     <td>
@@ -1164,7 +1263,7 @@
                     await window.POS_GAPI.appendRow("Inventory", [id, fields.Name, fields.Unit, fields.Quantity, fields.ReorderLevel, fields.LastUpdated, fields.Supplier, fields.Cost]);
                     await window.POS_GAPI.updateRow("Inventory", 0, id, { Category: fields.Category, ForKitchen: fields.ForKitchen, MixYield: fields.MixYield, MixFormula: fields.MixFormula });
                 }
-                await load(); setModal(null);
+                await window.POS_GAPI.syncAvailability(); await load(); setModal(null);
             } catch (e) { alert("Could not save: " + e.message); }
             setSaving(false);
         };
@@ -1172,7 +1271,7 @@
             const usedIn = rows.filter(m => m.Category === "mix" && C.formulaOf(m).some(l => l.itemId === r.ItemID)).map(m => m.Name);
             if (usedIn.length && !confirm(r.Name + " is used in the mix: " + usedIn.join(", ") + ".\nDeleting it will leave those mixes incomplete. Delete anyway?")) return;
             if (!usedIn.length && !confirm("Permanently delete " + r.Name + "?")) return;
-            try { await window.POS_GAPI.Inventory.delete(r.ItemID); await load(); } catch (e) { alert("Delete failed: " + e.message); }
+            try { await window.POS_GAPI.Inventory.delete(r.ItemID); await window.POS_GAPI.syncAvailability(); await load(); } catch (e) { alert("Delete failed: " + e.message); }
         };
 
         // ── top up (raw / direct): add stock and record the new purchase price ──
@@ -1185,7 +1284,7 @@
             setSaving(true);
             try {
                 await window.POS_GAPI.updateRow("Inventory", 0, editItem.ItemID, { Quantity: Math.round((have + add) * 1000) / 1000, Cost: Math.round(newCost * 10000) / 10000, LastUpdated: new Date().toISOString() });
-                await load(); setModal(null);
+                await window.POS_GAPI.syncAvailability(); await load(); setModal(null);
             } catch (e) { alert("Top up failed: " + e.message); }
             setSaving(false);
         };
@@ -1201,7 +1300,7 @@
             try {
                 for (const n of needs) await window.POS_GAPI.updateRow("Inventory", 0, n.item.ItemID, { Quantity: Math.max(0, Math.round(((parseFloat(n.item.Quantity) || 0) - n.qty) * 1000) / 1000), LastUpdated: new Date().toISOString() });
                 await window.POS_GAPI.updateRow("Inventory", 0, editItem.ItemID, { Quantity: Math.round(((parseFloat(editItem.Quantity) || 0) + q) * 1000) / 1000, LastUpdated: new Date().toISOString() });
-                await load(); setModal(null);
+                await window.POS_GAPI.syncAvailability(); await load(); setModal(null);
             } catch (e) { alert("Batch failed (some stock may have changed — check the list): " + e.message); }
             setSaving(false);
         };
