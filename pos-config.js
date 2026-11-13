@@ -337,6 +337,8 @@ window.POS_GAPI = (() => {
       { name:"Settings",   headers:["Key","Value"] },
       { name:"Rota",       headers:["RotaID","StaffEmail","StaffName","Date","ShiftStart","ShiftEnd","Role","Location","Notes","Status"] },
       { name:"Clockings",  headers:["ClockingID","StaffEmail","StaffName","Date","ClockIn","ClockOut","TotalHours","Status","Notes"] },
+      { name:"Deals",      headers:["DealID","Name","Type","Items","Category","BuyQty","Price","Value","Days","StartTime","EndTime","StartDate","EndDate","Active","Description"] },
+      { name:"Expenses",   headers:["ExpenseID","Name","Category","Amount","Frequency","StartDate","EndDate","Notes"] },
     ];
 
     const addRequests = tabDefs.map(tab => ({
@@ -625,11 +627,16 @@ window.POS_GAPI = (() => {
     create: async (data) => {
       const id    = uid("ORD");
       const now   = new Date().toISOString();
-      const sub   = parseFloat(data.subtotal || data.total || 0);
+      let sub   = parseFloat(data.subtotal || data.total || 0);
+      let orderItems = data.items || [];
+      try {   // meal deals & special offers are applied here, so every app that saves an order gets the same discount
+        const rp = window.POS_DEALS ? window.POS_DEALS.reprice(orderItems, await window.POS_DEALS.load()) : null;
+        if (rp && (rp.applied.length || orderItems.some(i => i && i.isDeal))) { orderItems = rp.items; sub = rp.net; }
+      } catch (e) { console.error("deals:", e); }
       const tax   = parseFloat((sub * (_settings.tax_rate || 0.10)).toFixed(2));
       const total = parseFloat((sub + tax).toFixed(2));
       await appendRow("Orders", [id, data.tableNumber, data.customerName||"",
-        data.waiterName||"", JSON.stringify(data.items||[]), sub, tax, total, "new", now, data.notes||""]);
+        data.waiterName||"", JSON.stringify(orderItems), sub, tax, total, "new", now, data.notes||""]);
       if (data.memberId && window.POS_IS_LAN) { try { await updateRow("Orders", 0, id, { MemberID: data.memberId }); } catch (e) { console.error("member attach:", e); } }
       
       // Auto Deduct Stock Levels based on Recipe Formulation
@@ -641,6 +648,17 @@ window.POS_GAPI = (() => {
     },
     update: async (data) => {
       const updates = {};
+      if (data.items && data.items.length && data.subtotal !== undefined) {   // items changed → deals are worked out again from scratch
+        try {
+          const rp = window.POS_DEALS ? window.POS_DEALS.reprice(data.items, await window.POS_DEALS.load()) : null;
+          if (rp && (rp.applied.length || data.items.some(i => i && i.isDeal))) {
+            const s0 = parseFloat(data.subtotal) || 0, t0 = parseFloat(data.tax) || 0, tot0 = parseFloat(data.total) || 0;
+            const extra = Math.max(0, tot0 - s0 - t0), rate = s0 > 0 ? t0 / s0 : (_settings.tax_rate || 0);
+            data = { ...data, items: rp.items, subtotal: rp.net, tax: parseFloat((rp.net * rate).toFixed(2)) };
+            data.total = parseFloat((data.subtotal + data.tax + extra).toFixed(2));
+          }
+        } catch (e) { console.error("deals:", e); }
+      }
       if (data.status) updates.Status = data.status;
       if (data.items)  updates.Items  = JSON.stringify(data.items);
       if (data.notes)  updates.Notes  = data.notes;
@@ -1473,4 +1491,135 @@ window.POS_COST = (function () {
     }).filter(Boolean);
   }
   return { convert, norm, formulaOf, costInfo, recipeCost, batchNeeds, UNITS: ["kg", "g", "L", "ml", "pcs", "slices", "tsp", "tbsp", "cup", "portion"] };
+})();
+
+
+// ── Low-stock bar for kitchen screens: a layer along the bottom listing what is running low / out, plus a pop-up when something newly runs low ──
+window.POS_STOCKBAR = (() => {
+  let started = false, prev = null, bar, toast, toastTimer;
+  const num = (v) => parseFloat(v) || 0;
+  const css = `
+  #stockbar{position:fixed;left:0;right:0;bottom:0;z-index:9998;display:none;align-items:center;gap:12px;padding:9px 16px;background:#7f1d1d;color:#fff;font:600 15px system-ui,sans-serif;box-shadow:0 -3px 14px rgba(0,0,0,.35)}
+  #stockbar.warn{background:#92400e}
+  #stockbar .sb-title{white-space:nowrap;font-weight:800}
+  #stockbar .sb-scroll{overflow:hidden;flex:1;white-space:nowrap}
+  #stockbar .sb-track{display:inline-block;padding-left:0}
+  #stockbar .sb-track.run{animation:sbmove 28s linear infinite;padding-left:100%}
+  #stockbar .sb-chip{display:inline-block;margin-right:22px}
+  #stockbar .sb-chip b{background:rgba(255,255,255,.18);border-radius:6px;padding:1px 8px;margin-left:6px}
+  @keyframes sbmove{to{transform:translateX(-100%)}}
+  #stocktoast{position:fixed;left:50%;bottom:64px;transform:translateX(-50%) translateY(30px);z-index:9999;background:#111827;color:#fff;border-left:6px solid #f59e0b;border-radius:12px;padding:14px 22px;font:700 17px system-ui,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:all .35s;max-width:90vw}
+  #stocktoast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #stocktoast.out{border-left-color:#ef4444}`;
+  function ensureDom() {
+    if (bar) return;
+    const st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
+    bar = document.createElement("div"); bar.id = "stockbar"; document.body.appendChild(bar);
+    toast = document.createElement("div"); toast.id = "stocktoast"; document.body.appendChild(toast);
+  }
+  function beep() { try { const c = new (window.AudioContext || window.webkitAudioContext)(), o = c.createOscillator(), g = c.createGain(); o.connect(g); g.connect(c.destination); o.frequency.value = 660; g.gain.value = .08; o.start(); o.stop(c.currentTime + .18); } catch (e) {} }
+  function pop(html, isOut) {
+    toast.innerHTML = html; toast.className = (isOut ? "out " : "") + "show"; beep();
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.className = isOut ? "out" : ""; }, 9000);
+  }
+  async function check() {
+    try {
+      const G = window.POS_GAPI; if (!G || !G.getSheetId || !G.getSheetId()) return;
+      const [inv, menu] = await Promise.all([G.getRows("Inventory"), G.getRows("MenuItems").catch(() => [])]);
+      // only what the kitchen cares about: raw items, mixes and direct items used in recipes
+      const low = inv.filter(i => (i.Category || "raw") !== "direct" || String(i.ForKitchen) !== "0")
+        .filter(i => num(i.Quantity) <= num(i.ReorderLevel) && (num(i.ReorderLevel) > 0 || num(i.Quantity) <= 0))
+        .map(i => ({ id: i.ItemID, name: i.Name, qty: num(i.Quantity), unit: i.Unit, out: num(i.Quantity) <= 0 }))
+        .sort((a, b) => (b.out - a.out) || a.qty - b.qty);
+      const off = menu.filter(m => String(m.AutoOff) === "1").map(m => m.Name);
+      ensureDom();
+      if (prev) low.forEach(i => { const was = prev[i.id]; if (!was || (!was.out && i.out)) pop((i.out ? "🚫 " : "⚠️ ") + i.name + (i.out ? " has RUN OUT" : " is running low — " + i.qty + " " + i.unit + " left"), i.out); });
+      prev = {}; low.forEach(i => { prev[i.id] = i; });
+      if (!low.length && !off.length) { bar.style.display = "none"; document.body.style.paddingBottom = ""; return; }
+      const anyOut = low.some(i => i.out) || off.length > 0;
+      bar.className = anyOut ? "" : "warn";
+      const chips = low.map(i => '<span class="sb-chip">' + (i.out ? "🚫 " : "⚠️ ") + esc(i.name) + "<b>" + (i.out ? "OUT" : i.qty + " " + esc(i.unit)) + "</b></span>").join("")
+        + off.map(n => '<span class="sb-chip">⛔ ' + esc(n) + "<b>NOT AVAILABLE</b></span>").join("");
+      bar.innerHTML = '<span class="sb-title">' + (anyOut ? "STOCK ALERT" : "LOW STOCK") + '</span><div class="sb-scroll"><div class="sb-track">' + chips + "</div></div>";
+      bar.style.display = "flex"; document.body.style.paddingBottom = bar.offsetHeight + "px";
+      const sc = bar.querySelector(".sb-scroll"), tr = bar.querySelector(".sb-track");
+      if (tr.scrollWidth > sc.clientWidth) tr.classList.add("run");
+    } catch (e) { /* never break the kitchen screen */ }
+  }
+  const esc = (t) => String(t == null ? "" : t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  return { start() { if (started) return; started = true; setTimeout(check, 3000); setInterval(check, 15000); }, check };
+})();
+
+
+// ── Deals & special offers: fixed-price combos, "any N for X", % or amount off, optionally only on certain days/hours ──
+//  A deal appears on the order as its own negative line ("🏷️ Meal deal", isDeal:true) so bills, totals and reports just work.
+window.POS_DEALS = (() => {
+  const on = (v) => !["false", "0", "no", "off"].includes(String(v == null ? "1" : v).toLowerCase().trim());
+  const hm = (t) => { const m = /^(\d{1,2}):(\d{2})/.exec(String(t || "")); return m ? (+m[1]) * 60 + (+m[2]) : -1; };
+  const ymd = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const names = (d) => { let a = d.Items; try { a = typeof a === "string" ? JSON.parse(a || "[]") : a; } catch (e) { a = []; } return Array.isArray(a) ? a.filter(x => x && x.name) : []; };
+  const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  function isLive(d, date) {
+    if (!d || !d.Name || !on(d.Active)) return false;
+    const day = ymd(date), st = String(d.StartDate || "").slice(0, 10), en = String(d.EndDate || "").slice(0, 10);
+    if ((st && day < st) || (en && day > en)) return false;
+    const days = String(d.Days || "").split(",").map(x => x.trim()).filter(Boolean);
+    if (days.length && !days.includes(DAYS[date.getDay()])) return false;
+    const a = hm(d.StartTime), b = hm(d.EndTime), n = date.getHours() * 60 + date.getMinutes();
+    if (a >= 0 && b >= 0 && a !== b) { if (a < b ? !(n >= a && n < b) : !(n >= a || n < b)) return false; }
+    return true;
+  }
+  function pick(d, units) {   // best use of this deal on the units still unused → {saving, take:[units], times}
+    const type = String(d.Type || "combo").toLowerCase(), price = parseFloat(d.Price) || 0, value = parseFloat(d.Value) || 0, list = names(d);
+    const free = units.filter(u => !u.used), key = (x) => String(x || "").toLowerCase();
+    const eligible = () => free.filter(u => (!list.length && !d.Category) || (list.length ? list.some(l => key(l.name) === key(u.name)) : key(d.Category) === key(u.cat)));
+    if (type === "combo") {
+      if (!list.length) return null; let times = Infinity; const take = [];
+      list.forEach(l => { const q = Math.max(1, parseInt(l.qty, 10) || 1), have = free.filter(u => key(u.name) === key(l.name)); times = Math.min(times, Math.floor(have.length / q)); });
+      if (!(times >= 1) || !isFinite(times)) return null;
+      list.forEach(l => { const q = Math.max(1, parseInt(l.qty, 10) || 1); take.push(...free.filter(u => key(u.name) === key(l.name)).slice(0, q * times)); });
+      return { take, times, saving: take.reduce((a, u) => a + u.price, 0) - price * times };
+    }
+    if (type === "multi") {
+      const n = Math.max(2, parseInt(d.BuyQty, 10) || 2), el = eligible().sort((a, b) => b.price - a.price), times = Math.floor(el.length / n);
+      if (times < 1) return null; const take = el.slice(0, times * n);
+      return { take, times, saving: take.reduce((a, u) => a + u.price, 0) - price * times };
+    }
+    const el = eligible(); if (!el.length || !(value > 0)) return null; const sum = el.reduce((a, u) => a + u.price, 0);
+    return { take: el, times: 1, saving: type === "percent" ? sum * Math.min(100, value) / 100 : Math.min(sum, value * el.length) };
+  }
+  /** lines: [{name, qty, price, category}] (no deal lines). Returns {discount, applied:[{id,name,times,saving}], dealLines} */
+  function apply(lines, deals, date) {
+    date = date || new Date();
+    const units = []; (lines || []).forEach(l => { if (!l || l.isDeal) return; const q = Math.min(200, parseInt(l.qty || l.quantity || 1, 10) || 1); for (let i = 0; i < q; i++) units.push({ name: l.name || l.Name, cat: l.category || l.cat || "", price: parseFloat(l.price) || 0, used: false }); });
+    const live = (deals || []).filter(d => isLive(d, date)), applied = [];
+    for (let guard = 0; guard < 25; guard++) {
+      let best = null;
+      live.forEach(d => { const r = pick(d, units); if (r && r.saving > 0.005 && (!best || r.saving > best.r.saving)) best = { d, r }; });
+      if (!best) break;
+      best.r.take.forEach(u => { u.used = true; });
+      const ex = applied.find(a => a.id === best.d.DealID && a.name === best.d.Name);
+      if (ex) { ex.times += best.r.times; ex.saving = r2(ex.saving + best.r.saving); } else applied.push({ id: best.d.DealID, name: best.d.Name, times: best.r.times, saving: r2(best.r.saving) });
+    }
+    return { discount: r2(applied.reduce((a, x) => a + x.saving, 0)), applied, dealLines: applied.map(a => ({ name: "🏷️ " + a.name + (a.times > 1 ? " ×" + a.times : ""), qty: 1, price: -a.saving, isDeal: true, dealId: a.id, prepTime: "Bypass Prep", category: "Deal" })) };
+  }
+  /** Take any old deal lines off, work the deals out again, and put the fresh ones back. */
+  function reprice(items, deals, date) {
+    const plain = (items || []).filter(i => i && !i.isDeal), res = apply(plain, deals, date);
+    const out = plain.concat(res.dealLines);
+    const net = r2(out.reduce((a, i) => a + (parseFloat(i.price) || 0) * (parseInt(i.qty || i.quantity || 1, 10) || 1), 0));
+    return { items: out, net, gross: r2(net + res.discount), discount: res.discount, applied: res.applied };
+  }
+  let cache = null, at = 0;
+  async function load(force) {
+    if (!force && cache && Date.now() - at < 30000) return cache;
+    try { cache = (await window.POS_GAPI.getRows("Deals")).filter(Boolean); } catch (e) { cache = cache || []; }
+    at = Date.now(); return cache;
+  }
+  const describe = (d) => { const t = String(d.Type || "combo"), l = names(d);
+    return t === "combo" ? l.map(x => (x.qty > 1 ? x.qty + "× " : "") + x.name).join(" + ") + " = " + (d.Price)
+      : t === "multi" ? "Any " + d.BuyQty + " " + (l.length ? l.map(x => x.name).join(" / ") : d.Category || "items") + " = " + d.Price
+      : (t === "percent" ? d.Value + "% off " : d.Value + " off each ") + (l.length ? l.map(x => x.name).join(" / ") : d.Category || "everything"); };
+  return { apply, reprice, load, isLive, names, describe, DAYS };
 })();
