@@ -745,7 +745,7 @@ async function loadLiveDeliveries() {
     function build(d) {
       const o = ordRows.find(function(x) { return x.OrderID === d.OrderID; }) || {};
       let items = ["Food Package"];
-      try { items = JSON.parse(o.Items).map(function(it){ return (it.qty || it.quantity) + "x " + (it.name || it.Name); }); } catch(e) {}
+      try { items = JSON.parse(o.Items).filter(function(it){ return !it.isDeal; }).map(function(it){ return (it.qty || it.quantity) + "x " + (it.name || it.Name); }); } catch(e) {}
       if (!items.length) items = ["Food Package"];
       const addrRaw = d.CustomerAddress || o.CustomerAddress || "";
       const view = { CustomerAddress: addrRaw, Notes: o.Notes || "", CustomerPhone: o.CustomerPhone || "" };
