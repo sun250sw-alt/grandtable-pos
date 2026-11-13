@@ -571,6 +571,9 @@ function cleanDishName(name) {
 }
 
 function safeParseItems(raw) {
+  return _safeParseItems(raw).filter(function(i){ return !(i && i.isDeal); });   // deal/discount lines are not kitchen work
+}
+function _safeParseItems(raw) {
   if (Array.isArray(raw)) return raw;
   if (!raw || typeof raw !== "string") return [];
   var trimmed = raw.trim();
@@ -1668,5 +1671,6 @@ function undoStep(i) {
   }
 })();
 </script>
+<script>window.addEventListener("load",function(){ if(window.POS_STOCKBAR) POS_STOCKBAR.start(); });</script>
 </body>
 </html>
