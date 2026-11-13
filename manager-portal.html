@@ -307,6 +307,24 @@
         });
         return out;
     }
+    // what running costs (rent, wages, transport…) accrue on one calendar day
+    const EXP_CATS = ["Rent", "Wages", "Transport / fuel", "Utilities", "Packaging", "Marketing", "Maintenance", "Other"];
+    const EXP_FREQ = { once: "One-off", daily: "Every day", weekly: "Every week", monthly: "Every month" };
+    function expenseOnDay(list, d) {
+        const ds = dkey(d), dim = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); let t = 0;
+        list.forEach(e => {
+            const a = parseFloat(e.Amount) || 0, st = String(e.StartDate || "").slice(0, 10), en = String(e.EndDate || "").slice(0, 10), f = String(e.Frequency || "monthly").toLowerCase();
+            if (f === "once") { if (ds === st) t += a; return; }
+            if ((st && ds < st) || (en && ds > en)) return;
+            t += f === "daily" ? a : f === "weekly" ? a / 7 : a / dim;
+        });
+        return t;
+    }
+    function expenseBetween(list, fromMs, toMs) {   // whole days from..to (exclusive), never beyond today
+        let t = 0; const last = new Date(); last.setHours(0, 0, 0, 0);
+        for (let ms = fromMs; ms < toMs && ms <= last.getTime(); ms += 86400000) { const d = new Date(ms); d.setHours(0, 0, 0, 0); t += expenseOnDay(list, d); }
+        return t;
+    }
     const TARGET_KEYS = { sales: { today: "target_sales_day", week: "target_sales_week", month: "target_sales_month" }, profit: { today: "target_profit_day", week: "target_profit_week", month: "target_profit_month" } };
 
     function Dashboard() {
@@ -319,6 +337,7 @@
         const [updated, setUpdated] = useState(null);
         const [menu, setMenu] = useState([]);
         const [recipes, setRecipes] = useState([]);
+        const [expenses, setExpenses] = useState([]);
         const [view, setView] = useState("both");             // chart shows: sales | profit | both
         const [tgtOpen, setTgtOpen] = useState(false);
         const [tgtForm, setTgtForm] = useState({});
@@ -339,6 +358,7 @@
                 g.getRows("Drivers").then(r => r && setDrivers(r.filter(Boolean))).catch(() => {});
                 g.getRows("MenuItems").then(r => r && setMenu(r.filter(Boolean))).catch(() => {});
                 g.getRows("Recipes").then(r => r && setRecipes(r.filter(Boolean))).catch(() => {});
+                g.getRows("Expenses").then(r => r && setExpenses(r.filter(Boolean))).catch(() => {});
             } catch (e) { console.error("Dashboard stats sync error:", e); }
         };
         useEffect(() => { load(); const iv = setInterval(load, 8000); return () => clearInterval(iv); }, []);
@@ -380,11 +400,12 @@
         // profit = what the dishes sold for − what their ingredients cost (costs as they are now; dishes with no cost set count as unknown)
         const costMap = dishCostMap(menu, recipes, stock);
         const itemsOf = (o) => { let a = []; try { a = typeof o.Items === "string" ? JSON.parse(o.Items) : o.Items; } catch (e) {} return Array.isArray(a) ? a : []; };
-        const profitOf = (list) => { let rev = 0, cost = 0, known = 0; list.forEach(o => itemsOf(o).forEach(it => { const q = parseInt(it.qty || it.quantity, 10) || 1, r = q * (parseFloat(it.price || it.Price) || 0), c = costMap[String(it.name || it.Name || "").toLowerCase()]; rev += r; if (c != null) { cost += c * q; known += r; } })); return { rev, cost, known, profit: known - cost }; };
+        const profitOf = (list) => { let rev = 0, cost = 0, known = 0; list.forEach(o => itemsOf(o).forEach(it => { const q = parseInt(it.qty || it.quantity, 10) || 1, r = q * (parseFloat(it.price || it.Price) || 0), c = costMap[String(it.name || it.Name || "").toLowerCase()]; rev += r; if (it.isDeal) { known += r; } else if (c != null) { cost += c * q; known += r; } })); return { rev, cost, known, profit: known - cost }; };
         const pf = profitOf(inPeriod), prevPf = profitOf(prevOrders);
         const hasCosts = Object.keys(costMap).length > 0;
-        const profit = pf.profit, coverage = pf.rev > 0 ? Math.round(pf.known / pf.rev * 100) : 100;
-        const pDelta = prevPf.profit > 0 ? Math.round(((profit - prevPf.profit) / prevPf.profit) * 100) : null;
+        const expTotal = expenseBetween(expenses, startMs, endMs), prevExp = expenseBetween(expenses, prevStart, startMs);
+        const gross = pf.profit, profit = pf.profit - expTotal, coverage = pf.rev > 0 ? Math.round(pf.known / pf.rev * 100) : 100;
+        const prevNet = prevPf.profit - prevExp, pDelta = prevNet > 0 ? Math.round(((profit - prevNet) / prevNet) * 100) : null;
         const set = (window.POS_GAPI && window.POS_GAPI.getSettings && window.POS_GAPI.getSettings()) || {};
         const tgt = (kind, per) => parseFloat(set[TARGET_KEYS[kind][per]]) || 0;
         const tSales = tgt("sales", period), tProfit = tgt("profit", period), tSalesDay = tgt("sales", "today"), tProfitDay = tgt("profit", "today");
@@ -400,6 +421,7 @@
         } else {
             const m = {}; for (let i = 0; i < days; i++) { const d = new Date(startMs); d.setDate(d.getDate() + i); m[dkey(d)] = { d, v: 0, p: 0 }; }
             inPeriod.forEach(o => { const x = m[dkey(new Date(o.OrderTime))]; if (x) { x.v += total(o); x.p += profitOf([o]).profit; } });
+            Object.values(m).forEach(x => { if (x.d.getTime() <= Date.now()) x.p -= expenseOnDay(expenses, x.d); });
             bars = Object.values(m).map(x => ({ label: days <= 7 ? x.d.toLocaleDateString("en-GB", { weekday: "short" }) : String(x.d.getDate()), v: x.v, p: x.p, today: dkey(x.d) === dkey(new Date()) }));
         }
         const showS = view !== "profit", showP = view !== "sales";
@@ -416,7 +438,7 @@
         inPeriod.forEach(o => {
             let arr = []; try { arr = typeof o.Items === "string" ? JSON.parse(o.Items) : o.Items; } catch (e) {}
             (Array.isArray(arr) ? arr : []).forEach(it => {
-                const name = it.name || it.Name; if (!name) return;
+                const name = it.name || it.Name; if (!name || it.isDeal) return;
                 const q = parseInt(it.qty || it.quantity, 10) || 1, p = parseFloat(it.price || it.Price) || 0;
                 const r = itemMap[name] || (itemMap[name] = { name, q: 0, rev: 0 }); r.q += q; r.rev += q * p;
             });
@@ -470,7 +492,7 @@
                     <div className="stat-card"><div className="stat-card-label">Sales</div><div className="stat-card-value">{fmt(sales)}</div>
                         <div className="stat-card-change" style={{ color: delta == null ? "#888" : delta >= 0 ? "#27ae60" : "#e74c3c" }}>{delta == null ? "No earlier data to compare" : (delta >= 0 ? "▲ " : "▼ ") + Math.abs(delta) + "% vs " + prevLabel}</div></div>
                     <div className="stat-card"><div className="stat-card-label">Profit</div><div className="stat-card-value" style={{ color: hasCosts ? (profit >= 0 ? "#27ae60" : "#e74c3c") : "#bbb" }}>{hasCosts ? fmt(profit) : "—"}</div>
-                        <div className="stat-card-change" style={{ color: "#888" }}>{!hasCosts ? "Add costs in Inventory & recipes" : (pf.known > 0 ? Math.round(profit / pf.known * 100) + "% margin" : "no sales yet") + (pDelta != null ? "  ·  " + (pDelta >= 0 ? "▲" : "▼") + Math.abs(pDelta) + "% vs " + prevLabel : "") + (coverage < 100 && pf.rev > 0 ? "  ·  costs known for " + coverage + "% of sales" : "")}</div></div>
+                        <div className="stat-card-change" style={{ color: "#888" }}>{!hasCosts ? "Add costs in Inventory & recipes" : (pf.rev > 0 ? Math.round(profit / pf.rev * 100) + "% margin" : "no sales yet") + (expTotal > 0 ? "  ·  " + fmt(gross) + " from dishes − " + fmt(expTotal) + " running costs" : "") + (pDelta != null ? "  ·  " + (pDelta >= 0 ? "▲" : "▼") + Math.abs(pDelta) + "% vs " + prevLabel : "") + (coverage < 100 && pf.rev > 0 ? "  ·  costs known for " + coverage + "% of sales" : "")}</div></div>
                     <div className="stat-card"><div className="stat-card-label">Money collected</div><div className="stat-card-value">{fmt(collected)}</div>
                         <div className="stat-card-change" style={{ color: "#888" }}>{sales > 0 ? Math.round((collected / sales) * 100) + "% of sales paid & closed" : "—"}</div></div>
                     <div className="stat-card"><div className="stat-card-label">Orders</div><div className="stat-card-value">{count}</div>
@@ -524,7 +546,7 @@
                         </div>
                         <div style={{ display: "flex", gap: 14, marginTop: 10, fontSize: 12, color: "#777" }}>
                             {showS && <span><i style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "#667eea", marginRight: 6 }}></i>Sales</span>}
-                            {showP && <span><i style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "#27ae60", marginRight: 6 }}></i>Profit{!hasCosts ? " (set costs first)" : ""}</span>}
+                            {showP && <span><i style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: "#27ae60", marginRight: 6 }}></i>Profit{!hasCosts ? " (set costs first)" : days === 1 && expenses.length ? " (before today's running costs)" : expenses.length ? " (after running costs)" : ""}</span>}
                         </div>
                         {busiest.length > 0 && <div style={{ marginTop: 14, fontSize: 13, color: "#666" }}>🔥 Busiest: {busiest.map(x => hr(x.h) + " (" + x.n + ")").join("  ·  ")}</div>}
                     </div>
@@ -2323,6 +2345,202 @@
     const ROTA_STAFF = ["John Doe","Sarah Lee","Mike Chen","Emma Brown","Tom Wilson"];
     const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
+    // ── Deals & special offers builder ──
+    function DealsPage() {
+        const D = window.POS_DEALS;
+        const blank = { Name: "", Type: "combo", Items: [{ name: "", qty: 1 }], Category: "", BuyQty: 3, Price: "", Value: "", Days: [], StartTime: "", EndTime: "", StartDate: "", EndDate: "", Active: 1, Description: "", scope: "items" };
+        const [rows, setRows] = useState(null);
+        const [menu, setMenu] = useState([]);
+        const [currency, setCurrency] = useState("");
+        const [form, setForm] = useState(null);
+        const [saving, setSaving] = useState(false);
+        const load = async () => {
+            try {
+                const s = window.POS_GAPI.getSettings(); if (s && s.currency) setCurrency(s.currency + " ");
+                setMenu((await window.POS_GAPI.getRows("MenuItems")).filter(Boolean));
+                setRows((await window.POS_GAPI.getRows("Deals")).filter(Boolean)); D.load(true);
+            } catch (e) { setRows([]); alert("Could not load deals: " + e.message + "\n(Google Sheets mode: add a tab named Deals with the columns DealID, Name, Type, Items, Category, BuyQty, Price, Value, Days, StartTime, EndTime, StartDate, EndDate, Active, Description.)"); }
+        };
+        useEffect(() => { load(); }, []);
+        if (!rows) return <div style={{ padding: 20, textAlign: "center", color: "#888" }}>Loading deals...</div>;
+        const money = (n) => currency + (Math.round((parseFloat(n) || 0) * 100) / 100).toLocaleString();
+        const cats = [...new Set(menu.map(m => m.Category).filter(Boolean))];
+        const priceOf = (n) => { const m = menu.find(x => String(x.Name).toLowerCase() === String(n).toLowerCase()); return m ? parseFloat(m.Price) || 0 : 0; };
+        const typeName = { combo: "🍔 Combo (fixed price)", multi: "🔢 Any N for a price", percent: "％ Percent off", amount: "💵 Amount off each" };
+        const edit = (r) => { let items = D.names(r); if (!items.length) items = [{ name: "", qty: 1 }]; setForm({ ...blank, ...r, Items: items, Days: String(r.Days || "").split(",").map(x => x.trim()).filter(Boolean), scope: r.Category ? "category" : "items", Active: !["false", "0"].includes(String(r.Active).toLowerCase()) ? 1 : 0 }); };
+        const preview = (f) => {   // what the customer saves, from the regular prices
+            const list = f.Items.filter(i => i.name);
+            if (f.Type === "combo") { const reg = list.reduce((a, i) => a + priceOf(i.name) * (parseInt(i.qty, 10) || 1), 0); return reg > 0 && f.Price !== "" ? { reg, save: reg - parseFloat(f.Price) } : null; }
+            if (f.Type === "multi") { const el = f.scope === "category" ? menu.filter(m => m.Category === f.Category) : list.map(i => ({ Price: priceOf(i.name) })); const avg = el.length ? el.reduce((a, m) => a + (parseFloat(m.Price) || 0), 0) / el.length : 0; const reg = avg * (parseInt(f.BuyQty, 10) || 0); return reg > 0 && f.Price !== "" ? { reg, save: reg - parseFloat(f.Price), approx: el.length > 1 } : null; }
+            return null;
+        };
+        const save = async () => {
+            const f = form; if (!f.Name.trim()) return alert("Give the deal a name.");
+            const items = f.Items.filter(i => i.name).map(i => ({ name: i.name, qty: parseInt(i.qty, 10) || 1 }));
+            if (f.Type === "combo" && items.length < 1) return alert("Add the items in the combo.");
+            if ((f.Type === "combo" || f.Type === "multi") && !(parseFloat(f.Price) >= 0) ) return alert("Enter the deal price.");
+            if (f.Type === "multi" && (parseInt(f.BuyQty, 10) || 0) < 2) return alert("'Any N' needs at least 2 items.");
+            if (f.Type === "multi" && f.scope === "items" && !items.length) return alert("Pick the items (or switch to a category).");
+            if ((f.Type === "percent" || f.Type === "amount") && !(parseFloat(f.Value) > 0)) return alert("Enter the " + (f.Type === "percent" ? "percentage" : "amount") + " off.");
+            setSaving(true);
+            try {
+                const useCat = f.Type !== "combo" && f.scope === "category";
+                const r = { Name: f.Name.trim(), Type: f.Type, Items: f.Type !== "combo" && useCat ? "[]" : JSON.stringify(items), Category: useCat ? f.Category : "", BuyQty: f.Type === "multi" ? parseInt(f.BuyQty, 10) : "", Price: f.Type === "combo" || f.Type === "multi" ? parseFloat(f.Price) : "", Value: f.Type === "percent" || f.Type === "amount" ? parseFloat(f.Value) : "", Days: f.Days.join(","), StartTime: f.StartTime, EndTime: f.EndTime, StartDate: f.StartDate, EndDate: f.EndDate, Active: f.Active ? 1 : 0, Description: f.Description };
+                if (f.DealID) await window.POS_GAPI.updateRow("Deals", 0, f.DealID, r);
+                else await window.POS_GAPI.appendRow("Deals", [window.POS_GAPI.uid("DEAL"), r.Name, r.Type, r.Items, r.Category, r.BuyQty, r.Price, r.Value, r.Days, r.StartTime, r.EndTime, r.StartDate, r.EndDate, r.Active, r.Description]);
+                await load(); setForm(null);
+            } catch (e) { alert("Could not save: " + e.message); }
+            setSaving(false);
+        };
+        const toggle = async (r) => { const on = ["false", "0"].includes(String(r.Active).toLowerCase()); try { await window.POS_GAPI.updateRow("Deals", 0, r.DealID, { Active: on ? 1 : 0 }); await load(); } catch (e) { alert(e.message); } };
+        const del = async (r) => { if (!confirm("Delete the deal \"" + r.Name + "\"?")) return; try { await window.POS_GAPI.deleteRow("Deals", 0, r.DealID); await load(); } catch (e) { alert(e.message); } };
+        const inp = { padding: 10, borderRadius: 8, border: "2px solid #e8e8e8", width: "100%" };
+        const sched = (r) => [String(r.Days || "") || "every day", r.StartTime && r.EndTime ? r.StartTime + "–" + r.EndTime : "", r.StartDate || r.EndDate ? (r.StartDate || "…") + " → " + (r.EndDate || "…") : ""].filter(Boolean).join(" · ");
+        const pv = form ? preview(form) : null;
+        const itemRows = form && form.Items.map((it, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 70px auto", gap: 6, marginBottom: 6 }}>
+                <select style={inp} value={it.name} onChange={e => setForm({ ...form, Items: form.Items.map((x, j) => j === i ? { ...x, name: e.target.value } : x) })}><option value="">— choose item —</option>{menu.map(m => <option key={m.ItemID} value={m.Name}>{m.Name} ({money(m.Price)})</option>)}</select>
+                {form.Type === "combo" ? <input style={inp} type="number" min="1" value={it.qty} onChange={e => setForm({ ...form, Items: form.Items.map((x, j) => j === i ? { ...x, qty: e.target.value } : x) })} /> : <span></span>}
+                <button className="remove-btn" onClick={() => setForm({ ...form, Items: form.Items.filter((_, j) => j !== i) })}>✕</button>
+            </div>));
+        return (
+            <>
+                <div style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>Deals are applied automatically on the till, waiter app and customer app — the saving shows on the bill. If several deals fit, the one that saves the customer most is used first.</div>
+                <div className="table-card">
+                    <div className="table-card-header"><div className="table-card-title">Deals &amp; special offers</div><button className="btn btn-success" onClick={() => setForm({ ...blank })}>+ New deal</button></div>
+                    <div style={{ overflowX: "auto" }}><table className="data-table">
+                        <thead><tr><th>Deal</th><th>What it does</th><th>When</th><th>Active</th><th>Actions</th></tr></thead>
+                        <tbody>
+                            {rows.length === 0 && <tr><td colSpan="5" style={{ textAlign: "center", color: "#999", padding: 24 }}>No deals yet — build a combo, "any 3 for…" or a happy-hour discount.</td></tr>}
+                            {rows.map(r => { const on = !["false", "0"].includes(String(r.Active).toLowerCase()); return <tr key={r.DealID}>
+                                <td><strong>{r.Name}</strong><div style={{ fontSize: 11, color: "#999" }}>{typeName[r.Type] || r.Type}</div></td>
+                                <td style={{ maxWidth: 300 }}>{D.describe(r).replace(/ = (\d)/, " = " + currency + "$1")}</td>
+                                <td style={{ fontSize: 12 }}>{sched(r)}</td>
+                                <td><span onClick={() => toggle(r)} style={{ cursor: "pointer", display: "inline-block", width: 42, height: 24, borderRadius: 12, background: on ? "#27ae60" : "#c0c0c0", position: "relative" }}><span style={{ position: "absolute", top: 3, left: on ? 21 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "all .2s" }}></span></span></td>
+                                <td><div style={{ display: "flex", gap: 6 }}><button className="btn btn-primary" style={{ padding: "5px 11px", fontSize: 12 }} onClick={() => edit(r)}>📝 Edit</button><button className="btn btn-danger" style={{ padding: "5px 11px", fontSize: 12 }} onClick={() => del(r)}>🗑️</button></div></td>
+                            </tr>; })}
+                        </tbody>
+                    </table></div>
+                </div>
+                {form && (
+                    <div className="modal-overlay"><div className="modal" style={{ width: 620, maxHeight: "92vh", overflowY: "auto" }}>
+                        <h3>{form.DealID ? "Edit" : "New"} deal</h3>
+                        <div className="form-grid">
+                            <div className="form-group" style={{ gridColumn: "1/-1" }}><label>Deal name (shown on the bill)</label><input style={inp} value={form.Name} onChange={e => setForm({ ...form, Name: e.target.value })} placeholder="e.g. Burger Combo" /></div>
+                            <div className="form-group" style={{ gridColumn: "1/-1" }}><label>Type of deal</label>
+                                <select style={inp} value={form.Type} onChange={e => setForm({ ...form, Type: e.target.value })}>{Object.entries(typeName).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+                        </div>
+                        {form.Type === "combo" && <div style={{ marginBottom: 10 }}><div style={{ fontWeight: 700, marginBottom: 6 }}>Customer buys all of these:</div>{itemRows}<button className="recipe-btn" onClick={() => setForm({ ...form, Items: [...form.Items, { name: "", qty: 1 }] })}>+ Add item</button></div>}
+                        {form.Type !== "combo" && <div style={{ marginBottom: 10 }}>
+                            <div style={{ fontWeight: 700, marginBottom: 6 }}>Which items count?</div>
+                            <div style={{ display: "flex", gap: 14, marginBottom: 8, fontSize: 13, flexWrap: "wrap" }}>
+                                {[["items", "Specific items"], ["category", "A whole category"], ["all", "Everything"]].filter(([k]) => k !== "all" || form.Type === "percent" || form.Type === "amount").map(([k, l]) => <label key={k}><input type="radio" checked={form.scope === k} onChange={() => setForm({ ...form, scope: k, ...(k === "all" ? { Items: [], Category: "" } : {}) })} /> {l}</label>)}
+                            </div>
+                            {form.scope === "items" && <>{itemRows}<button className="recipe-btn" onClick={() => setForm({ ...form, Items: [...form.Items, { name: "", qty: 1 }] })}>+ Add item</button></>}
+                            {form.scope === "category" && <select style={inp} value={form.Category} onChange={e => setForm({ ...form, Category: e.target.value })}><option value="">— choose category —</option>{cats.map(c => <option key={c}>{c}</option>)}</select>}
+                        </div>}
+                        <div className="form-grid">
+                            {form.Type === "multi" && <div className="form-group"><label>Customer buys (how many)</label><input style={inp} type="number" min="2" value={form.BuyQty} onChange={e => setForm({ ...form, BuyQty: e.target.value })} /></div>}
+                            {(form.Type === "combo" || form.Type === "multi") && <div className="form-group"><label>For a fixed price of ({currency.trim()})</label><input style={inp} type="number" value={form.Price} onChange={e => setForm({ ...form, Price: e.target.value })} /></div>}
+                            {(form.Type === "percent" || form.Type === "amount") && <div className="form-group"><label>{form.Type === "percent" ? "Percent off (%)" : "Amount off each item (" + currency.trim() + ")"}</label><input style={inp} type="number" value={form.Value} onChange={e => setForm({ ...form, Value: e.target.value })} /></div>}
+                        </div>
+                        {pv && <div style={{ background: pv.save > 0 ? "#f0fdf4" : "#fef2f2", borderRadius: 10, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>Regular price {pv.approx ? "≈ " : ""}{money(pv.reg)} → deal {money(form.Price)} · customer saves <b>{money(pv.save)}</b> {pv.save <= 0 && "⚠ the deal costs MORE than normal — it will never apply"}</div>}
+                        <div style={{ fontWeight: 700, margin: "6px 0" }}>When is it on? <span style={{ fontWeight: 400, color: "#888", fontSize: 12 }}>(leave blank = always)</span></div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                            {D.DAYS.map(d => { const on = form.Days.includes(d); return <button key={d} onClick={() => setForm({ ...form, Days: on ? form.Days.filter(x => x !== d) : [...form.Days, d] })} style={{ padding: "6px 12px", borderRadius: 16, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 12, background: on ? "#667eea" : "#eef0fb", color: on ? "#fff" : "#555" }}>{d}</button>; })}
+                        </div>
+                        <div className="form-grid">
+                            <div className="form-group"><label>From time</label><input style={inp} type="time" value={form.StartTime} onChange={e => setForm({ ...form, StartTime: e.target.value })} /></div>
+                            <div className="form-group"><label>Until time</label><input style={inp} type="time" value={form.EndTime} onChange={e => setForm({ ...form, EndTime: e.target.value })} /></div>
+                            <div className="form-group"><label>Starts on (date)</label><input style={inp} type="date" value={String(form.StartDate || "").slice(0, 10)} onChange={e => setForm({ ...form, StartDate: e.target.value })} /></div>
+                            <div className="form-group"><label>Ends on (date)</label><input style={inp} type="date" value={String(form.EndDate || "").slice(0, 10)} onChange={e => setForm({ ...form, EndDate: e.target.value })} /></div>
+                        </div>
+                        <div className="form-group"><label>Description for customers (optional)</label><input style={inp} value={form.Description} onChange={e => setForm({ ...form, Description: e.target.value })} placeholder="e.g. Friday happy hour" /></div>
+                        <div className="modal-actions"><button className="btn btn-ghost" onClick={() => setForm(null)}>Cancel</button><button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? "Saving..." : "✓ Save deal"}</button></div>
+                    </div></div>
+                )}
+            </>
+        );
+    }
+
+    // ── Running costs: rent, wages, transport… so profit is real, not just "sales − ingredients" ──
+    function ExpensesPage() {
+        const blank = { Name: "", Category: "Transport / fuel", Amount: "", Frequency: "monthly", StartDate: dkey(new Date()), EndDate: "", Notes: "" };
+        const [rows, setRows] = useState(null);
+        const [currency, setCurrency] = useState("");
+        const [form, setForm] = useState(null);
+        const [saving, setSaving] = useState(false);
+        const load = async () => {
+            try { const s = window.POS_GAPI.getSettings(); if (s && s.currency) setCurrency(s.currency + " "); setRows((await window.POS_GAPI.getRows("Expenses")).filter(Boolean)); }
+            catch (e) { setRows([]); alert("Could not load expenses: " + e.message + "\n(If you use Google Sheets mode, add a tab named Expenses with the columns ExpenseID, Name, Category, Amount, Frequency, StartDate, EndDate, Notes.)"); }
+        };
+        useEffect(() => { load(); }, []);
+        if (!rows) return <div style={{ padding: 20, textAlign: "center", color: "#888" }}>Loading...</div>;
+        const money = (n) => currency + Math.round(n || 0).toLocaleString();
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const perDay = expenseOnDay(rows, today);
+        const mStart = new Date(today.getFullYear(), today.getMonth(), 1).getTime(), mEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1).getTime();
+        const monthSoFar = expenseBetween(rows, mStart, mEnd);
+        const monthFull = (() => { let t = 0; for (let ms = mStart; ms < mEnd; ms += 86400000) t += expenseOnDay(rows, new Date(ms)); return t; })();
+        const save = async () => {
+            if (!form.Name.trim()) return alert("Enter a name.");
+            if (!(parseFloat(form.Amount) >= 0) || form.Amount === "") return alert("Enter the amount.");
+            setSaving(true);
+            try {
+                const f = { ...form, Name: form.Name.trim(), Amount: parseFloat(form.Amount) };
+                if (form.ExpenseID) await window.POS_GAPI.updateRow("Expenses", 0, form.ExpenseID, f);
+                else await window.POS_GAPI.appendRow("Expenses", [window.POS_GAPI.uid("EXP"), f.Name, f.Category, f.Amount, f.Frequency, f.StartDate, f.EndDate, f.Notes]);
+                await load(); setForm(null);
+            } catch (e) { alert("Could not save: " + e.message); }
+            setSaving(false);
+        };
+        const del = async (r) => { if (!confirm("Delete " + r.Name + "? Past profit figures will no longer include it.\n(Tip: set an End date instead to keep history.)")) return; try { await window.POS_GAPI.deleteRow("Expenses", 0, r.ExpenseID); await load(); } catch (e) { alert(e.message); } };
+        const card = { background: "#fff", borderRadius: 14, padding: 18, boxShadow: "0 2px 10px rgba(0,0,0,.06)" };
+        const inp = { padding: 10, borderRadius: 8, border: "2px solid #e8e8e8", width: "100%" };
+        return (
+            <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 16, marginBottom: 18 }}>
+                    <div style={card}><div style={{ fontSize: 12, color: "#888" }}>Running cost per day (today)</div><div style={{ fontSize: 30, fontWeight: 800 }}>{money(perDay)}</div></div>
+                    <div style={card}><div style={{ fontSize: 12, color: "#888" }}>This month so far</div><div style={{ fontSize: 30, fontWeight: 800 }}>{money(monthSoFar)}</div></div>
+                    <div style={card}><div style={{ fontSize: 12, color: "#888" }}>Whole month</div><div style={{ fontSize: 30, fontWeight: 800 }}>{money(monthFull)}</div></div>
+                </div>
+                <div style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>These are taken off your dish profit on the Dashboard, spread evenly over the days (a monthly cost is split across the days of the month), so you see real profit.</div>
+                <div className="table-card">
+                    <div className="table-card-header"><div className="table-card-title">Running costs</div><button className="btn btn-success" onClick={() => setForm({ ...blank })}>+ Add cost</button></div>
+                    <div style={{ overflowX: "auto" }}><table className="data-table">
+                        <thead><tr><th>Name</th><th>Category</th><th>Amount</th><th>How often</th><th>From</th><th>Until</th><th>Actions</th></tr></thead>
+                        <tbody>
+                            {rows.length === 0 && <tr><td colSpan="7" style={{ textAlign: "center", color: "#999", padding: 24 }}>No running costs yet — add rent, wages, fuel, electricity…</td></tr>}
+                            {rows.map(r => <tr key={r.ExpenseID}>
+                                <td><strong>{r.Name}</strong>{r.Notes ? <div style={{ fontSize: 11, color: "#999" }}>{r.Notes}</div> : null}</td>
+                                <td><span className="badge badge-blue">{r.Category}</span></td>
+                                <td><strong>{money(parseFloat(r.Amount))}</strong></td>
+                                <td>{EXP_FREQ[String(r.Frequency).toLowerCase()] || r.Frequency}</td>
+                                <td>{String(r.StartDate || "").slice(0, 10)}</td><td>{String(r.EndDate || "").slice(0, 10) || "—"}</td>
+                                <td><div style={{ display: "flex", gap: 6 }}><button className="btn btn-primary" style={{ padding: "5px 11px", fontSize: 12 }} onClick={() => setForm({ ...blank, ...r, Amount: r.Amount, StartDate: String(r.StartDate || "").slice(0, 10), EndDate: String(r.EndDate || "").slice(0, 10) })}>📝 Edit</button><button className="btn btn-danger" style={{ padding: "5px 11px", fontSize: 12 }} onClick={() => del(r)}>🗑️</button></div></td>
+                            </tr>)}
+                        </tbody>
+                    </table></div>
+                </div>
+                {form && (
+                    <div className="modal-overlay"><div className="modal">
+                        <h3>{form.ExpenseID ? "Edit" : "Add"} running cost</h3>
+                        <div className="form-grid">
+                            <div className="form-group" style={{ gridColumn: "1/-1" }}><label>Name</label><input style={inp} value={form.Name} onChange={e => setForm({ ...form, Name: e.target.value })} placeholder="e.g. Delivery bike fuel" /></div>
+                            <div className="form-group"><label>Category</label><select style={inp} value={form.Category} onChange={e => setForm({ ...form, Category: e.target.value })}>{EXP_CATS.map(c => <option key={c}>{c}</option>)}</select></div>
+                            <div className="form-group"><label>Amount ({currency.trim()})</label><input style={inp} type="number" value={form.Amount} onChange={e => setForm({ ...form, Amount: e.target.value })} /></div>
+                            <div className="form-group"><label>How often</label><select style={inp} value={form.Frequency} onChange={e => setForm({ ...form, Frequency: e.target.value })}>{Object.entries(EXP_FREQ).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+                            <div className="form-group"><label>{form.Frequency === "once" ? "Date" : "Starts"}</label><input style={inp} type="date" value={form.StartDate} onChange={e => setForm({ ...form, StartDate: e.target.value })} /></div>
+                            {form.Frequency !== "once" && <div className="form-group"><label>Ends (optional)</label><input style={inp} type="date" value={form.EndDate} onChange={e => setForm({ ...form, EndDate: e.target.value })} /></div>}
+                            <div className="form-group" style={{ gridColumn: "1/-1" }}><label>Notes (optional)</label><input style={inp} value={form.Notes} onChange={e => setForm({ ...form, Notes: e.target.value })} /></div>
+                        </div>
+                        <div className="modal-actions"><button className="btn btn-ghost" onClick={() => setForm(null)}>Cancel</button><button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? "Saving..." : "✓ Save"}</button></div>
+                    </div></div>
+                )}
+            </>
+        );
+    }
+
     // ── Customer ratings (food + driver) from the customer app ──
     function RatingsPage() {
         const [rows, setRows] = useState(null);
@@ -2374,6 +2592,8 @@
         { icon: "📦", label: "Inventory", section: "inventory" },
         { icon: "👥", label: "Staff", section: "staff" },
         { icon: "📅", label: "Rota Manager", section: "rota" },
+        { icon: "🏷️", label: "Deals & Offers", section: "deals" },
+        { icon: "💸", label: "Running Costs", section: "expenses" },
         { icon: "⭐", label: "Ratings", section: "ratings" },
         { icon: "🕐", label: "Team Clockings", section: "clockings" },
         { icon: "⚙️", label: "Settings", section: "settings" }
@@ -2398,6 +2618,8 @@
           overview: { title: "Dashboard", sub: "Live sales, orders and stock" }, 
           menu: { title: "Menu Management", sub: "Add, edit, and delete dishes" }, 
           inventory: { title: "Inventory", sub: "Track and manage stock levels" }, 
+          deals: { title: "Deals & Offers", sub: "Meal deals, fixed-price combos and discounts — applied automatically at checkout" },
+          expenses: { title: "Running Costs", sub: "Rent, wages, transport and other costs — taken off your profit" },
           ratings: { title: "Ratings", sub: "What customers say about the food and drivers" },
           staff: { title: "Staff Management", sub: "Add or delete team members" }, 
           rota: { title: "Rota Manager", sub: "Build and publish staff schedules" }, 
@@ -2462,6 +2684,8 @@
                         {active === "inventory" && <Inventory />}
                         {active === "staff" && <StaffWithDrivers toast={triggerToast} />}
                         {active === "rota" && <RotaManager />}
+                        {active === "deals" && <DealsPage />}
+                        {active === "expenses" && <ExpensesPage />}
                         {active === "ratings" && <RatingsPage />}
                         {active === "clockings" && <TeamClockings />}
                         {active === "settings" && <SettingsPage toast={triggerToast} />}
