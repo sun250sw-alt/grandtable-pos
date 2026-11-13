@@ -253,7 +253,7 @@
     // Convert sheet row to kitchen order format
     function sheetToKitchenOrder(row) {
         let items = [];
-        try { items = JSON.parse(row.Items || "[]"); } catch(e) {}
+        try { items = JSON.parse(row.Items || "[]").filter(function(i){ return i && !i.isDeal; }); } catch(e) {}
 
         return {
             id       : row.OrderID,
@@ -525,5 +525,6 @@
   }
 })();
 </script>
+<script>window.addEventListener("load",function(){ if(window.POS_STOCKBAR) POS_STOCKBAR.start(); });</script>
 </body>
 </html>
