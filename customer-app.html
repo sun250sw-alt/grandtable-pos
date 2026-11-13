@@ -229,6 +229,14 @@
 
         /* Special offer / notice */
         .offer-card { margin: -24px 20px 0; position: relative; z-index: 6; padding: 14px 40px 14px 14px; border-radius: 14px; color: #fff; box-shadow: 0 6px 18px rgba(0,0,0,.18); display: flex; gap: 12px; align-items: flex-start; background: linear-gradient(135deg, #e74c3c, #f39c12); }
+        .deal-card { margin: 10px 20px 0; position: relative; z-index: 6; padding: 12px 14px; border-radius: 14px; color: #fff; box-shadow: 0 6px 18px rgba(0,0,0,.15); display: flex; gap: 12px; align-items: center; background: linear-gradient(135deg, #059669, #34d399); cursor: pointer; animation: dealIn .45s ease; }
+        .deal-card .oc-ico { font-size: 26px; line-height: 1; }
+        .deal-card .oc-title { font-weight: 800; font-size: 15px; }
+        .deal-card .oc-text { font-size: 12.5px; opacity: .95; margin-top: 2px; }
+        .deal-dots { display: flex; flex-direction: column; gap: 4px; }
+        .deal-dots span { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,.45); }
+        .deal-dots span.on { background: #fff; }
+        @keyframes dealIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
         .offer-card.notice { background: linear-gradient(135deg, #2d3561, #667eea); }
         .offer-card .oc-ico { font-size: 28px; line-height: 1; }
         .offer-card .oc-title { font-weight: 800; font-size: 15px; margin-bottom: 2px; }
@@ -290,6 +298,73 @@
 <body>
 <div id="root"></div>
 
+<script>
+window.POS_DEALS = (() => {
+  const on = (v) => !["false", "0", "no", "off"].includes(String(v == null ? "1" : v).toLowerCase().trim());
+  const hm = (t) => { const m = /^(\d{1,2}):(\d{2})/.exec(String(t || "")); return m ? (+m[1]) * 60 + (+m[2]) : -1; };
+  const ymd = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const names = (d) => { let a = d.Items; try { a = typeof a === "string" ? JSON.parse(a || "[]") : a; } catch (e) { a = []; } return Array.isArray(a) ? a.filter(x => x && x.name) : []; };
+  const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  function isLive(d, date) {
+    if (!d || !d.Name || !on(d.Active)) return false;
+    const day = ymd(date), st = String(d.StartDate || "").slice(0, 10), en = String(d.EndDate || "").slice(0, 10);
+    if ((st && day < st) || (en && day > en)) return false;
+    const days = String(d.Days || "").split(",").map(x => x.trim()).filter(Boolean);
+    if (days.length && !days.includes(DAYS[date.getDay()])) return false;
+    const a = hm(d.StartTime), b = hm(d.EndTime), n = date.getHours() * 60 + date.getMinutes();
+    if (a >= 0 && b >= 0 && a !== b) { if (a < b ? !(n >= a && n < b) : !(n >= a || n < b)) return false; }
+    return true;
+  }
+  function pick(d, units) {   // best use of this deal on the units still unused → {saving, take:[units], times}
+    const type = String(d.Type || "combo").toLowerCase(), price = parseFloat(d.Price) || 0, value = parseFloat(d.Value) || 0, list = names(d);
+    const free = units.filter(u => !u.used), key = (x) => String(x || "").toLowerCase();
+    const eligible = () => free.filter(u => (!list.length && !d.Category) || (list.length ? list.some(l => key(l.name) === key(u.name)) : key(d.Category) === key(u.cat)));
+    if (type === "combo") {
+      if (!list.length) return null; let times = Infinity; const take = [];
+      list.forEach(l => { const q = Math.max(1, parseInt(l.qty, 10) || 1), have = free.filter(u => key(u.name) === key(l.name)); times = Math.min(times, Math.floor(have.length / q)); });
+      if (!(times >= 1) || !isFinite(times)) return null;
+      list.forEach(l => { const q = Math.max(1, parseInt(l.qty, 10) || 1); take.push(...free.filter(u => key(u.name) === key(l.name)).slice(0, q * times)); });
+      return { take, times, saving: take.reduce((a, u) => a + u.price, 0) - price * times };
+    }
+    if (type === "multi") {
+      const n = Math.max(2, parseInt(d.BuyQty, 10) || 2), el = eligible().sort((a, b) => b.price - a.price), times = Math.floor(el.length / n);
+      if (times < 1) return null; const take = el.slice(0, times * n);
+      return { take, times, saving: take.reduce((a, u) => a + u.price, 0) - price * times };
+    }
+    const el = eligible(); if (!el.length || !(value > 0)) return null; const sum = el.reduce((a, u) => a + u.price, 0);
+    return { take: el, times: 1, saving: type === "percent" ? sum * Math.min(100, value) / 100 : Math.min(sum, value * el.length) };
+  }
+  /** lines: [{name, qty, price, category}] (no deal lines). Returns {discount, applied:[{id,name,times,saving}], dealLines} */
+  function apply(lines, deals, date) {
+    date = date || new Date();
+    const units = []; (lines || []).forEach(l => { if (!l || l.isDeal) return; const q = Math.min(200, parseInt(l.qty || l.quantity || 1, 10) || 1); for (let i = 0; i < q; i++) units.push({ name: l.name || l.Name, cat: l.category || l.cat || "", price: parseFloat(l.price) || 0, used: false }); });
+    const live = (deals || []).filter(d => isLive(d, date)), applied = [];
+    for (let guard = 0; guard < 25; guard++) {
+      let best = null;
+      live.forEach(d => { const r = pick(d, units); if (r && r.saving > 0.005 && (!best || r.saving > best.r.saving)) best = { d, r }; });
+      if (!best) break;
+      best.r.take.forEach(u => { u.used = true; });
+      const ex = applied.find(a => a.id === best.d.DealID && a.name === best.d.Name);
+      if (ex) { ex.times += best.r.times; ex.saving = r2(ex.saving + best.r.saving); } else applied.push({ id: best.d.DealID, name: best.d.Name, times: best.r.times, saving: r2(best.r.saving) });
+    }
+    return { discount: r2(applied.reduce((a, x) => a + x.saving, 0)), applied, dealLines: applied.map(a => ({ name: "🏷️ " + a.name + (a.times > 1 ? " ×" + a.times : ""), qty: 1, price: -a.saving, isDeal: true, dealId: a.id, prepTime: "Bypass Prep", category: "Deal" })) };
+  }
+  /** Take any old deal lines off, work the deals out again, and put the fresh ones back. */
+  function reprice(items, deals, date) {
+    const plain = (items || []).filter(i => i && !i.isDeal), res = apply(plain, deals, date);
+    const out = plain.concat(res.dealLines);
+    const net = r2(out.reduce((a, i) => a + (parseFloat(i.price) || 0) * (parseInt(i.qty || i.quantity || 1, 10) || 1), 0));
+    return { items: out, net, gross: r2(net + res.discount), discount: res.discount, applied: res.applied };
+  }
+  const describe = (d) => { const t = String(d.Type || "combo"), l = names(d);
+    return t === "combo" ? l.map(x => (x.qty > 1 ? x.qty + "× " : "") + x.name).join(" + ") + " = " + (d.Price)
+      : t === "multi" ? "Any " + d.BuyQty + " " + (l.length ? l.map(x => x.name).join(" / ") : d.Category || "items") + " = " + d.Price
+      : (t === "percent" ? d.Value + "% off " : d.Value + " off each ") + (l.length ? l.map(x => x.name).join(" / ") : d.Category || "everything"); };
+  return { apply, reprice, isLive, names, describe, DAYS };
+})();
+
+</script>
 <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
@@ -771,6 +846,7 @@
                     if (stop || !(json && json.success && json.data)) return;
                     const d = json.data;
                     if (d.googleClientId) setGoogleClientId(String(d.googleClientId));
+                    try { const dl = JSON.parse(d.deals || "[]"); setDealsList(prev => JSON.stringify(prev) === JSON.stringify(dl) ? prev : dl); } catch (e) {}
                     if (d.name) { setShopName(d.name); document.title = "Order Online - " + d.name; }
                     if (d.currency) setCurrency(String(d.currency) + " ");
                     if (d.deliveryFee !== undefined && !isNaN(parseFloat(d.deliveryFee))) setDeliveryFeeCfg(parseFloat(d.deliveryFee));
@@ -808,6 +884,10 @@
         const [localOrders, setLocalOrders] = useState(() => loadJson("gt_recent", []));
         const openAcct = (tab) => { setAcctTab(tab || "signin"); setShowAcct(true); };
         const [isSubmitting, setIsSubmitting] = useState(false);
+        const [dealsList, setDealsList] = useState([]);
+        const [dealIdx, setDealIdx] = useState(0);
+        const [, setClock] = useState(0);
+        useEffect(() => { const iv = setInterval(() => { setDealIdx(i => i + 1); setClock(c => c + 1); }, 4500); return () => clearInterval(iv); }, []);
 
         // Helper: Formats raw row objects (from the Customer Sheet's Menu
         // tab, via the Apps Script Web App) into the menu item shape the
@@ -902,7 +982,10 @@
         });
 
         const totalItems = Object.values(cart).reduce((s, q) => s + q, 0);
-        const subtotal = menuItems.reduce((s, item) => s + (cart[item.id] || 0) * item.price, 0);
+        const grossSubtotal = menuItems.reduce((s, item) => s + (cart[item.id] || 0) * item.price, 0);
+        const dealCalc = window.POS_DEALS.apply(menuItems.filter(i => cart[i.id] > 0).map(i => ({ name: i.name, qty: cart[i.id], price: i.price, category: i.cat })), dealsList);
+        const subtotal = grossSubtotal - dealCalc.discount;
+        const liveDeals = dealsList.filter(d => window.POS_DEALS.isLive(d, new Date()));
         const deliveryFee = mode === "delivery" && subtotal > 0 ? deliveryFeeCfg : 0;
         const total = subtotal + deliveryFee;
 
@@ -956,7 +1039,7 @@
                     price: item.price,
                     category: item.cat,
                     prepTime: item.prepTime || ""
-                }))),
+                })).concat(dealCalc.dealLines)),
                 Subtotal: subtotal,
                 Tax: 0,
                 Total: total,
@@ -1056,6 +1139,19 @@
                         <button className="oc-close" aria-label="Dismiss" onClick={() => { const k = offer.title + "|" + offer.text; setOfferHidden(k); try { sessionStorage.setItem("gt_offer_hidden", k); } catch (e) {} }}>×</button>
                     </div>
                 )}
+                {liveDeals.length > 0 && (() => {
+                    const d = liveDeals[dealIdx % liveDeals.length];
+                    return (
+                        <div className="deal-card" key={d.DealID || d.Name} onClick={() => liveDeals.length > 1 && setDealIdx(i => i + 1)}>
+                            <div className="oc-ico">🏷️</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div className="oc-title">{d.Name}</div>
+                                <div className="oc-text">{String(d.Description || "").trim() || window.POS_DEALS.describe(d).replace(/ = (\d)/, " = " + currency + "$1")}</div>
+                            </div>
+                            {liveDeals.length > 1 && <div className="deal-dots">{liveDeals.map((_, i) => <span key={i} className={i === dealIdx % liveDeals.length ? "on" : ""}></span>)}</div>}
+                        </div>
+                    );
+                })()}
             </React.Fragment>
         );
         const accountModal = showAcct ? <AccountModal clientId={googleClientId} acct={acct} setAcct={setAcct} startTab={acctTab} onClose={() => setShowAcct(false)} /> : null;
@@ -1206,6 +1302,8 @@
                         </div>
                         <div className="checkout-section">
                             <h3>Order Total</h3>
+                            {dealCalc.applied.length > 0 && <div className="totals-row"><span>Items</span><span>{currency}{grossSubtotal.toLocaleString()}</span></div>}
+                            {dealCalc.applied.map(a => <div key={a.name} className="totals-row" style={{ color: "#047857", fontWeight: 700 }}><span>🏷️ {a.name}{a.times > 1 ? " ×" + a.times : ""}</span><span>−{currency}{a.saving.toLocaleString()}</span></div>)}
                             <div className="totals-row"><span>Subtotal</span><span>{currency}{subtotal.toLocaleString()}</span></div>
                             {mode === "delivery" && <div className="totals-row"><span>Delivery fee</span><span>{currency}{deliveryFee.toLocaleString()}</span></div>}
                             <div className="totals-row total"><span>Total</span><span>{currency}{total.toLocaleString()}</span></div>
