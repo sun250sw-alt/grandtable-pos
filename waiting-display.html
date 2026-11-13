@@ -86,6 +86,10 @@ body{font-size:calc(var(--u)*1.1)}
 /* MENU pages */
 .offer{flex:none;margin:calc(var(--u)*.9) calc(var(--u)*1.1) 0;padding:calc(var(--u)*.7) calc(var(--u)*1);border-radius:calc(var(--u)*.9);
   background:linear-gradient(120deg,#ff6a3d,#ffb020);color:#1b1100;font-weight:800;font-size:calc(var(--u)*1.05);line-height:1.25}
+.deal{flex:none;margin:calc(var(--u)*.9) calc(var(--u)*1.1) 0;padding:calc(var(--u)*.7) calc(var(--u)*1);border-radius:calc(var(--u)*.9);
+  background:linear-gradient(120deg,#059669,#34d399);color:#042f1f;font-weight:800;font-size:calc(var(--u)*1.05);line-height:1.25;transition:opacity .45s;position:relative}
+.deal small{display:block;font-weight:600;opacity:.9;font-size:calc(var(--u)*.88)}
+.deal i{position:absolute;right:calc(var(--u)*.8);top:calc(var(--u)*.5);font-style:normal;font-size:calc(var(--u)*.75);opacity:.7;font-weight:700}
 .offer small{display:block;font-weight:600;opacity:.85;font-size:calc(var(--u)*.88)}
 .mcat{font-size:calc(var(--u)*1.5);font-weight:900;margin-bottom:calc(var(--u)*.5)}
 .mi{display:flex;justify-content:space-between;align-items:baseline;gap:calc(var(--u)*.8);padding:calc(var(--u)*.62) 0;border-bottom:1px dashed var(--line)}
@@ -140,6 +144,7 @@ body{font-size:calc(var(--u)*1.1)}
 
     <section class="card menu">
       <div class="hd"><span>📋 Menu</span><small id="menuHint"></small></div>
+      <div id="dealBox"></div>
       <div id="offerBox"></div>
       <div class="body" id="menuBody"></div>
       <div class="dots" id="dots"></div>
@@ -172,7 +177,7 @@ body{font-size:calc(var(--u)*1.1)}
   function money(n) { n = Number(n) || 0; return n === 0 ? "Free" : (CURRENCY ? CURRENCY + " " : "") + n.toLocaleString(); }
   function minsAgo(t) { var ms = t ? Date.now() - new Date(t).getTime() : 0; return isFinite(ms) && ms > 0 ? Math.round(ms / 60000) : 0; }
   function itemCount(o) {
-    try { var a = typeof o.Items === "string" ? JSON.parse(o.Items) : o.Items; return (a || []).reduce(function (s, i) { return s + (Number(i.qty || i.quantity) || 1); }, 0); } catch (e) { return 0; }
+    try { var a = typeof o.Items === "string" ? JSON.parse(o.Items) : o.Items; return (a || []).filter(function (i) { return !i.isDeal; }).reduce(function (s, i) { return s + (Number(i.qty || i.quantity) || 1); }, 0); } catch (e) { return 0; }
   }
   function describe(o) {                       // what to show on the screen for one order
     var type = (window.POS_ORDER && POS_ORDER.type(o)) || null;
@@ -306,11 +311,27 @@ body{font-size:calc(var(--u)*1.1)}
     if (until) { var d = new Date(), today = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); if (today > until) return null; }
     return { title: title, text: txt };
   }
+  /* ── live deals: every deal that is on right now, shown one at a time and swapped automatically ── */
+  var DEALS = [], dealIdx = 0, dealTimer = null;
+  function liveDeals() { try { return DEALS.filter(function (d) { return POS_DEALS.isLive(d, new Date()); }); } catch (e) { return []; } }
+  function dealText(d) { var t = String(d.Description || "").trim(); try { return t || POS_DEALS.describe(d).replace(/ = (\d)/, " = " + CURRENCY + " $1"); } catch (e) { return t; } }
+  function showDeal() {
+    var box = $("dealBox"), l = liveDeals();
+    if (!l.length) { box.innerHTML = ""; return; }
+    dealIdx = (dealIdx + 1) % l.length; var d = l[dealIdx], el = box.firstChild;
+    var html = '🏷️ ' + esc(d.Name) + '<small>' + esc(dealText(d)) + '</small>' + (l.length > 1 ? '<i>' + (dealIdx + 1) + '/' + l.length + '</i>' : "");
+    if (!el) { box.innerHTML = '<div class="deal">' + html + '</div>'; return; }
+    el.style.opacity = 0; setTimeout(function () { el.innerHTML = html; el.style.opacity = 1; }, 450);
+  }
+  function startDeals() { clearInterval(dealTimer); dealIdx = -1; showDeal(); dealTimer = setInterval(showDeal, 6000); }
+  function loadDeals() { return POS_DEALS.load(true).then(function (d) { var before = JSON.stringify(DEALS); DEALS = d || []; if (JSON.stringify(DEALS) !== before) startDeals(); }).catch(function () {}); }
+
   function renderExtras() {
     var of = offerLive();
     $("offerBox").innerHTML = of ? '<div class="offer">🎉 ' + esc(of.title || of.text) + (of.title && of.text ? '<small>' + esc(of.text) + '</small>' : "") + '</div>' : "";
     var msgs = [];
     if (of) msgs.push("<b>🎉 " + esc(of.title || of.text) + "</b>" + (of.title && of.text ? " — " + esc(of.text) : ""));
+    liveDeals().forEach(function (d) { msgs.push("<b>🏷️ " + esc(d.Name) + "</b> — " + esc(dealText(d))); });
     msgs.push("🔔 Watch for your ticket number under <b>READY NOW</b>");
     msgs.push("🧾 Your ticket number is on your receipt");
     msgs.push("📱 Ordered online? Show your ticket number at the counter");
@@ -353,10 +374,10 @@ body{font-size:calc(var(--u)*1.1)}
     var name = SETTINGS.restaurant_name || (window.POS_SHOP && POS_SHOP.display()) || "Restaurant";
     $("brand").textContent = "🍽️ " + name; document.title = name + " — Waiting display";
     if (SETTINGS.currency) CURRENCY = SETTINGS.currency;
-    renderExtras(); tick(); showPage(); startPaging();
+    renderExtras(); tick(); showPage(); startPaging(); loadDeals();
     loadMenu(true).then(loadLive);
     setInterval(loadLive, window.POS_IS_LAN ? 3000 : 8000);
-    setInterval(function () { try { SETTINGS = POS_GAPI.getSettings() || SETTINGS; renderExtras(); } catch (e) {} }, 60000);   // picks up offer / hours changes
+    setInterval(function () { try { SETTINGS = POS_GAPI.getSettings() || SETTINGS; renderExtras(); loadDeals().then(renderExtras); } catch (e) {} }, 60000);   // picks up offer / hours changes
     if (window.POS_ONLIVE) POS_ONLIVE(loadLive, "order.");
     // quick hands-off recovery: if the screen has been up for a day, reload once at 4am
     setInterval(function () { var d = new Date(); if (d.getHours() === 4 && d.getMinutes() === 0) location.reload(); }, 60000);
