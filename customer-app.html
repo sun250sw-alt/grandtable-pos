@@ -242,7 +242,8 @@
         .offer-card .oc-title { font-weight: 800; font-size: 15px; margin-bottom: 2px; }
         .offer-card .oc-text { font-size: 13px; line-height: 1.4; white-space: pre-line; opacity: .96; }
         .offer-card .oc-close { position: absolute; top: 6px; right: 8px; background: rgba(0,0,0,.2); border: none; color: #fff; width: 24px; height: 24px; border-radius: 50%; font-size: 14px; cursor: pointer; line-height: 1; }
-        .offer-card + .search-bar { margin-top: 12px; }
+        .offer-card + .search-bar, .deal-card + .search-bar { margin-top: 12px; }
+        .deal-card + .deal-card { margin-top: 8px; }
         .closed-card { margin: -24px 20px 0; position: relative; z-index: 6; padding: 14px 16px; border-radius: 14px; background: #1a1a2e; color: #fff; box-shadow: 0 6px 18px rgba(0,0,0,.2); display: flex; gap: 12px; align-items: center; }
         .closed-card .cc-ico { font-size: 28px; }
         .closed-card .cc-title { font-weight: 800; font-size: 15px; }
@@ -316,10 +317,21 @@ window.POS_DEALS = (() => {
     if (a >= 0 && b >= 0 && a !== b) { if (a < b ? !(n >= a && n < b) : !(n >= a || n < b)) return false; }
     return true;
   }
-  function pick(d, units) {   // best use of this deal on the units still unused → {saving, take:[units], times}
+  const REWARD = (t) => t === "stamp" || t === "welcome";   // loyalty rewards: members only, counted per member by the server
+  function pick(d, units, ctx) {   // best use of this deal on the units still unused → {saving, take:[units], times}
     const type = String(d.Type || "combo").toLowerCase(), price = parseFloat(d.Price) || 0, value = parseFloat(d.Value) || 0, list = names(d);
     const free = units.filter(u => !u.used), key = (x) => String(x || "").toLowerCase();
     const eligible = () => free.filter(u => (!list.length && !d.Category) || (list.length ? list.some(l => key(l.name) === key(u.name)) : key(d.Category) === key(u.cat)));
+    if (type === "stamp") {   // buy N, the next one is free — the cheapest eligible unit(s) in the basket are free
+      const avail = ctx.avail[d.DealID] || 0; if (avail < 1) return null;
+      const el = eligible().sort((a, b) => a.price - b.price), k = Math.min(avail, el.length); if (k < 1) return null;
+      const take = el.slice(0, k); return { take, times: k, saving: take.reduce((a, u) => a + u.price, 0), free: k };
+    }
+    if (type === "welcome") {   // one-off welcome gift: the gift items are free when they are in the basket
+      const avail = ctx.avail[d.DealID] || 0; if (avail < 1 || !list.length) return null; const take = [];
+      list.forEach(l => { const q = Math.max(1, parseInt(l.qty, 10) || 1); take.push(...free.filter(u => key(u.name) === key(l.name) && !take.includes(u)).slice(0, q)); });
+      if (!take.length) return null; return { take, times: 1, saving: take.reduce((a, u) => a + u.price, 0), free: take.length };
+    }
     if (type === "combo") {
       if (!list.length) return null; let times = Infinity; const take = [];
       list.forEach(l => { const q = Math.max(1, parseInt(l.qty, 10) || 1), have = free.filter(u => key(u.name) === key(l.name)); times = Math.min(times, Math.floor(have.length / q)); });
@@ -335,33 +347,56 @@ window.POS_DEALS = (() => {
     const el = eligible(); if (!el.length || !(value > 0)) return null; const sum = el.reduce((a, u) => a + u.price, 0);
     return { take: el, times: 1, saving: type === "percent" ? sum * Math.min(100, value) / 100 : Math.min(sum, value * el.length) };
   }
+  const detailOf = (a) => Object.keys(a.got || {}).map(k => (a.got[k] > 1 ? a.got[k] + "× " : "") + k).join(" + ");
   /** lines: [{name, qty, price, category}] (no deal lines). Returns {discount, applied:[{id,name,times,saving}], dealLines} */
-  function apply(lines, deals, date) {
-    date = date || new Date();
+  function apply(lines, deals, date, ctx) {
+    date = date || new Date(); ctx = ctx || {};
+    const member = !!ctx.member, avail = {}; Object.keys(ctx.rewards || {}).forEach(k => { avail[k] = parseInt((ctx.rewards[k] || {}).available, 10) || 0; });
+    const pc = { avail, member };
     const units = []; (lines || []).forEach(l => { if (!l || l.isDeal) return; const q = Math.min(200, parseInt(l.qty || l.quantity || 1, 10) || 1); for (let i = 0; i < q; i++) units.push({ name: l.name || l.Name, cat: l.category || l.cat || "", price: parseFloat(l.price) || 0, used: false }); });
-    const live = (deals || []).filter(d => isLive(d, date)), applied = [];
+    const live = (deals || []).filter(d => isLive(d, date) && (member || !(REWARD(String(d.Type || "").toLowerCase()) || String(d.Audience || "all").toLowerCase() === "members"))), applied = [];
     for (let guard = 0; guard < 25; guard++) {
       let best = null;
-      live.forEach(d => { const r = pick(d, units); if (r && r.saving > 0.005 && (!best || r.saving > best.r.saving)) best = { d, r }; });
+      live.forEach(d => { const r = pick(d, units, pc); if (r && r.saving > 0.005 && (!best || r.saving > best.r.saving)) best = { d, r }; });
       if (!best) break;
       best.r.take.forEach(u => { u.used = true; });
-      const ex = applied.find(a => a.id === best.d.DealID && a.name === best.d.Name);
-      if (ex) { ex.times += best.r.times; ex.saving = r2(ex.saving + best.r.saving); } else applied.push({ id: best.d.DealID, name: best.d.Name, times: best.r.times, saving: r2(best.r.saving) });
+      const ex = applied.find(a => a.id === best.d.DealID && a.name === best.d.Name), got = {};
+      best.r.take.forEach(u => { got[u.name] = (got[u.name] || 0) + 1; });
+      if (best.r.free) pc.avail[best.d.DealID] = Math.max(0, (pc.avail[best.d.DealID] || 0) - (String(best.d.Type).toLowerCase() === "stamp" ? best.r.free : 1));
+      const rw = REWARD(String(best.d.Type || "").toLowerCase());
+      if (ex) { ex.times += best.r.times; ex.saving = r2(ex.saving + best.r.saving); ex.free = (ex.free || 0) + (best.r.free || 0); Object.keys(got).forEach(k => { ex.got[k] = (ex.got[k] || 0) + got[k]; }); } else applied.push({ id: best.d.DealID, name: best.d.Name, times: best.r.times, saving: r2(best.r.saving), got, reward: rw, free: best.r.free || 0 });
     }
-    return { discount: r2(applied.reduce((a, x) => a + x.saving, 0)), applied, dealLines: applied.map(a => ({ name: "🏷️ " + a.name + (a.times > 1 ? " ×" + a.times : ""), qty: 1, price: -a.saving, isDeal: true, dealId: a.id, prepTime: "Bypass Prep", category: "Deal" })) };
+    return { discount: r2(applied.reduce((a, x) => a + x.saving, 0)), applied, dealLines: applied.map(a => ({ name: (a.reward ? "🎁 " : "🏷️ ") + a.name + (a.times > 1 ? " ×" + a.times : ""), qty: 1, price: -a.saving, isDeal: true, dealId: a.id, detail: (a.reward ? "Free: " : "") + detailOf(a), freeQty: a.free || undefined, prepTime: "Bypass Prep", category: "Deal" })) };
   }
   /** Take any old deal lines off, work the deals out again, and put the fresh ones back. */
-  function reprice(items, deals, date) {
-    const plain = (items || []).filter(i => i && !i.isDeal), res = apply(plain, deals, date);
+  function reprice(items, deals, date, ctx) {
+    const plain = (items || []).filter(i => i && !i.isDeal), res = apply(plain, deals, date, ctx);
     const out = plain.concat(res.dealLines);
     const net = r2(out.reduce((a, i) => a + (parseFloat(i.price) || 0) * (parseInt(i.qty || i.quantity || 1, 10) || 1), 0));
     return { items: out, net, gross: r2(net + res.discount), discount: res.discount, applied: res.applied };
   }
+  let cache = null, at = 0;
   const describe = (d) => { const t = String(d.Type || "combo"), l = names(d);
+    if (t === "stamp") return "Buy " + d.BuyQty + " " + (l.length ? l.map(x => x.name).join(" / ") : d.Category || "items") + ", the next one is free";
+    if (t === "welcome") return "Free " + l.map(x => (x.qty > 1 ? x.qty + "× " : "") + x.name).join(" + ") + " when you join";
     return t === "combo" ? l.map(x => (x.qty > 1 ? x.qty + "× " : "") + x.name).join(" + ") + " = " + (d.Price)
       : t === "multi" ? "Any " + d.BuyQty + " " + (l.length ? l.map(x => x.name).join(" / ") : d.Category || "items") + " = " + d.Price
       : (t === "percent" ? d.Value + "% off " : d.Value + " off each ") + (l.length ? l.map(x => x.name).join(" / ") : d.Category || "everything"); };
-  return { apply, reprice, isLive, names, describe, DAYS };
+  /** One readable line for customers/staff: what is in it, the deal price and what is saved (needs menu rows [{name, price, cat}] to work the saving out). */
+  const summary = (d, menu, cur) => {
+    const t = String(d.Type || "combo"), l = names(d), key = (x) => String(x || "").toLowerCase(), m = (menu || []);
+    const pr = (n) => { const x = m.find(i => key(i.name) === key(n)); return x ? parseFloat(x.price) || 0 : 0; };
+    const money = (n) => cur + (Math.round(n * 100) / 100).toLocaleString();
+    if (t === "stamp") return "Buy " + d.BuyQty + " " + (l.length ? l.map(i => i.name).join(" / ") : d.Category || "items") + " — your next one is FREE (loyalty members)";
+    if (t === "welcome") return "🎁 Free " + l.map(i => (i.qty > 1 ? i.qty + "× " : "") + i.name).join(" + ") + " as a welcome gift for new members";
+    if (t === "combo") { const reg = l.reduce((a, i) => a + pr(i.name) * (parseInt(i.qty, 10) || 1), 0), p = parseFloat(d.Price) || 0;
+      return l.map(i => (i.qty > 1 ? i.qty + "× " : "") + i.name).join(" + ") + " for " + money(p) + (reg > p ? " — save " + money(reg - p) : ""); }
+    if (t === "multi") { const el = l.length ? l.map(i => ({ price: pr(i.name) })) : m.filter(i => key(i.cat) === key(d.Category)); const avg = el.length ? el.reduce((a, i) => a + (parseFloat(i.price) || 0), 0) / el.length : 0, p = parseFloat(d.Price) || 0, reg = avg * (parseInt(d.BuyQty, 10) || 0);
+      return "Any " + d.BuyQty + " " + (l.length ? l.map(i => i.name).join(" / ") : d.Category || "items") + " for " + money(p) + (reg > p ? " — save about " + money(reg - p) : ""); }
+    const what = l.length ? l.map(i => i.name).join(" / ") : d.Category || "everything";
+    return t === "percent" ? d.Value + "% off " + what : money(parseFloat(d.Value) || 0) + " off each " + what;
+  };
+  return { apply, reprice, isLive, names, describe, summary, DAYS };
 })();
 
 </script>
@@ -625,9 +660,45 @@ window.POS_DEALS = (() => {
             </div>
         );
     }
+    function Donut({ done, total, size, label }) {
+        const r = size / 2 - 9, c = 2 * Math.PI * r, f = Math.max(0, Math.min(1, total ? done / total : 0));
+        return (
+            <svg width={size} height={size} viewBox={"0 0 " + size + " " + size} style={{ flex: "none" }}>
+                <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e5e7eb" strokeWidth="11" />
+                <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={f >= 1 ? "#059669" : "#f59e0b"} strokeWidth="11" strokeLinecap="round" strokeDasharray={c * f + " " + c} transform={"rotate(-90 " + size / 2 + " " + size / 2 + ")"} />
+                <text x="50%" y="48%" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: size * 0.26, fontWeight: 800, fill: "#1a1a2e" }}>{label || (done + "/" + total)}</text>
+            </svg>
+        );
+    }
+    function RewardCards({ rewards }) {
+        const list = (rewards || []).filter(r => r && (r.type === "stamp" || r.available > 0));
+        if (!list.length) return null;
+        return (
+            <div style={{ marginTop: 22, textAlign: "left" }}>
+                <h3 style={{ margin: "0 0 8px", textAlign: "center" }}>🎁 My rewards</h3>
+                {list.map(r => r.type === "stamp" ? (
+                    <div key={r.dealId} style={{ display: "flex", gap: 14, alignItems: "center", background: r.available > 0 ? "#ecfdf5" : "#fffbeb", border: "1px solid " + (r.available > 0 ? "#6ee7b7" : "#fde68a"), borderRadius: 14, padding: 12, marginBottom: 10 }}>
+                        <Donut done={r.available > 0 ? r.need : r.progress} total={r.need} size={84} label={r.available > 0 ? "FREE" : null} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 800 }}>{r.name}</div>
+                            <div style={{ fontSize: 13, color: "#555" }}>{r.free}</div>
+                            {r.available > 0 ? <div style={{ fontWeight: 700, color: "#047857", marginTop: 4 }}>🎉 Your free item is ready — show your QR at the till{r.available > 1 ? " (×" + r.available + ")" : ""}</div>
+                                : <div style={{ fontWeight: 700, marginTop: 4 }}>{r.progress} of {r.need} collected · {r.need - r.progress} more to get one free</div>}
+                        </div>
+                    </div>
+                ) : (
+                    <div key={r.dealId} style={{ background: "#ecfdf5", border: "1px solid #6ee7b7", borderRadius: 14, padding: 12, marginBottom: 10 }}>
+                        <div style={{ fontWeight: 800 }}>🎁 {r.name}</div>
+                        <div style={{ fontSize: 14, marginTop: 2 }}>Free: <b>{r.free}</b></div>
+                        <div style={{ fontSize: 12, color: "#047857", marginTop: 4 }}>Welcome gift — show your QR or add it to your order</div>
+                    </div>
+                ))}
+            </div>
+        );
+    }
     function QrScreen({ acct, onOpen }) {
         return (
-            <div style={{ padding: "26px 20px", textAlign: "center" }}>
+            <div style={{ padding: "26px 20px 110px", textAlign: "center" }}>
                 <h2 style={{ margin: "0 0 4px" }}>📱 My QR code</h2>
                 {!(acct && acct.member) ? <SignInCard onOpen={onOpen} text="Sign in or register to get your personal QR code. Show it at the till so the shop can find your account." /> : (
                     <div>
@@ -636,6 +707,7 @@ window.POS_DEALS = (() => {
                         <div style={{ fontSize: 13, color: "#666", marginBottom: 14 }}>Member {acct.member.memberId}</div>
                         <div style={{ background: "#fff", display: "inline-block", padding: 12, borderRadius: 16, boxShadow: "0 4px 20px rgba(0,0,0,.1)" }}><QrImage text={"GTM1:" + acct.member.memberId} size={240} /></div>
                         <div style={{ fontSize: 13, color: "#777", marginTop: 12 }}>Show this to the cashier when you pay</div>
+                        <RewardCards rewards={acct.rewards} />
                     </div>
                 )}
             </div>
@@ -665,11 +737,12 @@ window.POS_DEALS = (() => {
                     {items.map((i, k) => (
                         <div key={k} style={{ display: "flex", fontSize: 13, marginTop: 6 }}>
                             <span style={{ width: 30 }}>{i.q}</span>
-                            <span style={{ flex: 1 }}>{i.n}{Number(i.q) > 1 && Number(i.p) ? <div style={{ fontSize: 11, color: "#777" }}>@ {money(i.p)}</div> : null}</span>
-                            <span style={{ width: 80, textAlign: "right" }}>{Number(i.p) ? money((Number(i.q) || 0) * Number(i.p)) : ""}</span>
+                            <span style={{ flex: 1, color: Number(i.p) < 0 ? "#047857" : undefined, fontWeight: Number(i.p) < 0 ? 700 : undefined }}>{i.n}{Number(i.q) > 1 && Number(i.p) > 0 ? <div style={{ fontSize: 11, color: "#777" }}>@ {money(i.p)}</div> : null}{i.d ? <div style={{ fontSize: 11, color: "#047857", fontWeight: 400 }}>{i.d}</div> : null}</span>
+                            <span style={{ width: 80, textAlign: "right", color: Number(i.p) < 0 ? "#047857" : undefined }}>{Number(i.p) ? (Number(i.p) < 0 ? "−" : "") + money(Math.abs((Number(i.q) || 0) * Number(i.p))) : ""}</span>
                         </div>
                     ))}
                     <div style={dash}></div>
+                    {items.some(i => Number(i.p) < 0) && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#047857", fontWeight: 700 }}><span>You saved with deals</span><span>{money(-items.filter(i => Number(i.p) < 0).reduce((a, i) => a + (Number(i.q) || 1) * Number(i.p), 0))}</span></div>}
                     {extra > 0.009 && sum > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span>Tax / delivery / other</span><span>{money(extra)}</span></div>}
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 17, fontWeight: 800, marginTop: 6 }}><span>TOTAL</span><span>{money(bill.total)}</span></div>
                     <div style={dash}></div>
@@ -679,14 +752,14 @@ window.POS_DEALS = (() => {
             </div>
         );
     }
-    function RecentScreen({ acct, currency, onOpen, localOrders }) {
+    function RecentScreen({ acct, currency, onOpen, localOrders, onRewards }) {
         const [bills, setBills] = useState(null);
         const [openBill, setOpenBill] = useState(null);
         const live = isLive(acct);
         useEffect(() => {
             if (!(acct && acct.member && live)) { setBills(null); return; }
             let stop = false;
-            scriptPost({ action: "receipts", idToken: acct.idToken }).then(j => { if (!stop) setBills(j.success ? j.data : []); }).catch(() => { if (!stop) setBills([]); });
+            scriptPost({ action: "receipts", idToken: acct.idToken }).then(j => { if (!stop && j.success && j.rewards) onRewards && onRewards(j.rewards); if (!stop) setBills(j.success ? j.data : []); }).catch(() => { if (!stop) setBills([]); });
             return () => { stop = true; };
         }, [acct && acct.member && acct.member.memberId, live]);
         const row = { borderTop: "1px solid #eee", padding: "12px 0", fontSize: 14 };
@@ -738,7 +811,7 @@ window.POS_DEALS = (() => {
                 const pic = jwtPayload(resp.credential).picture || "";
                 const j = await scriptPost({ action: "login", idToken: resp.credential });
                 if (!j.success) throw new Error(j.error || "Sign-in failed");
-                if (j.registered) { const a = { idToken: resp.credential, member: j.member, picture: pic }; setAcct(a); saveAcct(a); }
+                if (j.registered) { const a = { idToken: resp.credential, member: j.member, picture: pic, rewards: j.rewards || [] }; setAcct(a); saveAcct(a); }
                 else { setAcct({ idToken: resp.credential, member: null, name: j.name, email: j.email, picture: pic }); setReg(r => ({ ...r, name: j.name || "" })); }
             } catch (e) { setErr(e.message || "Sign-in failed"); }
             setBusy(false);
@@ -761,7 +834,7 @@ window.POS_DEALS = (() => {
             try {
                 const j = await scriptPost({ action: "register", idToken: acct.idToken, name: reg.name, phone: reg.phone, consent: reg.consent });
                 if (!j.success) throw new Error(j.error);
-                const a = { idToken: acct.idToken, member: j.member, picture: acct.picture }; setAcct(a); saveAcct(a);
+                const a = { idToken: acct.idToken, member: j.member, picture: acct.picture, rewards: j.rewards || [] }; setAcct(a); saveAcct(a);
             } catch (e) { setErr(e.message || "Could not register"); }
             setBusy(false);
         };
@@ -886,6 +959,14 @@ window.POS_DEALS = (() => {
         const [isSubmitting, setIsSubmitting] = useState(false);
         const [dealsList, setDealsList] = useState([]);
         const [dealIdx, setDealIdx] = useState(0);
+        const setRewards = (rw) => setAcct(prev => { if (!prev || !prev.member || JSON.stringify(prev.rewards || []) === JSON.stringify(rw || [])) return prev; const a = { ...prev, rewards: rw || [] }; saveAcct(a); return a; });
+        useEffect(() => {
+            if (!(acct && acct.member && isLive(acct))) return;
+            let stop = false;
+            const go = () => scriptPost({ action: "receipts", idToken: acct.idToken }).then(j => { if (!stop && j && j.success && j.rewards) setRewards(j.rewards); }).catch(() => {});
+            go(); const iv = setInterval(go, 60000);
+            return () => { stop = true; clearInterval(iv); };
+        }, [acct && acct.member && acct.member.memberId, acct && acct.idToken]);
         const [, setClock] = useState(0);
         useEffect(() => { const iv = setInterval(() => { setDealIdx(i => i + 1); setClock(c => c + 1); }, 4500); return () => clearInterval(iv); }, []);
 
@@ -983,9 +1064,13 @@ window.POS_DEALS = (() => {
 
         const totalItems = Object.values(cart).reduce((s, q) => s + q, 0);
         const grossSubtotal = menuItems.reduce((s, item) => s + (cart[item.id] || 0) * item.price, 0);
-        const dealCalc = window.POS_DEALS.apply(menuItems.filter(i => cart[i.id] > 0).map(i => ({ name: i.name, qty: cart[i.id], price: i.price, category: i.cat })), dealsList);
+        const dealCalc = window.POS_DEALS.apply(menuItems.filter(i => cart[i.id] > 0).map(i => ({ name: i.name, qty: cart[i.id], price: i.price, category: i.cat })), dealsList, new Date(), { member: !!(acct && acct.member), rewards: (acct && acct.rewards || []).reduce((m, r) => { m[r.dealId] = r; return m; }, {}) });
         const subtotal = grossSubtotal - dealCalc.discount;
-        const liveDeals = dealsList.filter(d => window.POS_DEALS.isLive(d, new Date()));
+        const isMember = !!(acct && acct.member);
+        const rewMap = (acct && acct.rewards || []).reduce((m, r) => { m[r.dealId] = r; return m; }, {});
+        const membersOnly = (d) => ["stamp", "welcome"].includes(String(d.Type || "").toLowerCase()) || String(d.Audience || "all").toLowerCase() === "members";
+        const liveDeals = dealsList.filter(d => window.POS_DEALS.isLive(d, new Date()) && !(isMember && String(d.Type).toLowerCase() === "welcome" && rewMap[d.DealID] && !(rewMap[d.DealID].available > 0)));
+        const readyRewards = (acct && acct.rewards || []).filter(r => r.available > 0);
         const deliveryFee = mode === "delivery" && subtotal > 0 ? deliveryFeeCfg : 0;
         const total = subtotal + deliveryFee;
 
@@ -1139,6 +1224,16 @@ window.POS_DEALS = (() => {
                         <button className="oc-close" aria-label="Dismiss" onClick={() => { const k = offer.title + "|" + offer.text; setOfferHidden(k); try { sessionStorage.setItem("gt_offer_hidden", k); } catch (e) {} }}>×</button>
                     </div>
                 )}
+                {readyRewards.length > 0 && (
+                    <div className="deal-card" style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)" }} onClick={() => setScreen("qr")}>
+                        <div className="oc-ico">🎁</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div className="oc-title">You have a free gift!</div>
+                            {readyRewards.map(r => <div key={r.dealId} className="oc-text">Free {r.free} — {r.name}</div>)}
+                            <div className="oc-text" style={{ fontWeight: 700 }}>Show your QR at the till (tap to open)</div>
+                        </div>
+                    </div>
+                )}
                 {liveDeals.length > 0 && (() => {
                     const d = liveDeals[dealIdx % liveDeals.length];
                     return (
@@ -1146,7 +1241,10 @@ window.POS_DEALS = (() => {
                             <div className="oc-ico">🏷️</div>
                             <div style={{ flex: 1, minWidth: 0 }}>
                                 <div className="oc-title">{d.Name}</div>
-                                <div className="oc-text">{String(d.Description || "").trim() || window.POS_DEALS.describe(d).replace(/ = (\d)/, " = " + currency + "$1")}</div>
+                                {String(d.Description || "").trim() && <div className="oc-text" style={{ fontWeight: 700 }}>{String(d.Description).trim()}</div>}
+                                <div className="oc-text">{window.POS_DEALS.summary(d, menuItems.map(i => ({ name: i.name, price: i.price, cat: i.cat })), currency)}</div>
+                                {membersOnly(d) && !isMember && <div className="oc-text" style={{ fontWeight: 800 }}>⭐ Members only — <span style={{ textDecoration: "underline" }} onClick={(e) => { e.stopPropagation(); openAcct("register"); }}>join free</span></div>}
+                                {isMember && rewMap[d.DealID] && rewMap[d.DealID].type === "stamp" && <div className="oc-text" style={{ fontWeight: 800 }}>{rewMap[d.DealID].available > 0 ? "🎉 Your free one is ready!" : rewMap[d.DealID].progress + " of " + rewMap[d.DealID].need + " collected · " + (rewMap[d.DealID].need - rewMap[d.DealID].progress) + " to go"}</div>}
                             </div>
                             {liveDeals.length > 1 && <div className="deal-dots">{liveDeals.map((_, i) => <span key={i} className={i === dealIdx % liveDeals.length ? "on" : ""}></span>)}</div>}
                         </div>
@@ -1160,7 +1258,7 @@ window.POS_DEALS = (() => {
             return <div className="app">{accountModal}{headBlock}<QrScreen acct={acct} onOpen={openAcct} />{nav}</div>;
         }
         if (screen === "recent") {
-            return <div className="app">{accountModal}{headBlock}<RecentScreen acct={acct} currency={currency} onOpen={openAcct} localOrders={localOrders} />{nav}</div>;
+            return <div className="app">{accountModal}{headBlock}<RecentScreen onRewards={setRewards} acct={acct} currency={currency} onOpen={openAcct} localOrders={localOrders} />{nav}</div>;
         }
         if (screen === "tracking") {
             if (!placedOrder) {
