@@ -630,7 +630,7 @@ window.POS_GAPI = (() => {
       let sub   = parseFloat(data.subtotal || data.total || 0);
       let orderItems = data.items || [];
       try {   // meal deals & special offers are applied here, so every app that saves an order gets the same discount
-        const rp = window.POS_DEALS ? window.POS_DEALS.reprice(orderItems, await window.POS_DEALS.load()) : null;
+        const rp = window.POS_DEALS ? window.POS_DEALS.reprice(orderItems, await window.POS_DEALS.load(), new Date(), await window.POS_DEALS.memberCtx(data.memberId)) : null;
         if (rp && (rp.applied.length || orderItems.some(i => i && i.isDeal))) { orderItems = rp.items; sub = rp.net; }
       } catch (e) { console.error("deals:", e); }
       const tax   = parseFloat((sub * (_settings.tax_rate || 0.10)).toFixed(2));
@@ -648,9 +648,17 @@ window.POS_GAPI = (() => {
     },
     update: async (data) => {
       const updates = {};
+      if (data.memberId && !data.items) {   // a member was just attached: their deals/rewards may now apply to what is already on the order
+        try {
+          const row = (await getRows("Orders")).find(o => o.OrderID === data.orderId);
+          if (row && !row.MemberID) { let its = []; try { its = JSON.parse(row.Items || "[]"); } catch (e) {}
+            if (its.length) data = { ...data, items: its, subtotal: parseFloat(row.Subtotal) || 0, tax: parseFloat(row.Tax) || 0, total: parseFloat(row.Total) || 0 }; }
+        } catch (e) {}
+      }
       if (data.items && data.items.length && data.subtotal !== undefined) {   // items changed → deals are worked out again from scratch
         try {
-          const rp = window.POS_DEALS ? window.POS_DEALS.reprice(data.items, await window.POS_DEALS.load()) : null;
+          let mid = data.memberId; if (!mid) { try { mid = ((await getRows("Orders")).find(o => o.OrderID === data.orderId) || {}).MemberID; } catch (e) {} }
+          const rp = window.POS_DEALS ? window.POS_DEALS.reprice(data.items, await window.POS_DEALS.load(), new Date(), await window.POS_DEALS.memberCtx(mid, data.orderId)) : null;
           if (rp && (rp.applied.length || data.items.some(i => i && i.isDeal))) {
             const s0 = parseFloat(data.subtotal) || 0, t0 = parseFloat(data.tax) || 0, tot0 = parseFloat(data.total) || 0;
             const extra = Math.max(0, tot0 - s0 - t0), rate = s0 > 0 ? t0 / s0 : (_settings.tax_rate || 0);
@@ -1570,10 +1578,21 @@ window.POS_DEALS = (() => {
     if (a >= 0 && b >= 0 && a !== b) { if (a < b ? !(n >= a && n < b) : !(n >= a || n < b)) return false; }
     return true;
   }
-  function pick(d, units) {   // best use of this deal on the units still unused → {saving, take:[units], times}
+  const REWARD = (t) => t === "stamp" || t === "welcome";   // loyalty rewards: members only, counted per member by the server
+  function pick(d, units, ctx) {   // best use of this deal on the units still unused → {saving, take:[units], times}
     const type = String(d.Type || "combo").toLowerCase(), price = parseFloat(d.Price) || 0, value = parseFloat(d.Value) || 0, list = names(d);
     const free = units.filter(u => !u.used), key = (x) => String(x || "").toLowerCase();
     const eligible = () => free.filter(u => (!list.length && !d.Category) || (list.length ? list.some(l => key(l.name) === key(u.name)) : key(d.Category) === key(u.cat)));
+    if (type === "stamp") {   // buy N, the next one is free — the cheapest eligible unit(s) in the basket are free
+      const avail = ctx.avail[d.DealID] || 0; if (avail < 1) return null;
+      const el = eligible().sort((a, b) => a.price - b.price), k = Math.min(avail, el.length); if (k < 1) return null;
+      const take = el.slice(0, k); return { take, times: k, saving: take.reduce((a, u) => a + u.price, 0), free: k };
+    }
+    if (type === "welcome") {   // one-off welcome gift: the gift items are free when they are in the basket
+      const avail = ctx.avail[d.DealID] || 0; if (avail < 1 || !list.length) return null; const take = [];
+      list.forEach(l => { const q = Math.max(1, parseInt(l.qty, 10) || 1); take.push(...free.filter(u => key(u.name) === key(l.name) && !take.includes(u)).slice(0, q)); });
+      if (!take.length) return null; return { take, times: 1, saving: take.reduce((a, u) => a + u.price, 0), free: take.length };
+    }
     if (type === "combo") {
       if (!list.length) return null; let times = Infinity; const take = [];
       list.forEach(l => { const q = Math.max(1, parseInt(l.qty, 10) || 1), have = free.filter(u => key(u.name) === key(l.name)); times = Math.min(times, Math.floor(have.length / q)); });
@@ -1589,24 +1608,30 @@ window.POS_DEALS = (() => {
     const el = eligible(); if (!el.length || !(value > 0)) return null; const sum = el.reduce((a, u) => a + u.price, 0);
     return { take: el, times: 1, saving: type === "percent" ? sum * Math.min(100, value) / 100 : Math.min(sum, value * el.length) };
   }
+  const detailOf = (a) => Object.keys(a.got || {}).map(k => (a.got[k] > 1 ? a.got[k] + "× " : "") + k).join(" + ");
   /** lines: [{name, qty, price, category}] (no deal lines). Returns {discount, applied:[{id,name,times,saving}], dealLines} */
-  function apply(lines, deals, date) {
-    date = date || new Date();
+  function apply(lines, deals, date, ctx) {
+    date = date || new Date(); ctx = ctx || {};
+    const member = !!ctx.member, avail = {}; Object.keys(ctx.rewards || {}).forEach(k => { avail[k] = parseInt((ctx.rewards[k] || {}).available, 10) || 0; });
+    const pc = { avail, member };
     const units = []; (lines || []).forEach(l => { if (!l || l.isDeal) return; const q = Math.min(200, parseInt(l.qty || l.quantity || 1, 10) || 1); for (let i = 0; i < q; i++) units.push({ name: l.name || l.Name, cat: l.category || l.cat || "", price: parseFloat(l.price) || 0, used: false }); });
-    const live = (deals || []).filter(d => isLive(d, date)), applied = [];
+    const live = (deals || []).filter(d => isLive(d, date) && (member || !(REWARD(String(d.Type || "").toLowerCase()) || String(d.Audience || "all").toLowerCase() === "members"))), applied = [];
     for (let guard = 0; guard < 25; guard++) {
       let best = null;
-      live.forEach(d => { const r = pick(d, units); if (r && r.saving > 0.005 && (!best || r.saving > best.r.saving)) best = { d, r }; });
+      live.forEach(d => { const r = pick(d, units, pc); if (r && r.saving > 0.005 && (!best || r.saving > best.r.saving)) best = { d, r }; });
       if (!best) break;
       best.r.take.forEach(u => { u.used = true; });
-      const ex = applied.find(a => a.id === best.d.DealID && a.name === best.d.Name);
-      if (ex) { ex.times += best.r.times; ex.saving = r2(ex.saving + best.r.saving); } else applied.push({ id: best.d.DealID, name: best.d.Name, times: best.r.times, saving: r2(best.r.saving) });
+      const ex = applied.find(a => a.id === best.d.DealID && a.name === best.d.Name), got = {};
+      best.r.take.forEach(u => { got[u.name] = (got[u.name] || 0) + 1; });
+      if (best.r.free) pc.avail[best.d.DealID] = Math.max(0, (pc.avail[best.d.DealID] || 0) - (String(best.d.Type).toLowerCase() === "stamp" ? best.r.free : 1));
+      const rw = REWARD(String(best.d.Type || "").toLowerCase());
+      if (ex) { ex.times += best.r.times; ex.saving = r2(ex.saving + best.r.saving); ex.free = (ex.free || 0) + (best.r.free || 0); Object.keys(got).forEach(k => { ex.got[k] = (ex.got[k] || 0) + got[k]; }); } else applied.push({ id: best.d.DealID, name: best.d.Name, times: best.r.times, saving: r2(best.r.saving), got, reward: rw, free: best.r.free || 0 });
     }
-    return { discount: r2(applied.reduce((a, x) => a + x.saving, 0)), applied, dealLines: applied.map(a => ({ name: "🏷️ " + a.name + (a.times > 1 ? " ×" + a.times : ""), qty: 1, price: -a.saving, isDeal: true, dealId: a.id, prepTime: "Bypass Prep", category: "Deal" })) };
+    return { discount: r2(applied.reduce((a, x) => a + x.saving, 0)), applied, dealLines: applied.map(a => ({ name: (a.reward ? "🎁 " : "🏷️ ") + a.name + (a.times > 1 ? " ×" + a.times : ""), qty: 1, price: -a.saving, isDeal: true, dealId: a.id, detail: (a.reward ? "Free: " : "") + detailOf(a), freeQty: a.free || undefined, prepTime: "Bypass Prep", category: "Deal" })) };
   }
   /** Take any old deal lines off, work the deals out again, and put the fresh ones back. */
-  function reprice(items, deals, date) {
-    const plain = (items || []).filter(i => i && !i.isDeal), res = apply(plain, deals, date);
+  function reprice(items, deals, date, ctx) {
+    const plain = (items || []).filter(i => i && !i.isDeal), res = apply(plain, deals, date, ctx);
     const out = plain.concat(res.dealLines);
     const net = r2(out.reduce((a, i) => a + (parseFloat(i.price) || 0) * (parseInt(i.qty || i.quantity || 1, 10) || 1), 0));
     return { items: out, net, gross: r2(net + res.discount), discount: res.discount, applied: res.applied };
@@ -1618,8 +1643,32 @@ window.POS_DEALS = (() => {
     at = Date.now(); return cache;
   }
   const describe = (d) => { const t = String(d.Type || "combo"), l = names(d);
+    if (t === "stamp") return "Buy " + d.BuyQty + " " + (l.length ? l.map(x => x.name).join(" / ") : d.Category || "items") + ", the next one is free";
+    if (t === "welcome") return "Free " + l.map(x => (x.qty > 1 ? x.qty + "× " : "") + x.name).join(" + ") + " when you join";
     return t === "combo" ? l.map(x => (x.qty > 1 ? x.qty + "× " : "") + x.name).join(" + ") + " = " + (d.Price)
       : t === "multi" ? "Any " + d.BuyQty + " " + (l.length ? l.map(x => x.name).join(" / ") : d.Category || "items") + " = " + d.Price
       : (t === "percent" ? d.Value + "% off " : d.Value + " off each ") + (l.length ? l.map(x => x.name).join(" / ") : d.Category || "everything"); };
-  return { apply, reprice, load, isLive, names, describe, DAYS };
+  /** One readable line for customers/staff: what is in it, the deal price and what is saved (needs menu rows [{name, price, cat}] to work the saving out). */
+  const summary = (d, menu, cur) => {
+    const t = String(d.Type || "combo"), l = names(d), key = (x) => String(x || "").toLowerCase(), m = (menu || []);
+    const pr = (n) => { const x = m.find(i => key(i.name) === key(n)); return x ? parseFloat(x.price) || 0 : 0; };
+    const money = (n) => cur + (Math.round(n * 100) / 100).toLocaleString();
+    if (t === "stamp") return "Buy " + d.BuyQty + " " + (l.length ? l.map(i => i.name).join(" / ") : d.Category || "items") + " — your next one is FREE (loyalty members)";
+    if (t === "welcome") return "🎁 Free " + l.map(i => (i.qty > 1 ? i.qty + "× " : "") + i.name).join(" + ") + " as a welcome gift for new members";
+    if (t === "combo") { const reg = l.reduce((a, i) => a + pr(i.name) * (parseInt(i.qty, 10) || 1), 0), p = parseFloat(d.Price) || 0;
+      return l.map(i => (i.qty > 1 ? i.qty + "× " : "") + i.name).join(" + ") + " for " + money(p) + (reg > p ? " — save " + money(reg - p) : ""); }
+    if (t === "multi") { const el = l.length ? l.map(i => ({ price: pr(i.name) })) : m.filter(i => key(i.cat) === key(d.Category)); const avg = el.length ? el.reduce((a, i) => a + (parseFloat(i.price) || 0), 0) / el.length : 0, p = parseFloat(d.Price) || 0, reg = avg * (parseInt(d.BuyQty, 10) || 0);
+      return "Any " + d.BuyQty + " " + (l.length ? l.map(i => i.name).join(" / ") : d.Category || "items") + " for " + money(p) + (reg > p ? " — save about " + money(reg - p) : ""); }
+    const what = l.length ? l.map(i => i.name).join(" / ") : d.Category || "everything";
+    return t === "percent" ? d.Value + "% off " + what : money(parseFloat(d.Value) || 0) + " off each " + what;
+  };
+  /** What a loyalty member can claim right now (asked of the laptop server, which counts their past orders). */
+  async function memberCtx(memberId, excludeOrderId) {
+    if (!memberId) return { member: false, rewards: {} };
+    try {
+      const r = await (await fetch("/api/members/" + encodeURIComponent(memberId) + "/rewards" + (excludeOrderId ? "?exclude=" + encodeURIComponent(excludeOrderId) : ""))).json();
+      const rw = {}; (r.data || []).forEach(x => { rw[x.dealId] = x; }); return { member: true, rewards: rw };
+    } catch (e) { return { member: true, rewards: {} }; }
+  }
+  return { apply, reprice, load, isLive, names, describe, summary, memberCtx, DAYS };
 })();
