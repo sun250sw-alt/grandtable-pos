@@ -565,12 +565,13 @@
                 <div style="border-top:1px dashed #000; border-bottom:1px dashed #000; padding:6px 0; margin-bottom:6px;">
                     ${items.map(it => `
                         <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
-                            <span>${it.qty || it.quantity}x ${it.name || it.Name}</span>
-                            <span>${currency} ${(parseFloat(it.price) * parseInt(it.qty || it.quantity || 1)).toFixed(2)}</span>
+                            <span>${it.qty || it.quantity}x ${it.name || it.Name}${it.detail ? `<br><small style="font-size:9px;">(${it.detail})</small>` : ""}</span>
+                            <span>${parseFloat(it.price) < 0 ? "-" : ""}${currency} ${Math.abs(parseFloat(it.price) * parseInt(it.qty || it.quantity || 1)).toFixed(2)}</span>
                         </div>
                     `).join("")}
                 </div>
                 <div style="margin-bottom:8px;">
+                    ${items.some(it => parseFloat(it.price) < 0) ? `<div style="display:flex; justify-content:space-between; font-weight:bold;"><span>You saved with deals:</span><span>${currency} ${Math.abs(items.filter(it => parseFloat(it.price) < 0).reduce((a, it) => a + parseFloat(it.price) * parseInt(it.qty || it.quantity || 1), 0)).toFixed(2)}</span></div>` : ""}
                     <div style="display:flex; justify-content:space-between;"><span>Subtotal:</span><span>${currency} ${subtotal.toFixed(2)}</span></div>
                     <div style="display:flex; justify-content:space-between;"><span>Tax (${(taxRate*100).toFixed(0)}%):</span><span>${currency} ${tax.toFixed(2)}</span></div>
                     <div style="display:flex; justify-content:space-between; font-weight:bold; font-size:13px; margin-top:4px;"><span>TOTAL:</span><span>${currency} ${total.toFixed(2)}</span></div>
@@ -1155,10 +1156,17 @@
                 let alive = true; const go = () => { if (window.POS_DEALS) window.POS_DEALS.load().then(d => { if (alive) setDealList(d); }); };
                 go(); const iv = setInterval(go, 30000); return () => { alive = false; clearInterval(iv); };
             }, []);
-            const dealCalc = window.POS_DEALS ? window.POS_DEALS.apply(orderItems.map(i => ({ name: i.name, qty: i.quantity, price: i.price, category: i.category })), dealList) : { discount: 0, applied: [] };
+            // loyalty member on this sale → members-only deals + their free rewards (stamp card, welcome gift)
+            const [memberCtx, setMemberCtx] = React.useState({ member: false, rewards: {} });
+            React.useEffect(() => {
+                if (!member || !window.POS_DEALS) { setMemberCtx({ member: false, rewards: {} }); return; }
+                let alive = true; window.POS_DEALS.memberCtx(member.MemberID).then(c => { if (alive) setMemberCtx(c); });
+                return () => { alive = false; };
+            }, [member && member.MemberID, orderItems.length]);
+            const dealCalc = window.POS_DEALS ? window.POS_DEALS.apply(orderItems.map(i => ({ name: i.name, qty: i.quantity, price: i.price, category: i.category })), dealList, new Date(), memberCtx) : { discount: 0, applied: [] };
             const dealRows = dealCalc.applied.map(a => (
                 <div key={a.id || a.name} className="order-item-row" style={{ background: "#ecfdf5", borderRadius: "8px" }}>
-                    <div><div className="oir-name" style={{ color: "#047857" }}>🏷️ {a.name}{a.times > 1 ? " ×" + a.times : ""}</div><div className="oir-price" style={{ color: "#047857" }}>Deal applied — saving {currency} {a.saving.toFixed(2)}</div></div>
+                    <div><div className="oir-name" style={{ color: "#047857" }}>{a.reward ? "🎁" : "🏷️"} {a.name}{a.times > 1 ? " ×" + a.times : ""}</div><div className="oir-price" style={{ color: "#047857" }}>{Object.keys(a.got || {}).map(k => (a.got[k] > 1 ? a.got[k] + "× " : "") + k).join(" + ")} · <b>−{currency} {a.saving.toFixed(2)}</b></div></div>
                 </div>));
             const calculateTotal = () => {
                 return orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) - dealCalc.discount;
@@ -1487,7 +1495,7 @@
                             price: i.price,
                             category: i.category,
                             prepTime: i.prepTime
-                        }).concat(dealCalc.dealLines || []),
+                        })).concat(dealCalc.dealLines || []),
                         subtotal    : subtotal,
                         tax         : tax,
                         total       : total,
@@ -1655,13 +1663,15 @@
                         if (activeOrderInFocus && api && api.Orders && api.Orders.update) {
                             await api.Orders.update({ orderId: activeOrderInFocus.OrderID || activeOrderInFocus.orderId, memberId: m.MemberID });
                         }
-                        showNotification("Member: " + (m.Name || m.MemberID));
+                        showNotification("✅ Member scan successful " + (m.Code || ""));
                     }
                 });
             };
             const memberBar = window.POS_IS_LAN ? (
                 <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, margin: "0 0 10px", padding: "8px 10px", background: member ? "#e8f5e9" : "#f5f5f5", borderRadius: 10, fontSize: 13, color: "#1e293b" }}>
-                    <span style={{ flex: "1 1 140px", minWidth: 0 }}>{member ? <span>👤 <b>{member.Name || "Member"}</b> · {member.Phone || member.MemberID} · ⭐ {member.Points || 0} pts</span> : "No loyalty member on this sale"}</span>
+                    <span style={{ flex: "1 1 140px", minWidth: 0 }}>{member ? <span>✅ <b>Member verified</b> · {member.Code || "#" + String(member.MemberID || "").slice(-4)} · ⭐ {member.Points || 0} pts
+                        {Object.values(memberCtx.rewards || {}).map(r => <span key={r.dealId} style={{ display: "inline-block", marginLeft: 8, padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 700, background: r.available > 0 ? "#fef3c7" : "#eef2ff", color: r.available > 0 ? "#92400e" : "#4338ca" }}>{r.type === "stamp" ? (r.available > 0 ? "🎁 FREE " + r.free + " ready (" + r.available + ")" : "🎫 " + r.name + " " + r.progress + "/" + r.need) : (r.available > 0 ? "🎁 Welcome gift: free " + r.free : "")}</span>)}
+                    </span> : "No loyalty member on this sale"}</span>
                     <button className="btn btn-ghost" style={{ padding: "6px 10px" }} onClick={openMemberScan}>📷 {member ? "Change" : "Scan member"}</button>
                     {member && !focusMemberId ? <button className="btn btn-ghost" style={{ padding: "6px 10px" }} onClick={() => setMember(null)}>✕</button> : null}
                 </div>
@@ -2014,6 +2024,12 @@
 
                                                     <div className="dishes-list">
                                                         {parsedItems.map((item, idx) => {
+                                                            if (item.isDeal) return (
+                                                                <div key={idx} className="dish-row" style={{ background: '#ecfdf5', borderLeft: '4px solid #10b981' }}>
+                                                                    <div className="dish-row-top"><span style={{ color: '#047857', fontWeight: 800 }}>{item.name}</span><span style={{ fontWeight: 800, color: '#047857' }}>−{currency} {Math.abs(parseFloat(item.price || 0)).toFixed(2)}</span></div>
+                                                                    {item.detail && <div style={{ fontSize: '11px', color: '#065f46', marginTop: '2px' }}>{item.detail}</div>}
+                                                                </div>
+                                                            );
                                                             const isBypassed = item.prepTime === "Bypass Prep";
                                                             const isCollected = item.status === "ready";
                                                             
