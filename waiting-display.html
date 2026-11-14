@@ -312,14 +312,14 @@ body{font-size:calc(var(--u)*1.1)}
     return { title: title, text: txt };
   }
   /* ── live deals: every deal that is on right now, shown one at a time and swapped automatically ── */
-  var DEALS = [], dealIdx = 0, dealTimer = null;
+  var DEALS = [], MENUROWS = [], dealIdx = 0, dealTimer = null;
   function liveDeals() { try { return DEALS.filter(function (d) { return POS_DEALS.isLive(d, new Date()); }); } catch (e) { return []; } }
-  function dealText(d) { var t = String(d.Description || "").trim(); try { return t || POS_DEALS.describe(d).replace(/ = (\d)/, " = " + CURRENCY + " $1"); } catch (e) { return t; } }
+  function dealText(d) { try { return POS_DEALS.summary(d, MENUROWS, CURRENCY ? CURRENCY + " " : ""); } catch (e) { return ""; } }
   function showDeal() {
     var box = $("dealBox"), l = liveDeals();
     if (!l.length) { box.innerHTML = ""; return; }
     dealIdx = (dealIdx + 1) % l.length; var d = l[dealIdx], el = box.firstChild;
-    var html = '🏷️ ' + esc(d.Name) + '<small>' + esc(dealText(d)) + '</small>' + (l.length > 1 ? '<i>' + (dealIdx + 1) + '/' + l.length + '</i>' : "");
+    var desc = String(d.Description || "").trim(); var html = '🏷️ ' + esc(d.Name) + (desc ? '<small>' + esc(desc) + '</small>' : '') + '<small>' + esc(dealText(d)) + '</small>' + (l.length > 1 ? '<i>' + (dealIdx + 1) + '/' + l.length + '</i>' : "");
     if (!el) { box.innerHTML = '<div class="deal">' + html + '</div>'; return; }
     el.style.opacity = 0; setTimeout(function () { el.innerHTML = html; el.style.opacity = 1; }, 450);
   }
@@ -350,6 +350,7 @@ body{font-size:calc(var(--u)*1.1)}
     try {
       var r = await POS_GAPI.Menu.getAll();
       if (r && r.data && r.data.length) {
+        MENUROWS = r.data.map(function (i) { return { name: i.Name, price: i.Price, cat: i.Category }; });
         var sig = JSON.stringify(r.data.map(function (i) { return [i.Name, i.Price, i.Category, i.Available, i.Description]; }));
         if (sig !== menuSig) { menuSig = sig; menuPages = buildPages(r.data); pageIx = 0; showPage(); }
       }
