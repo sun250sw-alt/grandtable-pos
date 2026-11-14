@@ -2348,16 +2348,18 @@
     // ── Deals & special offers builder ──
     function DealsPage() {
         const D = window.POS_DEALS;
-        const blank = { Name: "", Type: "combo", Items: [{ name: "", qty: 1 }], Category: "", BuyQty: 3, Price: "", Value: "", Days: [], StartTime: "", EndTime: "", StartDate: "", EndDate: "", Active: 1, Description: "", scope: "items" };
+        const blank = { Name: "", Type: "combo", Audience: "all", Items: [{ name: "", qty: 1 }], Category: "", BuyQty: 3, Price: "", Value: "", Days: [], StartTime: "", EndTime: "", StartDate: "", EndDate: "", Active: 1, Description: "", scope: "items" };
         const [rows, setRows] = useState(null);
         const [menu, setMenu] = useState([]);
+        const [costMap, setCostMap] = useState({});
         const [currency, setCurrency] = useState("");
         const [form, setForm] = useState(null);
         const [saving, setSaving] = useState(false);
         const load = async () => {
             try {
                 const s = window.POS_GAPI.getSettings(); if (s && s.currency) setCurrency(s.currency + " ");
-                setMenu((await window.POS_GAPI.getRows("MenuItems")).filter(Boolean));
+                const mn = (await window.POS_GAPI.getRows("MenuItems")).filter(Boolean); setMenu(mn);
+                try { const [iv, rc] = await Promise.all([window.POS_GAPI.getRows("Inventory"), window.POS_GAPI.getRows("Recipes")]); setCostMap(dishCostMap(mn, rc.filter(Boolean), iv.filter(Boolean))); } catch (e) {}
                 setRows((await window.POS_GAPI.getRows("Deals")).filter(Boolean)); D.load(true);
             } catch (e) { setRows([]); alert("Could not load deals: " + e.message + "\n(Google Sheets mode: add a tab named Deals with the columns DealID, Name, Type, Items, Category, BuyQty, Price, Value, Days, StartTime, EndTime, StartDate, EndDate, Active, Description.)"); }
         };
@@ -2366,28 +2368,40 @@
         const money = (n) => currency + (Math.round((parseFloat(n) || 0) * 100) / 100).toLocaleString();
         const cats = [...new Set(menu.map(m => m.Category).filter(Boolean))];
         const priceOf = (n) => { const m = menu.find(x => String(x.Name).toLowerCase() === String(n).toLowerCase()); return m ? parseFloat(m.Price) || 0 : 0; };
-        const typeName = { combo: "🍔 Combo (fixed price)", multi: "🔢 Any N for a price", percent: "％ Percent off", amount: "💵 Amount off each" };
-        const edit = (r) => { let items = D.names(r); if (!items.length) items = [{ name: "", qty: 1 }]; setForm({ ...blank, ...r, Items: items, Days: String(r.Days || "").split(",").map(x => x.trim()).filter(Boolean), scope: r.Category ? "category" : "items", Active: !["false", "0"].includes(String(r.Active).toLowerCase()) ? 1 : 0 }); };
-        const preview = (f) => {   // what the customer saves, from the regular prices
-            const list = f.Items.filter(i => i.name);
-            if (f.Type === "combo") { const reg = list.reduce((a, i) => a + priceOf(i.name) * (parseInt(i.qty, 10) || 1), 0); return reg > 0 && f.Price !== "" ? { reg, save: reg - parseFloat(f.Price) } : null; }
-            if (f.Type === "multi") { const el = f.scope === "category" ? menu.filter(m => m.Category === f.Category) : list.map(i => ({ Price: priceOf(i.name) })); const avg = el.length ? el.reduce((a, m) => a + (parseFloat(m.Price) || 0), 0) / el.length : 0; const reg = avg * (parseInt(f.BuyQty, 10) || 0); return reg > 0 && f.Price !== "" ? { reg, save: reg - parseFloat(f.Price), approx: el.length > 1 } : null; }
-            return null;
+        const typeName = { combo: "🍔 Combo (fixed price)", multi: "🔢 Any N for a price", percent: "％ Percent off", amount: "💵 Amount off each", stamp: "🎫 Loyalty card — buy N, next one free", welcome: "🎁 Welcome gift for new members" };
+        const edit = (r) => { let items = D.names(r); if (!items.length) items = [{ name: "", qty: 1 }]; setForm({ ...blank, ...r, Items: items, Days: String(r.Days || "").split(",").map(x => x.trim()).filter(Boolean), scope: r.Category ? "category" : "items", Audience: r.Audience || "all", Active: !["false", "0"].includes(String(r.Active).toLowerCase()) ? 1 : 0 }); };
+        const costOf = (n) => costMap[String(n).toLowerCase()];
+        const preview = (f) => {   // money check: what the customer pays, what it costs you, what is left
+            const list = f.Items.filter(i => i.name), key = (x) => String(x || "").toLowerCase();
+            const pool = f.scope === "category" ? menu.filter(m => m.Category === f.Category) : f.scope === "all" ? menu : menu.filter(m => list.some(l => key(l.name) === key(m.Name)));
+            const avg = (fn) => { const v = pool.map(fn).filter(x => x != null && !isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+            const unknown = []; const cst = (n) => { const c = costOf(n); if (c == null) unknown.push(n); return c || 0; };
+            let pay = null, cost = null, reg = null, note = "", perWhat = "per deal";
+            if (f.Type === "combo") { if (!list.length) return null; reg = list.reduce((a, i) => a + priceOf(i.name) * (parseInt(i.qty, 10) || 1), 0); cost = list.reduce((a, i) => a + cst(i.name) * (parseInt(i.qty, 10) || 1), 0); pay = f.Price === "" ? null : parseFloat(f.Price); }
+            else if (f.Type === "multi") { const n = parseInt(f.BuyQty, 10) || 0, ap = avg(m => parseFloat(m.Price)), ac = avg(m => costOf(m.Name)); if (ap == null || !n) return null; reg = ap * n; cost = (ac || 0) * n; pay = f.Price === "" ? null : parseFloat(f.Price); pool.forEach(m => { if (costOf(m.Name) == null) unknown.push(m.Name); }); note = pool.length > 1 ? "average of the eligible items" : ""; }
+            else if (f.Type === "percent" || f.Type === "amount") { const ap = avg(m => parseFloat(m.Price)), ac = avg(m => costOf(m.Name)), v = parseFloat(f.Value); if (ap == null || !(v > 0)) return null; reg = ap; cost = ac || 0; pay = f.Type === "percent" ? ap * (1 - Math.min(100, v) / 100) : Math.max(0, ap - v); perWhat = "per item"; pool.forEach(m => { if (costOf(m.Name) == null) unknown.push(m.Name); }); note = pool.length > 1 ? "average of the eligible items" : ""; }
+            else if (f.Type === "stamp") { const n = parseInt(f.BuyQty, 10) || 0, ap = avg(m => parseFloat(m.Price)), ac = avg(m => costOf(m.Name)); if (ap == null || n < 2) return null; reg = ap * (n + 1); pay = ap * n; cost = (ac || 0) * (n + 1); perWhat = "per " + (n + 1) + " items (" + n + " paid + 1 free)"; pool.forEach(m => { if (costOf(m.Name) == null) unknown.push(m.Name); }); note = pool.length > 1 ? "average of the eligible items" : ""; }
+            else if (f.Type === "welcome") { if (!list.length) return null; reg = list.reduce((a, i) => a + priceOf(i.name) * (parseInt(i.qty, 10) || 1), 0); cost = list.reduce((a, i) => a + cst(i.name) * (parseInt(i.qty, 10) || 1), 0); pay = 0; perWhat = "one-off per new member"; }
+            if (pay == null) return null;
+            const profit = pay - cost, normal = reg - cost;
+            return { reg, pay, cost, profit, margin: pay > 0 ? profit / pay * 100 : null, normalMargin: reg > 0 ? normal / reg * 100 : null, saves: reg - pay, unknown: [...new Set(unknown)], note, perWhat, free: f.Type === "welcome" };
         };
         const save = async () => {
             const f = form; if (!f.Name.trim()) return alert("Give the deal a name.");
             const items = f.Items.filter(i => i.name).map(i => ({ name: i.name, qty: parseInt(i.qty, 10) || 1 }));
             if (f.Type === "combo" && items.length < 1) return alert("Add the items in the combo.");
             if ((f.Type === "combo" || f.Type === "multi") && !(parseFloat(f.Price) >= 0) ) return alert("Enter the deal price.");
-            if (f.Type === "multi" && (parseInt(f.BuyQty, 10) || 0) < 2) return alert("'Any N' needs at least 2 items.");
-            if (f.Type === "multi" && f.scope === "items" && !items.length) return alert("Pick the items (or switch to a category).");
+            if ((f.Type === "multi" || f.Type === "stamp") && (parseInt(f.BuyQty, 10) || 0) < 2) return alert("N needs to be at least 2.");
+            if ((f.Type === "multi" || f.Type === "stamp") && f.scope === "items" && !items.length) return alert("Pick the items (or switch to a category).");
+            if ((f.Type === "multi" || f.Type === "stamp") && f.scope === "category" && !f.Category) return alert("Choose the category.");
+            if (f.Type === "welcome" && !items.length) return alert("Choose the free gift item(s).");
             if ((f.Type === "percent" || f.Type === "amount") && !(parseFloat(f.Value) > 0)) return alert("Enter the " + (f.Type === "percent" ? "percentage" : "amount") + " off.");
             setSaving(true);
             try {
-                const useCat = f.Type !== "combo" && f.scope === "category";
-                const r = { Name: f.Name.trim(), Type: f.Type, Items: f.Type !== "combo" && useCat ? "[]" : JSON.stringify(items), Category: useCat ? f.Category : "", BuyQty: f.Type === "multi" ? parseInt(f.BuyQty, 10) : "", Price: f.Type === "combo" || f.Type === "multi" ? parseFloat(f.Price) : "", Value: f.Type === "percent" || f.Type === "amount" ? parseFloat(f.Value) : "", Days: f.Days.join(","), StartTime: f.StartTime, EndTime: f.EndTime, StartDate: f.StartDate, EndDate: f.EndDate, Active: f.Active ? 1 : 0, Description: f.Description };
+                const useCat = f.Type !== "combo" && f.Type !== "welcome" && f.scope === "category";
+                const r = { Name: f.Name.trim(), Type: f.Type, Items: f.Type !== "combo" && useCat ? "[]" : JSON.stringify(items), Category: useCat ? f.Category : "", BuyQty: f.Type === "multi" || f.Type === "stamp" ? parseInt(f.BuyQty, 10) : "", Price: f.Type === "combo" || f.Type === "multi" ? parseFloat(f.Price) : "", Value: f.Type === "percent" || f.Type === "amount" ? parseFloat(f.Value) : "", Days: f.Days.join(","), StartTime: f.StartTime, EndTime: f.EndTime, StartDate: f.StartDate, EndDate: f.EndDate, Active: f.Active ? 1 : 0, Description: f.Description, Audience: f.Type === "stamp" || f.Type === "welcome" ? "members" : (f.Audience || "all") };
                 if (f.DealID) await window.POS_GAPI.updateRow("Deals", 0, f.DealID, r);
-                else await window.POS_GAPI.appendRow("Deals", [window.POS_GAPI.uid("DEAL"), r.Name, r.Type, r.Items, r.Category, r.BuyQty, r.Price, r.Value, r.Days, r.StartTime, r.EndTime, r.StartDate, r.EndDate, r.Active, r.Description]);
+                else await window.POS_GAPI.appendRow("Deals", [window.POS_GAPI.uid("DEAL"), r.Name, r.Type, r.Items, r.Category, r.BuyQty, r.Price, r.Value, r.Days, r.StartTime, r.EndTime, r.StartDate, r.EndDate, r.Active, r.Description, r.Audience]);
                 await load(); setForm(null);
             } catch (e) { alert("Could not save: " + e.message); }
             setSaving(false);
@@ -2413,7 +2427,7 @@
                         <tbody>
                             {rows.length === 0 && <tr><td colSpan="5" style={{ textAlign: "center", color: "#999", padding: 24 }}>No deals yet — build a combo, "any 3 for…" or a happy-hour discount.</td></tr>}
                             {rows.map(r => { const on = !["false", "0"].includes(String(r.Active).toLowerCase()); return <tr key={r.DealID}>
-                                <td><strong>{r.Name}</strong><div style={{ fontSize: 11, color: "#999" }}>{typeName[r.Type] || r.Type}</div></td>
+                                <td><strong>{r.Name}</strong><div style={{ fontSize: 11, color: "#999" }}>{typeName[r.Type] || r.Type}</div><span className={"badge " + (r.Audience === "members" || r.Type === "stamp" || r.Type === "welcome" ? "badge-yellow" : "badge-gray")} style={{ marginTop: 4 }}>{r.Audience === "members" || r.Type === "stamp" || r.Type === "welcome" ? "⭐ Loyalty members" : "Everyone"}</span></td>
                                 <td style={{ maxWidth: 300 }}>{D.describe(r).replace(/ = (\d)/, " = " + currency + "$1")}</td>
                                 <td style={{ fontSize: 12 }}>{sched(r)}</td>
                                 <td><span onClick={() => toggle(r)} style={{ cursor: "pointer", display: "inline-block", width: 42, height: 24, borderRadius: 12, background: on ? "#27ae60" : "#c0c0c0", position: "relative" }}><span style={{ position: "absolute", top: 3, left: on ? 21 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "all .2s" }}></span></span></td>
@@ -2429,9 +2443,12 @@
                             <div className="form-group" style={{ gridColumn: "1/-1" }}><label>Deal name (shown on the bill)</label><input style={inp} value={form.Name} onChange={e => setForm({ ...form, Name: e.target.value })} placeholder="e.g. Burger Combo" /></div>
                             <div className="form-group" style={{ gridColumn: "1/-1" }}><label>Type of deal</label>
                                 <select style={inp} value={form.Type} onChange={e => setForm({ ...form, Type: e.target.value })}>{Object.entries(typeName).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+                            {form.Type !== "stamp" && form.Type !== "welcome"
+                                ? <div className="form-group" style={{ gridColumn: "1/-1" }}><label>Who gets it?</label><select style={inp} value={form.Audience} onChange={e => setForm({ ...form, Audience: e.target.value })}><option value="all">Everyone</option><option value="members">⭐ Loyalty members only (signed in on the app / scanned at the till)</option></select></div>
+                                : <div style={{ gridColumn: "1/-1", fontSize: 12, color: "#92400e", background: "#fffbeb", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>⭐ Loyalty members only. {form.Type === "stamp" ? "The app shows each member a progress ring (e.g. 6 of 10). When they reach it, the cheapest matching item in their next order is free." : "New members see the gift in the app and on their QR screen; the cashier scans their QR and the gift item is free once. Set a Start date to exclude people who joined before the offer."}</div>}
                         </div>
-                        {form.Type === "combo" && <div style={{ marginBottom: 10 }}><div style={{ fontWeight: 700, marginBottom: 6 }}>Customer buys all of these:</div>{itemRows}<button className="recipe-btn" onClick={() => setForm({ ...form, Items: [...form.Items, { name: "", qty: 1 }] })}>+ Add item</button></div>}
-                        {form.Type !== "combo" && <div style={{ marginBottom: 10 }}>
+                        {(form.Type === "combo" || form.Type === "welcome") && <div style={{ marginBottom: 10 }}><div style={{ fontWeight: 700, marginBottom: 6 }}>{form.Type === "welcome" ? "Free gift (given once when the customer joins and has their first order):" : "Customer buys all of these:"}</div>{itemRows}<button className="recipe-btn" onClick={() => setForm({ ...form, Items: [...form.Items, { name: "", qty: 1 }] })}>+ Add item</button></div>}
+                        {form.Type !== "combo" && form.Type !== "welcome" && <div style={{ marginBottom: 10 }}>
                             <div style={{ fontWeight: 700, marginBottom: 6 }}>Which items count?</div>
                             <div style={{ display: "flex", gap: 14, marginBottom: 8, fontSize: 13, flexWrap: "wrap" }}>
                                 {[["items", "Specific items"], ["category", "A whole category"], ["all", "Everything"]].filter(([k]) => k !== "all" || form.Type === "percent" || form.Type === "amount").map(([k, l]) => <label key={k}><input type="radio" checked={form.scope === k} onChange={() => setForm({ ...form, scope: k, ...(k === "all" ? { Items: [], Category: "" } : {}) })} /> {l}</label>)}
@@ -2440,11 +2457,26 @@
                             {form.scope === "category" && <select style={inp} value={form.Category} onChange={e => setForm({ ...form, Category: e.target.value })}><option value="">— choose category —</option>{cats.map(c => <option key={c}>{c}</option>)}</select>}
                         </div>}
                         <div className="form-grid">
-                            {form.Type === "multi" && <div className="form-group"><label>Customer buys (how many)</label><input style={inp} type="number" min="2" value={form.BuyQty} onChange={e => setForm({ ...form, BuyQty: e.target.value })} /></div>}
+                            {(form.Type === "multi" || form.Type === "stamp") && <div className="form-group"><label>{form.Type === "stamp" ? "Buy this many… (then the next one is free)" : "Customer buys (how many)"}</label><input style={inp} type="number" min="2" value={form.BuyQty} onChange={e => setForm({ ...form, BuyQty: e.target.value })} /></div>}
                             {(form.Type === "combo" || form.Type === "multi") && <div className="form-group"><label>For a fixed price of ({currency.trim()})</label><input style={inp} type="number" value={form.Price} onChange={e => setForm({ ...form, Price: e.target.value })} /></div>}
                             {(form.Type === "percent" || form.Type === "amount") && <div className="form-group"><label>{form.Type === "percent" ? "Percent off (%)" : "Amount off each item (" + currency.trim() + ")"}</label><input style={inp} type="number" value={form.Value} onChange={e => setForm({ ...form, Value: e.target.value })} /></div>}
                         </div>
-                        {pv && <div style={{ background: pv.save > 0 ? "#f0fdf4" : "#fef2f2", borderRadius: 10, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>Regular price {pv.approx ? "≈ " : ""}{money(pv.reg)} → deal {money(form.Price)} · customer saves <b>{money(pv.save)}</b> {pv.save <= 0 && "⚠ the deal costs MORE than normal — it will never apply"}</div>}
+                        {pv && (() => { const loss = pv.profit < -0.005, thin = !loss && pv.margin != null && pv.margin < 15 && !pv.free;
+                            return <div style={{ border: "2px solid " + (loss ? "#ef4444" : thin ? "#f59e0b" : "#86efac"), background: loss ? "#fef2f2" : thin ? "#fffbeb" : "#f0fdf4", borderRadius: 12, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>
+                                <div style={{ fontWeight: 800, marginBottom: 6 }}>💰 Money check <span style={{ fontWeight: 400, color: "#666" }}>({pv.perWhat}{pv.note ? " · " + pv.note : ""})</span></div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "3px 12px" }}>
+                                    <span>Normal price</span><b>{money(pv.reg)}</b>
+                                    <span>{pv.free ? "Customer pays" : "Deal price"}</span><b>{money(pv.pay)}</b>
+                                    <span>Customer saves</span><b style={{ color: "#047857" }}>{money(pv.saves)}</b>
+                                    <span>Your cost of the items</span><b>{money(pv.cost)}</b>
+                                    <span>{pv.free ? "Gift costs you" : "Your profit on the deal"}</span><b style={{ color: loss ? "#dc2626" : "#047857" }}>{pv.free ? "−" + money(pv.cost) : money(pv.profit)}{pv.margin != null && !pv.free ? " (" + Math.round(pv.margin) + "% margin)" : ""}</b>
+                                    {!pv.free && pv.normalMargin != null && <><span>Normal margin without the deal</span><b>{Math.round(pv.normalMargin)}%</b></>}
+                                </div>
+                                {loss && <div style={{ color: "#dc2626", fontWeight: 800, marginTop: 6 }}>⛔ You LOSE {money(-pv.profit)} every time this deal is used.</div>}
+                                {thin && <div style={{ color: "#b45309", fontWeight: 700, marginTop: 6 }}>⚠ Very thin margin — only {Math.round(pv.margin)}% left.</div>}
+                                {pv.saves <= 0 && !pv.free && <div style={{ color: "#dc2626", marginTop: 6 }}>The deal price is not lower than normal, so it will never apply.</div>}
+                                {pv.unknown.length > 0 && <div style={{ color: "#92400e", marginTop: 6, fontSize: 12 }}>⚠ No cost set for: {pv.unknown.slice(0, 5).join(", ")}{pv.unknown.length > 5 ? "…" : ""} — add recipes/costs so the profit is accurate.</div>}
+                            </div>; })()}
                         <div style={{ fontWeight: 700, margin: "6px 0" }}>When is it on? <span style={{ fontWeight: 400, color: "#888", fontSize: 12 }}>(leave blank = always)</span></div>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
                             {D.DAYS.map(d => { const on = form.Days.includes(d); return <button key={d} onClick={() => setForm({ ...form, Days: on ? form.Days.filter(x => x !== d) : [...form.Days, d] })} style={{ padding: "6px 12px", borderRadius: 16, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 12, background: on ? "#667eea" : "#eef0fb", color: on ? "#fff" : "#555" }}>{d}</button>; })}
