@@ -349,12 +349,15 @@ window.POS_DEALS = (() => {
   }
   const detailOf = (a) => Object.keys(a.got || {}).map(k => (a.got[k] > 1 ? a.got[k] + "× " : "") + k).join(" + ");
   /** lines: [{name, qty, price, category}] (no deal lines). Returns {discount, applied:[{id,name,times,saving}], dealLines} */
+  const channelOf = (o) => { o = o || {}; const w = String(o.WaiterName || o.waiterName || ""), t = parseInt(o.TableNumber != null ? o.TableNumber : o.tableNumber, 10) || 0;
+    if (/^online/i.test(w)) return (/deliver/i.test(w) || t === 99) ? "delivery" : "pickup"; return t > 0 && t < 90 ? "dinein" : "takeaway"; };
+  const chanOk = (d, ch) => { const l = String(d.Channels || "").toLowerCase().split(",").map(x => x.trim()).filter(Boolean); return !ch || !l.length || l.includes(ch); };
   function apply(lines, deals, date, ctx) {
     date = date || new Date(); ctx = ctx || {};
     const member = !!ctx.member, avail = {}; Object.keys(ctx.rewards || {}).forEach(k => { avail[k] = parseInt((ctx.rewards[k] || {}).available, 10) || 0; });
     const pc = { avail, member };
     const units = []; (lines || []).forEach(l => { if (!l || l.isDeal) return; const q = Math.min(200, parseInt(l.qty || l.quantity || 1, 10) || 1); for (let i = 0; i < q; i++) units.push({ name: l.name || l.Name, cat: l.category || l.cat || "", price: parseFloat(l.price) || 0, used: false }); });
-    const live = (deals || []).filter(d => isLive(d, date) && (member || !(REWARD(String(d.Type || "").toLowerCase()) || String(d.Audience || "all").toLowerCase() === "members"))), applied = [];
+    const live = (deals || []).filter(d => isLive(d, date) && chanOk(d, ctx.channel) && (member || !(REWARD(String(d.Type || "").toLowerCase()) || String(d.Audience || "all").toLowerCase() === "members"))), applied = [];
     for (let guard = 0; guard < 25; guard++) {
       let best = null;
       live.forEach(d => { const r = pick(d, units, pc); if (r && r.saving > 0.005 && (!best || r.saving > best.r.saving)) best = { d, r }; });
@@ -1064,12 +1067,13 @@ window.POS_DEALS = (() => {
 
         const totalItems = Object.values(cart).reduce((s, q) => s + q, 0);
         const grossSubtotal = menuItems.reduce((s, item) => s + (cart[item.id] || 0) * item.price, 0);
-        const dealCalc = window.POS_DEALS.apply(menuItems.filter(i => cart[i.id] > 0).map(i => ({ name: i.name, qty: cart[i.id], price: i.price, category: i.cat })), dealsList, new Date(), { member: !!(acct && acct.member), rewards: (acct && acct.rewards || []).reduce((m, r) => { m[r.dealId] = r; return m; }, {}) });
+        const dealCalc = window.POS_DEALS.apply(menuItems.filter(i => cart[i.id] > 0).map(i => ({ name: i.name, qty: cart[i.id], price: i.price, category: i.cat })), dealsList, new Date(), { channel: mode === "delivery" ? "delivery" : "pickup", member: !!(acct && acct.member), rewards: (acct && acct.rewards || []).reduce((m, r) => { m[r.dealId] = r; return m; }, {}) });
         const subtotal = grossSubtotal - dealCalc.discount;
         const isMember = !!(acct && acct.member);
         const rewMap = (acct && acct.rewards || []).reduce((m, r) => { m[r.dealId] = r; return m; }, {});
         const membersOnly = (d) => ["stamp", "welcome"].includes(String(d.Type || "").toLowerCase()) || String(d.Audience || "all").toLowerCase() === "members";
-        const liveDeals = dealsList.filter(d => window.POS_DEALS.isLive(d, new Date()) && !(isMember && String(d.Type).toLowerCase() === "welcome" && rewMap[d.DealID] && !(rewMap[d.DealID].available > 0)));
+        const chanNow = mode === "delivery" ? "delivery" : "pickup";
+        const liveDeals = dealsList.filter(d => window.POS_DEALS.isLive(d, new Date()) && (!String(d.Channels || "").trim() || String(d.Channels).toLowerCase().split(",").map(x => x.trim()).includes(chanNow)) && !(isMember && String(d.Type).toLowerCase() === "welcome" && rewMap[d.DealID] && !(rewMap[d.DealID].available > 0)));
         const readyRewards = (acct && acct.rewards || []).filter(r => r.available > 0);
         const deliveryFee = mode === "delivery" && subtotal > 0 ? deliveryFeeCfg : 0;
         const total = subtotal + deliveryFee;
