@@ -313,7 +313,7 @@ body{font-size:calc(var(--u)*1.1)}
   }
   /* ── live deals: every deal that is on right now, shown one at a time and swapped automatically ── */
   var DEALS = [], MENUROWS = [], dealIdx = 0, dealTimer = null;
-  function liveDeals() { try { return DEALS.filter(function (d) { return POS_DEALS.isLive(d, new Date()); }); } catch (e) { return []; } }
+  function liveDeals() { try { return DEALS.filter(function (d) { return POS_DEALS.isLive(d, new Date()) && (!String(d.Channels || "").trim() || /dinein|takeaway/i.test(d.Channels)); }); } catch (e) { return []; } }
   function dealText(d) { try { return POS_DEALS.summary(d, MENUROWS, CURRENCY ? CURRENCY + " " : ""); } catch (e) { return ""; } }
   function showDeal() {
     var box = $("dealBox"), l = liveDeals();
