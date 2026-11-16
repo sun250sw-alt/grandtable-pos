@@ -1067,9 +1067,10 @@ window.POS_DEALS = (() => {
 
         const totalItems = Object.values(cart).reduce((s, q) => s + q, 0);
         const grossSubtotal = menuItems.reduce((s, item) => s + (cart[item.id] || 0) * item.price, 0);
-        const dealCalc = window.POS_DEALS.apply(menuItems.filter(i => cart[i.id] > 0).map(i => ({ name: i.name, qty: cart[i.id], price: i.price, category: i.cat })), dealsList, new Date(), { channel: mode === "delivery" ? "delivery" : "pickup", member: !!(acct && acct.member), rewards: (acct && acct.rewards || []).reduce((m, r) => { m[r.dealId] = r; return m; }, {}) });
+        const dealCalc = window.POS_DEALS.apply(menuItems.filter(i => cart[i.id] > 0).map(i => ({ name: i.name, qty: cart[i.id], price: i.price, category: i.cat })), dealsList, new Date(), { channel: mode === "delivery" ? "delivery" : "pickup", member: !!(acct && acct.member && isLive(acct)), rewards: (acct && acct.rewards || []).reduce((m, r) => { m[r.dealId] = r; return m; }, {}) });
         const subtotal = grossSubtotal - dealCalc.discount;
-        const isMember = !!(acct && acct.member);
+        const isMember = !!(acct && acct.member && isLive(acct));
+        const sessionExpired = !!(acct && acct.member && !isLive(acct));
         const rewMap = (acct && acct.rewards || []).reduce((m, r) => { m[r.dealId] = r; return m; }, {});
         const membersOnly = (d) => ["stamp", "welcome"].includes(String(d.Type || "").toLowerCase()) || String(d.Audience || "all").toLowerCase() === "members";
         const chanNow = mode === "delivery" ? "delivery" : "pickup";
@@ -1404,6 +1405,7 @@ window.POS_DEALS = (() => {
                         </div>
                         <div className="checkout-section">
                             <h3>Order Total</h3>
+                            {sessionExpired && <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "8px 10px", fontSize: 13, margin: "6px 0 10px" }}>⭐ Your sign-in has expired, so member rewards and offers are not included. <b style={{ textDecoration: "underline", cursor: "pointer" }} onClick={() => openAcct("signin")}>Sign in again</b> to use them.</div>}
                             {dealCalc.applied.length > 0 && <div className="totals-row"><span>Items</span><span>{currency}{grossSubtotal.toLocaleString()}</span></div>}
                             {dealCalc.applied.map(a => <div key={a.name} className="totals-row" style={{ color: "#047857", fontWeight: 700 }}><span>🏷️ {a.name}{a.times > 1 ? " ×" + a.times : ""}</span><span>−{currency}{a.saving.toLocaleString()}</span></div>)}
                             <div className="totals-row"><span>Subtotal</span><span>{currency}{subtotal.toLocaleString()}</span></div>
