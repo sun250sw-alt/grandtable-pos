@@ -337,7 +337,7 @@ window.POS_GAPI = (() => {
       { name:"Settings",   headers:["Key","Value"] },
       { name:"Rota",       headers:["RotaID","StaffEmail","StaffName","Date","ShiftStart","ShiftEnd","Role","Location","Notes","Status"] },
       { name:"Clockings",  headers:["ClockingID","StaffEmail","StaffName","Date","ClockIn","ClockOut","TotalHours","Status","Notes"] },
-      { name:"Deals",      headers:["DealID","Name","Type","Items","Category","BuyQty","Price","Value","Days","StartTime","EndTime","StartDate","EndDate","Active","Description"] },
+      { name:"Deals",      headers:["DealID","Name","Type","Items","Category","BuyQty","Price","Value","Days","StartTime","EndTime","StartDate","EndDate","Active","Description","Audience","Channels"] },
       { name:"Expenses",   headers:["ExpenseID","Name","Category","Amount","Frequency","StartDate","EndDate","Notes"] },
     ];
 
@@ -630,7 +630,7 @@ window.POS_GAPI = (() => {
       let sub   = parseFloat(data.subtotal || data.total || 0);
       let orderItems = data.items || [];
       try {   // meal deals & special offers are applied here, so every app that saves an order gets the same discount
-        const rp = window.POS_DEALS ? window.POS_DEALS.reprice(orderItems, await window.POS_DEALS.load(), new Date(), await window.POS_DEALS.memberCtx(data.memberId)) : null;
+        const rp = window.POS_DEALS ? window.POS_DEALS.reprice(orderItems, await window.POS_DEALS.load(), new Date(), { ...(await window.POS_DEALS.memberCtx(data.memberId)), channel: window.POS_DEALS.channelOf(data) }) : null;
         if (rp && (rp.applied.length || orderItems.some(i => i && i.isDeal))) { orderItems = rp.items; sub = rp.net; }
       } catch (e) { console.error("deals:", e); }
       const tax   = parseFloat((sub * (_settings.tax_rate || 0.10)).toFixed(2));
@@ -657,8 +657,8 @@ window.POS_GAPI = (() => {
       }
       if (data.items && data.items.length && data.subtotal !== undefined) {   // items changed → deals are worked out again from scratch
         try {
-          let mid = data.memberId; if (!mid) { try { mid = ((await getRows("Orders")).find(o => o.OrderID === data.orderId) || {}).MemberID; } catch (e) {} }
-          const rp = window.POS_DEALS ? window.POS_DEALS.reprice(data.items, await window.POS_DEALS.load(), new Date(), await window.POS_DEALS.memberCtx(mid, data.orderId)) : null;
+          let mid = data.memberId, chRow = null; try { chRow = (await getRows("Orders")).find(o => o.OrderID === data.orderId) || null; if (!mid && chRow) mid = chRow.MemberID; } catch (e) {}
+          const rp = window.POS_DEALS ? window.POS_DEALS.reprice(data.items, await window.POS_DEALS.load(), new Date(), { ...(await window.POS_DEALS.memberCtx(mid, data.orderId)), channel: window.POS_DEALS.channelOf(chRow || data) }) : null;
           if (rp && (rp.applied.length || data.items.some(i => i && i.isDeal))) {
             const s0 = parseFloat(data.subtotal) || 0, t0 = parseFloat(data.tax) || 0, tot0 = parseFloat(data.total) || 0;
             const extra = Math.max(0, tot0 - s0 - t0), rate = s0 > 0 ? t0 / s0 : (_settings.tax_rate || 0);
@@ -1610,12 +1610,15 @@ window.POS_DEALS = (() => {
   }
   const detailOf = (a) => Object.keys(a.got || {}).map(k => (a.got[k] > 1 ? a.got[k] + "× " : "") + k).join(" + ");
   /** lines: [{name, qty, price, category}] (no deal lines). Returns {discount, applied:[{id,name,times,saving}], dealLines} */
+  const channelOf = (o) => { o = o || {}; const w = String(o.WaiterName || o.waiterName || ""), t = parseInt(o.TableNumber != null ? o.TableNumber : o.tableNumber, 10) || 0;
+    if (/^online/i.test(w)) return (/deliver/i.test(w) || t === 99) ? "delivery" : "pickup"; return t > 0 && t < 90 ? "dinein" : "takeaway"; };
+  const chanOk = (d, ch) => { const l = String(d.Channels || "").toLowerCase().split(",").map(x => x.trim()).filter(Boolean); return !ch || !l.length || l.includes(ch); };
   function apply(lines, deals, date, ctx) {
     date = date || new Date(); ctx = ctx || {};
     const member = !!ctx.member, avail = {}; Object.keys(ctx.rewards || {}).forEach(k => { avail[k] = parseInt((ctx.rewards[k] || {}).available, 10) || 0; });
     const pc = { avail, member };
     const units = []; (lines || []).forEach(l => { if (!l || l.isDeal) return; const q = Math.min(200, parseInt(l.qty || l.quantity || 1, 10) || 1); for (let i = 0; i < q; i++) units.push({ name: l.name || l.Name, cat: l.category || l.cat || "", price: parseFloat(l.price) || 0, used: false }); });
-    const live = (deals || []).filter(d => isLive(d, date) && (member || !(REWARD(String(d.Type || "").toLowerCase()) || String(d.Audience || "all").toLowerCase() === "members"))), applied = [];
+    const live = (deals || []).filter(d => isLive(d, date) && chanOk(d, ctx.channel) && (member || !(REWARD(String(d.Type || "").toLowerCase()) || String(d.Audience || "all").toLowerCase() === "members"))), applied = [];
     for (let guard = 0; guard < 25; guard++) {
       let best = null;
       live.forEach(d => { const r = pick(d, units, pc); if (r && r.saving > 0.005 && (!best || r.saving > best.r.saving)) best = { d, r }; });
@@ -1670,5 +1673,5 @@ window.POS_DEALS = (() => {
       const rw = {}; (r.data || []).forEach(x => { rw[x.dealId] = x; }); return { member: true, rewards: rw };
     } catch (e) { return { member: true, rewards: {} }; }
   }
-  return { apply, reprice, load, isLive, names, describe, summary, memberCtx, DAYS };
+  return { apply, reprice, load, isLive, names, describe, summary, memberCtx, channelOf, DAYS };
 })();
