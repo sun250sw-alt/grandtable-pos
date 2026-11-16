@@ -1163,7 +1163,8 @@
                 let alive = true; window.POS_DEALS.memberCtx(member.MemberID).then(c => { if (alive) setMemberCtx(c); });
                 return () => { alive = false; };
             }, [member && member.MemberID, orderItems.length]);
-            const dealCalc = window.POS_DEALS ? window.POS_DEALS.apply(orderItems.map(i => ({ name: i.name, qty: i.quantity, price: i.price, category: i.category })), dealList, new Date(), memberCtx) : { discount: 0, applied: [] };
+            const dealChannel = selectedTable ? "dinein" : (selectedTakeawayOrder && window.POS_DEALS ? window.POS_DEALS.channelOf(selectedTakeawayOrder) : "takeaway");
+            const dealCalc = window.POS_DEALS ? window.POS_DEALS.apply(orderItems.map(i => ({ name: i.name, qty: i.quantity, price: i.price, category: i.category })), dealList, new Date(), { ...memberCtx, channel: dealChannel }) : { discount: 0, applied: [] };
             const dealRows = dealCalc.applied.map(a => (
                 <div key={a.id || a.name} className="order-item-row" style={{ background: "#ecfdf5", borderRadius: "8px" }}>
                     <div><div className="oir-name" style={{ color: "#047857" }}>{a.reward ? "🎁" : "🏷️"} {a.name}{a.times > 1 ? " ×" + a.times : ""}</div><div className="oir-price" style={{ color: "#047857" }}>{Object.keys(a.got || {}).map(k => (a.got[k] > 1 ? a.got[k] + "× " : "") + k).join(" + ")} · <b>−{currency} {a.saving.toFixed(2)}</b></div></div>
