@@ -2348,7 +2348,7 @@
     // ── Deals & special offers builder ──
     function DealsPage() {
         const D = window.POS_DEALS;
-        const blank = { Name: "", Type: "combo", Audience: "all", Items: [{ name: "", qty: 1 }], Category: "", BuyQty: 3, Price: "", Value: "", Days: [], StartTime: "", EndTime: "", StartDate: "", EndDate: "", Active: 1, Description: "", scope: "items" };
+        const blank = { Name: "", Type: "combo", Audience: "all", Channels: [], Items: [{ name: "", qty: 1 }], Category: "", BuyQty: 3, Price: "", Value: "", Days: [], StartTime: "", EndTime: "", StartDate: "", EndDate: "", Active: 1, Description: "", scope: "items" };
         const [rows, setRows] = useState(null);
         const [menu, setMenu] = useState([]);
         const [costMap, setCostMap] = useState({});
@@ -2369,7 +2369,7 @@
         const cats = [...new Set(menu.map(m => m.Category).filter(Boolean))];
         const priceOf = (n) => { const m = menu.find(x => String(x.Name).toLowerCase() === String(n).toLowerCase()); return m ? parseFloat(m.Price) || 0 : 0; };
         const typeName = { combo: "🍔 Combo (fixed price)", multi: "🔢 Any N for a price", percent: "％ Percent off", amount: "💵 Amount off each", stamp: "🎫 Loyalty card — buy N, next one free", welcome: "🎁 Welcome gift for new members" };
-        const edit = (r) => { let items = D.names(r); if (!items.length) items = [{ name: "", qty: 1 }]; setForm({ ...blank, ...r, Items: items, Days: String(r.Days || "").split(",").map(x => x.trim()).filter(Boolean), scope: r.Category ? "category" : "items", Audience: r.Audience || "all", Active: !["false", "0"].includes(String(r.Active).toLowerCase()) ? 1 : 0 }); };
+        const edit = (r) => { let items = D.names(r); if (!items.length) items = [{ name: "", qty: 1 }]; setForm({ ...blank, ...r, Items: items, Days: String(r.Days || "").split(",").map(x => x.trim()).filter(Boolean), scope: r.Category ? "category" : "items", Audience: r.Audience || "all", Channels: String(r.Channels || "").split(",").map(x => x.trim()).filter(Boolean), Active: !["false", "0"].includes(String(r.Active).toLowerCase()) ? 1 : 0 }); };
         const costOf = (n) => costMap[String(n).toLowerCase()];
         const preview = (f) => {   // money check: what the customer pays, what it costs you, what is left
             const list = f.Items.filter(i => i.name), key = (x) => String(x || "").toLowerCase();
@@ -2399,9 +2399,9 @@
             setSaving(true);
             try {
                 const useCat = f.Type !== "combo" && f.Type !== "welcome" && f.scope === "category";
-                const r = { Name: f.Name.trim(), Type: f.Type, Items: f.Type !== "combo" && useCat ? "[]" : JSON.stringify(items), Category: useCat ? f.Category : "", BuyQty: f.Type === "multi" || f.Type === "stamp" ? parseInt(f.BuyQty, 10) : "", Price: f.Type === "combo" || f.Type === "multi" ? parseFloat(f.Price) : "", Value: f.Type === "percent" || f.Type === "amount" ? parseFloat(f.Value) : "", Days: f.Days.join(","), StartTime: f.StartTime, EndTime: f.EndTime, StartDate: f.StartDate, EndDate: f.EndDate, Active: f.Active ? 1 : 0, Description: f.Description, Audience: f.Type === "stamp" || f.Type === "welcome" ? "members" : (f.Audience || "all") };
+                const r = { Name: f.Name.trim(), Type: f.Type, Items: f.Type !== "combo" && useCat ? "[]" : JSON.stringify(items), Category: useCat ? f.Category : "", BuyQty: f.Type === "multi" || f.Type === "stamp" ? parseInt(f.BuyQty, 10) : "", Price: f.Type === "combo" || f.Type === "multi" ? parseFloat(f.Price) : "", Value: f.Type === "percent" || f.Type === "amount" ? parseFloat(f.Value) : "", Days: f.Days.join(","), StartTime: f.StartTime, EndTime: f.EndTime, StartDate: f.StartDate, EndDate: f.EndDate, Active: f.Active ? 1 : 0, Description: f.Description, Channels: (f.Channels || []).join(","), Audience: f.Type === "stamp" || f.Type === "welcome" ? "members" : (f.Audience || "all") };
                 if (f.DealID) await window.POS_GAPI.updateRow("Deals", 0, f.DealID, r);
-                else await window.POS_GAPI.appendRow("Deals", [window.POS_GAPI.uid("DEAL"), r.Name, r.Type, r.Items, r.Category, r.BuyQty, r.Price, r.Value, r.Days, r.StartTime, r.EndTime, r.StartDate, r.EndDate, r.Active, r.Description, r.Audience]);
+                else await window.POS_GAPI.appendRow("Deals", [window.POS_GAPI.uid("DEAL"), r.Name, r.Type, r.Items, r.Category, r.BuyQty, r.Price, r.Value, r.Days, r.StartTime, r.EndTime, r.StartDate, r.EndDate, r.Active, r.Description, r.Audience, r.Channels]);
                 await load(); setForm(null);
             } catch (e) { alert("Could not save: " + e.message); }
             setSaving(false);
@@ -2409,7 +2409,8 @@
         const toggle = async (r) => { const on = ["false", "0"].includes(String(r.Active).toLowerCase()); try { await window.POS_GAPI.updateRow("Deals", 0, r.DealID, { Active: on ? 1 : 0 }); await load(); } catch (e) { alert(e.message); } };
         const del = async (r) => { if (!confirm("Delete the deal \"" + r.Name + "\"?")) return; try { await window.POS_GAPI.deleteRow("Deals", 0, r.DealID); await load(); } catch (e) { alert(e.message); } };
         const inp = { padding: 10, borderRadius: 8, border: "2px solid #e8e8e8", width: "100%" };
-        const sched = (r) => [String(r.Days || "") || "every day", r.StartTime && r.EndTime ? r.StartTime + "–" + r.EndTime : "", r.StartDate || r.EndDate ? (r.StartDate || "…") + " → " + (r.EndDate || "…") : ""].filter(Boolean).join(" · ");
+        const chanName = { dinein: "Dine-in", takeaway: "Takeaway", pickup: "Pickup", delivery: "Delivery" };
+        const sched = (r) => [String(r.Channels || "") ? String(r.Channels).split(",").map(c => chanName[c] || c).join("/") + " only" : "", String(r.Days || "") || "every day", r.StartTime && r.EndTime ? r.StartTime + "–" + r.EndTime : "", r.StartDate || r.EndDate ? (r.StartDate || "…") + " → " + (r.EndDate || "…") : ""].filter(Boolean).join(" · ");
         const pv = form ? preview(form) : null;
         const itemRows = form && form.Items.map((it, i) => (
             <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 70px auto", gap: 6, marginBottom: 6 }}>
@@ -2443,6 +2444,7 @@
                             <div className="form-group" style={{ gridColumn: "1/-1" }}><label>Deal name (shown on the bill)</label><input style={inp} value={form.Name} onChange={e => setForm({ ...form, Name: e.target.value })} placeholder="e.g. Burger Combo" /></div>
                             <div className="form-group" style={{ gridColumn: "1/-1" }}><label>Type of deal</label>
                                 <select style={inp} value={form.Type} onChange={e => setForm({ ...form, Type: e.target.value })}>{Object.entries(typeName).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+                            <div className="form-group" style={{ gridColumn: "1/-1" }}><label>Order types <span style={{ fontWeight: 400, color: "#999" }}>(none selected = all)</span></label><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{[["dinein", "🍽️ Dine-in"], ["takeaway", "🥡 Takeaway"], ["pickup", "🛍️ Pickup"], ["delivery", "🛵 Delivery"]].map(([k, l]) => { const on = (form.Channels || []).includes(k); return <button key={k} type="button" onClick={() => setForm({ ...form, Channels: on ? form.Channels.filter(x => x !== k) : [...(form.Channels || []), k] })} style={{ padding: "6px 12px", borderRadius: 16, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 12, background: on ? "#667eea" : "#eef0fb", color: on ? "#fff" : "#555" }}>{l}</button>; })}</div></div>
                             {form.Type !== "stamp" && form.Type !== "welcome"
                                 ? <div className="form-group" style={{ gridColumn: "1/-1" }}><label>Who gets it?</label><select style={inp} value={form.Audience} onChange={e => setForm({ ...form, Audience: e.target.value })}><option value="all">Everyone</option><option value="members">⭐ Loyalty members only (signed in on the app / scanned at the till)</option></select></div>
                                 : <div style={{ gridColumn: "1/-1", fontSize: 12, color: "#92400e", background: "#fffbeb", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>⭐ Loyalty members only. {form.Type === "stamp" ? "The app shows each member a progress ring (e.g. 6 of 10). When they reach it, the cheapest matching item in their next order is free." : "New members see the gift in the app and on their QR screen; the cashier scans their QR and the gift item is free once. Set a Start date to exclude people who joined before the offer."}</div>}
