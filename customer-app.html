@@ -1174,7 +1174,8 @@ window.POS_DEALS = (() => {
             }
 
             setIsSubmitting(false);
-            const po = { orderId: realOrderId, total: total, mode: mode, items: cartItems.map(i => ({ name: i.name, qty: cart[i.id] })) };
+            const billItems = cartItems.map(i => ({ n: i.name, q: cart[i.id], p: i.price })).concat((dealCalc.dealLines || []).map(d => ({ n: d.name, q: d.qty || 1, p: d.price })));
+            const po = { orderId: realOrderId, total: total, mode: mode, items: cartItems.map(i => ({ name: i.name, qty: cart[i.id] })), bill: { orderId: realOrderId, date: new Date().toISOString(), type: mode === "delivery" ? "Delivery" : "Pickup", shop: shopName, items: billItems, total: total } };
             setPlacedOrder(po); saveJson("gt_last", po);
             const recent = [{ orderId: realOrderId, date: new Date().toISOString(), total, mode, items: cartItems.map(i => cart[i.id] + "× " + i.name).join(", ") }, ...localOrders].slice(0, 10);
             setLocalOrders(recent); saveJson("gt_recent", recent);
@@ -1363,6 +1364,16 @@ window.POS_DEALS = (() => {
                             </div>
                         )}
 
+                        {placedOrder.bill && (
+                            <div style={card}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}><b>🧾 Your bill</b><span style={{ fontSize: 12, color: "#888" }}>{placedOrder.bill.type}</span></div>
+                                {placedOrder.bill.items.map((i, k) => <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "3px 0", color: Number(i.p) < 0 ? "#047857" : "#222", fontWeight: Number(i.p) < 0 ? 700 : 400 }}><span>{i.q}× {i.n}</span><span>{Number(i.p) < 0 ? "−" : ""}{currency}{Math.abs(i.q * i.p).toLocaleString()}</span></div>)}
+                                {placedOrder.bill.items.some(i => Number(i.p) < 0) && <div style={{ fontSize: 13, color: "#047857", fontWeight: 700, marginTop: 4 }}>You saved {currency}{(-placedOrder.bill.items.filter(i => Number(i.p) < 0).reduce((a, i) => a + i.q * i.p, 0)).toLocaleString()} with deals</div>}
+                                {(() => { const sum = placedOrder.bill.items.reduce((a, i) => a + i.q * i.p, 0), ex = Number(placedOrder.bill.total) - sum; return ex > 0.009 ? <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginTop: 4 }}><span>Delivery / other</span><span>{currency}{ex.toLocaleString()}</span></div> : null; })()}
+                                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 17, borderTop: "1px dashed #ccc", marginTop: 8, paddingTop: 8 }}><span>Total</span><span>{currency}{Number(placedOrder.bill.total).toLocaleString()}</span></div>
+                                <div style={{ fontSize: 12, color: "#888", marginTop: 6 }}>Please check this against what you ordered. Final amount is confirmed at the counter.</div>
+                            </div>
+                        )}
                         <button className="new-order-btn" onClick={() => { setCart({}); setScreen("menu"); }}>Place Another Order</button>
                     </div>
                     {nav}
