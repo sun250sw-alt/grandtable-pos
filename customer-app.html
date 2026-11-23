@@ -607,6 +607,10 @@ window.POS_DEALS = (() => {
 
     // ── Loyalty account: Google sign-in / register, QR, recent bills, ratings ──
     function jwtPayload(t) { try { const b = decodeURIComponent(escape(atob(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")))); return JSON.parse(b); } catch (e) { return {}; } }
+    // Saves data: background refreshes pause when the screen is hidden or untouched for a while, and resume on the next touch.
+    let lastAct = Date.now();
+    ["pointerdown", "keydown", "touchstart", "scroll"].forEach(e => window.addEventListener(e, () => { lastAct = Date.now(); }, { passive: true }));
+    const pageActive = (ms) => !document.hidden && Date.now() - lastAct < (ms || 10 * 60 * 1000);
     function jwtExp(t) { const p = jwtPayload(t); return p.exp ? p.exp * 1000 : 0; }
     function isLive(a) { return !!(a && a.idToken && jwtExp(a.idToken) > Date.now() + 60000); }
     function loadAcct() { try { return JSON.parse(localStorage.getItem("gt_member") || "null"); } catch (e) { return null; } }
@@ -950,7 +954,7 @@ window.POS_DEALS = (() => {
                 } catch (e) {}
             };
             load();
-            const iv = setInterval(load, 60000);          // offers appear/disappear without a page reload
+            const iv = setInterval(() => { if (pageActive()) load(); }, 60000);          // offers appear/disappear without a page reload
             return () => { stop = true; clearInterval(iv); };
         }, []);
         useEffect(() => { if (acct && acct.member) setForm(f => ({ ...f, name: f.name || acct.member.name || "", phone: f.phone || acct.member.phone || "" })); }, [acct && acct.member && acct.member.memberId]);
@@ -970,7 +974,7 @@ window.POS_DEALS = (() => {
             if (!(acct && acct.member && isLive(acct))) return;
             let stop = false;
             const go = () => scriptPost({ action: "receipts", idToken: acct.idToken }).then(j => { if (!stop && j && j.success && j.rewards) setRewards(j.rewards); }).catch(() => {});
-            go(); const iv = setInterval(go, 60000);
+            go(); const iv = setInterval(() => { if (pageActive()) go(); }, 60000);
             return () => { stop = true; clearInterval(iv); };
         }, [acct && acct.member && acct.member.memberId, acct && acct.idToken]);
         const [, setClock] = useState(0);
@@ -1042,7 +1046,7 @@ window.POS_DEALS = (() => {
                 } catch (e) {}
             };
             poll();
-            const pollInterval = setInterval(poll, 4000);
+            const pollInterval = setInterval(() => { if (pageActive(45 * 60 * 1000)) poll(); }, 4000);
             return () => { stop = true; clearInterval(pollInterval); };
         }, [screen, placedOrder && placedOrder.orderId]);
         // a different order starts with a clean rating form
@@ -1457,7 +1461,7 @@ window.POS_DEALS = (() => {
                     {loadingMenu ? (
                         <div style={{ textAlign:'center', padding:'40px', color:'#888' }}>
                             <div style={{ fontSize:'28px', marginBottom:'10px' }}>⏳</div>
-                            <div>Loading menu items from Google Sheets…</div>
+                            <div>Preparing today's menu…</div>
                         </div>
                     ) : filtered.length === 0 ? (
                         <div style={{ textAlign:'center', padding:'40px 20px', color:'#888' }}>
@@ -1505,6 +1509,63 @@ window.POS_DEALS = (() => {
     }
 
     ReactDOM.render(<CustomerApp />, document.getElementById('root'));
+</script>
+<!-- install as app (Add to Home Screen) -->
+<script>
+(function () {
+  var d = document, ua = navigator.userAgent || "";
+  var standalone = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+  if (standalone) return;
+  function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function icon(size) {
+    var c = d.createElement("canvas"); c.width = c.height = size; var x = c.getContext("2d");
+    var g = x.createLinearGradient(0, 0, size, size); g.addColorStop(0, "#1a1a2e"); g.addColorStop(1, "#16213e");
+    x.fillStyle = g; x.fillRect(0, 0, size, size);
+    x.font = Math.round(size * 0.55) + "px serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText("🍽️", size / 2, size * 0.54);
+    return c.toDataURL("image/png");
+  }
+  function addLink(rel, href, extra) { var l = d.createElement("link"); l.rel = rel; l.href = href; if (extra) for (var k in extra) l.setAttribute(k, extra[k]); d.head.appendChild(l); }
+  function meta(n, c) { var m = d.createElement("meta"); m.name = n; m.content = c; d.head.appendChild(m); }
+  var ready = false;
+  var manLink = null, lastName = "";
+  function setup() {
+    var name = (d.title || "Order Online").replace(/^Order Online\s*[-–]\s*/, "") || "Order Online";
+    var i192 = icon(192), i512 = icon(512);
+    var man = { name: name, short_name: name.length > 12 ? name.slice(0, 12) : name, start_url: location.href, scope: location.href.replace(/[^\/]*([?#].*)?$/, ""), display: "standalone", background_color: "#1a1a2e", theme_color: "#1a1a2e",
+      icons: [{ src: i192, sizes: "192x192", type: "image/png" }, { src: i512, sizes: "512x512", type: "image/png", purpose: "any maskable" }] };
+    if (name === lastName) return; lastName = name;
+    var href = "data:application/manifest+json," + encodeURIComponent(JSON.stringify(man));
+    if (manLink) { manLink.href = href; return; }
+    manLink = d.createElement("link"); manLink.rel = "manifest"; manLink.href = href; d.head.appendChild(manLink);
+    addLink("apple-touch-icon", i192); meta("apple-mobile-web-app-capable", "yes"); meta("mobile-web-app-capable", "yes"); meta("apple-mobile-web-app-title", name); meta("theme-color", "#1a1a2e");
+  }
+  setup();
+  try { new MutationObserver(setup).observe(d.querySelector("title"), { childList: true }); } catch (e) {}
+  if ("serviceWorker" in navigator) { try { navigator.serviceWorker.register("customer-sw.js").catch(function () {}); } catch (e) {} }
+  var deferred = null, chip = null;
+  window.addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); deferred = e; show(); });
+  window.addEventListener("appinstalled", function () { if (chip) chip.remove(); chip = null; });
+  var ios = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var mobile = /android|iphone|ipad|ipod/i.test(ua) || ios;
+  if (ios || mobile) setTimeout(show, 2500);
+  function sheet() {
+    var o = d.createElement("div"); o.style.cssText = "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center";
+    var steps = ios ? "<li>Tap the <b>Share</b> button (the square with an arrow pointing up) in Safari</li><li>Scroll and tap <b>Add to Home Screen</b></li><li>Tap <b>Add</b></li>" : "<li>Open your browser menu <b>⋮</b></li><li>Tap <b>Install app</b> or <b>Add to Home screen</b></li><li>Confirm</li>";
+    o.innerHTML = "<div style='background:#fff;color:#1a1a2e;width:min(480px,100%);border-radius:18px 18px 0 0;padding:22px 20px 28px;font-family:-apple-system,Segoe UI,sans-serif'><div style='font-size:19px;font-weight:800;margin-bottom:4px'>📲 Add to Home Screen</div><div style='font-size:14px;color:#666;margin-bottom:12px'>Order faster — open us like a normal app, one tap from your home screen.</div><ol style='padding-left:20px;line-height:1.9;font-size:15px'>" + steps + "</ol><button id='pwa-close' style='margin-top:14px;width:100%;padding:12px;border:none;border-radius:10px;background:#1a1a2e;color:#fff;font-size:15px;font-weight:700;cursor:pointer'>Got it</button></div>";
+    o.onclick = function (e) { if (e.target === o || e.target.id === "pwa-close") o.remove(); }; d.body.appendChild(o);
+  }
+  function show() {
+    if (chip || get("gt_pwa_hide") === "1" || !d.body) return;
+    chip = d.createElement("div"); chip.id = "pwa-chip";
+    chip.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);bottom:80px;z-index:99998;display:flex;align-items:center;gap:6px;background:#1a1a2e;color:#fff;border-radius:26px;padding:4px 6px 4px 14px;box-shadow:0 6px 22px rgba(0,0,0,.3);font:700 14px -apple-system,Segoe UI,sans-serif";
+    var b = d.createElement("span"); b.textContent = "📲 Install app"; b.style.cursor = "pointer"; b.style.padding = "8px 4px";
+    b.onclick = function () { if (deferred) { deferred.prompt(); deferred.userChoice && deferred.userChoice.then(function (r) { if (r.outcome === "accepted") { chip && chip.remove(); chip = null; } }); deferred = null; } else sheet(); };
+    var x = d.createElement("span"); x.textContent = "✕"; x.style.cssText = "cursor:pointer;opacity:.6;padding:8px 10px"; x.setAttribute("aria-label", "Dismiss");
+    x.onclick = function () { set("gt_pwa_hide", "1"); chip.remove(); chip = null; };
+    chip.appendChild(b); chip.appendChild(x); d.body.appendChild(chip);
+  }
+})();
 </script>
 </body>
 </html>
