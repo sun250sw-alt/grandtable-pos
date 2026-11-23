@@ -1080,7 +1080,7 @@ window.POS_DEALS = (() => {
         const rewMap = (acct && acct.rewards || []).reduce((m, r) => { m[r.dealId] = r; return m; }, {});
         const membersOnly = (d) => ["stamp", "welcome"].includes(String(d.Type || "").toLowerCase()) || String(d.Audience || "all").toLowerCase() === "members";
         const chanNow = mode === "delivery" ? "delivery" : "pickup";
-        const liveDeals = dealsList.filter(d => window.POS_DEALS.isLive(d, new Date()) && (!String(d.Channels || "").trim() || String(d.Channels).toLowerCase().split(",").map(x => x.trim()).includes(chanNow)) && !(isMember && String(d.Type).toLowerCase() === "welcome" && rewMap[d.DealID] && !(rewMap[d.DealID].available > 0)));
+        const liveDeals = dealsList.filter(d => window.POS_DEALS.isLive(d, new Date()) && (!String(d.Channels || "").trim() || String(d.Channels).toLowerCase().split(",").map(x => x.trim()).includes(chanNow)) && !(isMember && String(d.Type).toLowerCase() === "welcome" && !(rewMap[d.DealID] && rewMap[d.DealID].available > 0)));
         const readyRewards = (acct && acct.rewards || []).filter(r => r.available > 0);
         const deliveryFee = mode === "delivery" && subtotal > 0 ? deliveryFeeCfg : 0;
         const total = subtotal + deliveryFee;
@@ -1183,6 +1183,8 @@ window.POS_DEALS = (() => {
             const billItems = cartItems.map(i => ({ n: i.name, q: cart[i.id], p: i.price })).concat((dealCalc.dealLines || []).map(d => ({ n: d.name, q: d.qty || 1, p: d.price })));
             const po = { orderId: realOrderId, total: total, mode: mode, items: cartItems.map(i => ({ name: i.name, qty: cart[i.id] })), bill: { orderId: realOrderId, date: new Date().toISOString(), type: mode === "delivery" ? "Delivery" : "Pickup", shop: shopName, items: billItems, total: total } };
             setPlacedOrder(po); saveJson("gt_last", po);
+            // used reward lines (welcome gift / free item) can't be claimed again — hide them straight away
+            try { const usedIds = (dealCalc.dealLines || []).filter(d => d.dealId).map(d => d.dealId); if (usedIds.length) setAcct(prev => { if (!prev || !prev.rewards) return prev; const a2 = { ...prev, rewards: prev.rewards.map(r => usedIds.includes(r.dealId) ? { ...r, available: 0, progress: r.type === "stamp" ? 0 : r.progress } : r) }; saveAcct(a2); return a2; }); } catch (e) {}
             const recent = [{ orderId: realOrderId, date: new Date().toISOString(), total, mode, items: cartItems.map(i => cart[i.id] + "× " + i.name).join(", ") }, ...localOrders].slice(0, 10);
             setLocalOrders(recent); saveJson("gt_recent", recent);
             setOrderStatus("new");
