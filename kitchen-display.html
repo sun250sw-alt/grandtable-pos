@@ -1,527 +1,1673 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kitchen Display</title>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="pos-config.js"></script>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kitchen Prep Display</title>
+<script src="pos-config.js"></script>
+<script src="pos-api.js"></script>
+<script src="pos-gapi.js"></script>
+<script src="pos-auth.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:#0d1117;color:#e6edf3;min-height:100vh;}
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #1a1a2e;
-            color: white;
-            min-height: 100vh;
-        }
+/* HEADER */
+.header{background:linear-gradient(135deg,#f39c12,#e67e22);
+  padding:14px 24px;display:flex;justify-content:space-between;
+  align-items:center;box-shadow:0 4px 12px rgba(0,0,0,.4);}
+.header h1{font-size:22px;font-weight:700;color:black;}
+.header-right{display:flex;gap:10px;align-items:center;font-size:13px;}
+.queue-count{background:rgba(0,0,0,.2);padding:5px 14px;
+  border-radius:10px;font-weight:700;color:black;}
 
-        .header {
-            background: linear-gradient(135deg, #e74c3c, #c0392b);
-            padding: 16px 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        }
+/* FULLSCREEN BUTTON */
+.fs-btn {
+  background:rgba(0,0,0,0.25);
+  border:1px solid rgba(255,255,255,0.3);
+  color:white;
+  padding:5px 12px;
+  border-radius:8px;
+  font-size:11px;
+  font-weight:700;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  gap:5px;
+  transition:all 0.2s;
+}
+.fs-btn:hover {
+  background:rgba(0,0,0,0.45);
+  border-color:white;
+}
 
-        .header h1 { font-size: 26px; font-weight: 700; letter-spacing: 1px; }
+/* LAYOUT */
+.layout{display:grid;grid-template-columns:320px 1fr;
+  height:calc(100vh - 58px);}
 
-        .header-stats {
-            display: flex;
-            gap: 24px;
-            font-size: 14px;
-            align-items: center;
-        }
+/* CHEF SELECTION HOME SCREEN */
+.chef-screen {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  height:calc(100vh - 58px);
+  background:#111827;
+  padding:40px;
+  text-align:center;
+}
+.chef-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(140px, 1fr));
+  gap:16px;
+  width:100%;
+  max-width:600px;
+  margin-top:24px;
+}
+.chef-card {
+  padding:24px 16px;
+  border-radius:14px;
+  border:2px solid #30363d;
+  background:#1f2937;
+  cursor:pointer;
+  transition:all 0.2s;
+}
+.chef-card:hover {
+  border-color:#f39c12;
+  background:#2d2209;
+  transform:translateY(-2px);
+  box-shadow:0 6px 20px rgba(243,156,18,0.15);
+}
+.chef-avatar {
+  width:50px; height:50px;
+  border-radius:50%;
+  background:linear-gradient(135deg,#f39c12,#e67e22);
+  color:black;
+  display:flex; align-items:center; justify-content:center;
+  font-size:20px; font-weight:800;
+  margin:0 auto 12px;
+}
+.chef-name { font-weight:700; font-size:14px; color:#e6edf3; }
 
-        .stat-box {
-            background: rgba(255,255,255,0.15);
-            padding: 8px 16px;
-            border-radius: 8px;
-            text-align: center;
-        }
+/* QUEUE PANEL */
+.queue-panel{background:#161b22;border-right:1px solid #30363d;
+  overflow-y:auto;padding:14px;}
+.queue-title{font-size:11px;font-weight:700;text-transform:uppercase;
+  letter-spacing:1.5px;color:#8b949e;margin-bottom:12px;}
+.queue-item{background:#21262d;border-radius:10px;padding:13px;
+  margin-bottom:8px;cursor:pointer;border:2px solid transparent;
+  transition:all .2s;position:relative;}
+.queue-item:hover{border-color:#f39c12;}
+.queue-item.active{border-color:#f39c12;background:#2d2209;}
+.qi-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;}
+.qi-order{font-weight:700;font-size:14px;}
+.qi-table{font-size:12px;color:#8b949e;}
+.qi-online{font-size:11px;font-weight:800;color:#fff;background:#a855f7;padding:2px 8px;border-radius:8px;}
+.queue-item.online{border-left:4px solid #a855f7;background:rgba(168,85,247,.10);}
+.qi-dish{font-size:13px;color:#f39c12;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.qty-pill{background:#f39c12;color:black;font-weight:900;font-size:11px;padding:1px 6px;border-radius:6px;}
+.reorder-pill{background:#3b82f6;color:white;font-weight:800;font-size:10px;padding:1px 6px;border-radius:6px;}
+.qi-note{font-size:11px;color:#8b949e;background:#0d1117;
+  padding:4px 8px;border-radius:5px;margin-top:5px;}
+.urgency-dot{display:inline-block;width:8px;height:8px;
+  border-radius:50%;margin-right:5px;}
+.urg-high{background:#e74c3c;animation:urgpulse 1s infinite;}
+.urg-med{background:#f39c12;}
+.urg-low{background:#27ae60;}
+@keyframes urgpulse{0%,100%{opacity:1}50%{opacity:.3}}
 
-        .stat-box .stat-number { font-size: 22px; font-weight: 700; }
-        .stat-box .stat-label { font-size: 11px; opacity: 0.85; }
+/* Live Background Timer badge */
+.qi-timer-badge {
+  position:absolute;
+  bottom:10px;
+  right:10px;
+  background:#f39c12;
+  color:black;
+  font-size:10px;
+  font-weight:900;
+  padding:2px 8px;
+  border-radius:10px;
+  box-shadow:0 2px 8px rgba(243,156,18,0.25);
+  animation:cookingpulse 1.5s infinite;
+}
+@keyframes cookingpulse { 0%,100%{opacity:1} 50%{opacity:0.7} }
 
-        .filter-bar {
-            background: #16213e;
-            padding: 12px 24px;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
+/* RECIPE PANEL */
+.recipe-panel{display:flex;flex-direction:column;overflow:hidden;}
 
-        .filter-btn {
-            padding: 7px 18px;
-            border: 2px solid transparent;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 600;
-            transition: all 0.2s;
-            background: #0f3460;
-            color: white;
-        }
+/* No selection / Welcome state */
+.no-selection{display:flex;flex-direction:column;align-items:center;
+  justify-content:center;height:100%;color:#8b949e;text-align:center;padding:40px;}
+.ns-icon{font-size:64px;margin-bottom:16px;}
+.ns-title{font-size:18px;font-weight:700;margin-bottom:6px;}
 
-        .filter-btn:hover { background: #1a4a80; }
-        .filter-btn.active { background: #e74c3c; border-color: #e74c3c; }
+/* Loading */
+.loading-recipe{display:flex;flex-direction:column;align-items:center;
+  justify-content:center;height:100%;color:#8b949e;}
+.loading-spin{font-size:40px;animation:spin 1.5s linear infinite;margin-bottom:14px;}
+@keyframes spin{to{transform:rotate(360deg)}}
 
-        .orders-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 16px;
-            padding: 20px 24px;
-        }
+/* Interactive Check Popup Views */
+.gate-modal {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  height:100%; background:#161b22; padding:40px; text-align:center;
+}
+.gate-card {
+  background:#21262d; border:1px solid #30363d; border-radius:18px;
+  padding:32px; max-width:480px; width:100%; box-shadow:0 12px 40px rgba(0,0,0,0.5);
+}
+.gate-icon { font-size:64px; margin-bottom:16px; }
+.gate-title { font-size:22px; font-weight:800; color:white; margin-bottom:8px; }
+.gate-sub { font-size:14px; color:#8b949e; line-height:1.6; margin-bottom:20px; }
+.gate-btn {
+  width:100%; padding:14px; border:none; border-radius:10px;
+  background:linear-gradient(135deg,#f39c12,#e67e22); color:black;
+  font-weight:800; font-size:16px; cursor:pointer; transition:transform 0.15s;
+}
+.gate-btn:active { transform:scale(0.98); }
 
-        .order-card {
-            background: #16213e;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
-            border-left: 5px solid #e74c3c;
-            transition: transform 0.2s;
-            animation: slideIn 0.3s ease;
-        }
+.batch-pill {
+  display:inline-block;
+  background:#e67e22;
+  color:white;
+  font-weight:800;
+  font-size:12px;
+  padding:3px 10px;
+  border-radius:12px;
+  margin-bottom:12px;
+}
 
-        .order-card:hover { transform: translateY(-2px); }
+/* Checklist */
+.ing-check-list { text-align:left; max-height:220px; overflow-y:auto; margin-bottom:20px; background:#0d1117; padding:12px; border-radius:8px; }
+.ing-check-item { display:flex; gap:10px; align-items:center; padding:7px 0; font-size:13px; color:#c9d1d9; border-bottom:1px solid #161b22; }
+.ing-check-item:last-child { border-bottom:none; }
 
-        .order-card.status-new { border-left-color: #e74c3c; }
-        .order-card.status-preparing { border-left-color: #f39c12; }
-        .order-card.status-ready { border-left-color: #27ae60; }
+/* Dynamic focused active cook step style */
+.focused-cooking-box {
+  display:flex; flex-direction:column; flex:1; padding:20px; background:#080a10; overflow-y:auto;
+}
+.focus-step-card {
+  flex:1; min-height:220px; background:#111420; border:2px solid #f39c12; border-radius:16px;
+  padding:40px; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; text-align:center; box-shadow:0 10px 30px rgba(243,156,18,0.1);
+  margin-bottom:20px;
+}
+.focus-step-num {
+  background:#f39c12; color:black; font-weight:900; font-size:16px;
+  padding:4px 16px; border-radius:20px; text-transform:uppercase; margin-bottom:18px;
+}
+.focus-step-title { font-size:30px; font-weight:800; color:white; margin-bottom:14px; }
+.focus-step-desc { font-size:18px; line-height:1.7; color:#c9d1d9; max-width:680px; }
+.focus-step-tip {
+  margin-top:20px; font-size:14px; color:#f39c12; background:rgba(243,156,18,0.08);
+  padding:10px 18px; border-radius:8px; border-left:4px solid #f39c12; max-width:600px;
+}
 
-        /* ── Online orders (Customer App): purple card so they stand out from dine-in ── */
-        .order-card.online { background: #2a1850; border-left-color: #a855f7 !important; box-shadow: 0 4px 16px rgba(168,85,247,0.35); }
-        .online-strip { display:flex; align-items:center; gap:8px; padding:6px 16px; background:#a855f7; color:#fff; font-size:12px; font-weight:800; letter-spacing:.4px; }
-        .online-strip.pickup { background:#7c3aed; }
+/* Timeline Preview */
+.timeline-track {
+  display:grid; grid-template-columns:repeat(auto-fit, minmax(100px, 1fr)); gap:10px;
+}
+.timeline-step {
+  background:#161b22; border-radius:8px; padding:10px; border-left:3px solid #30363d;
+  opacity:0.5; font-size:11px;
+}
+.timeline-step.active { border-left-color:#f39c12; background:#1c1e10; opacity:1; }
+.timeline-step.done { border-left-color:#27ae60; background:#0d1a10; opacity:0.8; }
+.timeline-name { font-weight:700; color:white; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+/* Recipe header */
+.recipe-header{background:#161b22;border-bottom:1px solid #30363d;padding:18px 22px;}
+.recipe-title{font-size:26px;font-weight:800;margin-bottom:8px;display:flex;align-items:center;gap:10px;}
+.recipe-meta{display:flex;gap:18px;font-size:13px;color:#8b949e;flex-wrap:wrap;}
+.recipe-meta span{display:flex;align-items:center;gap:4px;}
+.meta-ok{color:#27ae60;}
+.meta-warn{color:#f39c12;}
 
-        .card-header {
-            padding: 14px 16px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: rgba(255,255,255,0.05);
-        }
+/* Content grid */
+.recipe-content{display:grid;grid-template-columns:1fr 300px;
+  flex:1;overflow:hidden;}
 
-        .card-header .order-id {
-            font-size: 18px;
-            font-weight: 700;
-        }
+/* Steps */
+.steps-section{padding:18px 20px;overflow-y:auto;}
+.section-lbl{font-size:11px;font-weight:700;text-transform:uppercase;
+  letter-spacing:1.5px;color:#8b949e;margin-bottom:12px;}
 
-        .card-header .table-info {
-            font-size: 13px;
-            opacity: 0.75;
-            margin-top: 2px;
-        }
+.step-card{background:#161b22;border-radius:10px;padding:15px;
+  margin-bottom:10px;border-left:4px solid #30363d;transition:all .2s;}
+.step-card.s-active{border-left-color:#f39c12;background:#1c1e10;}
+.step-card.s-done{border-left-color:#27ae60;opacity:.75;}
+.step-header{display:flex;align-items:center;gap:10px;margin-bottom:9px;}
+.step-num{width:30px;height:30px;border-radius:50%;background:#30363d;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:13px;flex-shrink:0;transition:all .2s;}
+.s-active .step-num{background:#f39c12;color:#000;}
+.s-done  .step-num{background:#27ae60;color:#fff;}
+.step-title-text{font-weight:700;font-size:15px;flex:1;}
+.step-dur{font-size:11px;color:#8b949e;background:#0d1117;
+  padding:3px 10px;border-radius:10px;flex-shrink:0;}
+.step-desc{font-size:13px;line-height:1.7;color:#c9d1d9;margin-left:40px;}
+.step-tip{margin-left:40px;margin-top:7px;font-size:12px;color:#f39c12;
+  background:rgba(243,156,18,.1);padding:6px 10px;border-radius:6px;
+  border-left:3px solid #f39c12;}
+.step-actions{margin-left:40px;margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;}
+.done-btn{padding:7px 14px;background:#27ae60;color:#fff;border:none;
+  border-radius:7px;cursor:pointer;font-weight:700;font-size:12px;}
+.undo-btn{padding:7px 14px;background:#30363d;color:#aaa;border:none;
+  border-radius:7px;cursor:pointer;font-weight:700;font-size:12px;}
 
-        .status-badge {
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
+/* Side panel */
+.side-panel{background:#161b22;border-left:1px solid #30363d;
+  overflow-y:auto;padding:18px;}
 
-        .status-badge.new { background: #e74c3c; color: white; }
-        .status-badge.preparing { background: #f39c12; color: white; }
-        .status-badge.ready { background: #27ae60; color: white; }
+/* Big timer */
+.big-timer-box{background:#21262d;border-radius:12px;padding:18px;
+  text-align:center;margin-bottom:18px;}
+.bt-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;
+  color:#8b949e;margin-bottom:6px;}
+.bt-display{font-size:52px;font-weight:900;font-family:'Courier New',monospace;
+  color:#f39c12;line-height:1;margin-bottom:6px;}
+.bt-display.urgent{color:#e74c3c;animation:urgblink .7s infinite;}
+.bt-display.done-color{color:#27ae60;}
+@keyframes urgblink{0%,100%{opacity:1}50%{opacity:.2}}
+.bt-controls{display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap;}
+.bt-ctrl{padding:8px 16px;border:none;border-radius:7px;
+  cursor:pointer;font-weight:700;font-size:12px;}
+.bt-pause{background:#f39c12;color:#000;}
+.bt-stop{background:#30363d;color:#aaa;}
 
-        .card-timer {
-            padding: 10px 16px;
-            background: rgba(0,0,0,0.2);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 13px;
-        }
+/* Buttons */
+.bt-confirm-finish {
+  background:#27ae60 !important;
+  color:white !important;
+  font-weight:800 !important;
+  font-size:13px !important;
+  padding:9px 18px !important;
+  border-radius:7px !important;
+  box-shadow:0 3px 10px rgba(39,174,96,0.3);
+  transition:transform 0.1s, background 0.2s;
+  cursor:pointer;
+  border:none;
+}
+.bt-confirm-finish:hover {
+  background:#2ecc71 !important;
+  transform:translateY(-1px);
+}
+.bt-confirm-finish:active {
+  transform:scale(0.97);
+}
 
-        .timer-display {
-            font-size: 22px;
-            font-weight: 700;
-            font-family: 'Courier New', monospace;
-        }
+.bt-reject-dish {
+  background:rgba(231,76,60,0.15) !important;
+  color:#ff6b6b !important;
+  border:1px solid rgba(231,76,60,0.4) !important;
+  font-weight:800 !important;
+  font-size:13px !important;
+  padding:9px 16px !important;
+  border-radius:7px !important;
+  cursor:pointer;
+  transition:all 0.15s;
+}
+.bt-reject-dish:hover {
+  background:#e74c3c !important;
+  color:white !important;
+}
 
-        .timer-display.urgent { color: #e74c3c; animation: pulse 1s infinite; }
-        .timer-display.warning { color: #f39c12; }
-        .timer-display.ok { color: #27ae60; }
+/* Ingredients */
+.ing-row{display:flex;justify-content:space-between;align-items:flex-start;
+  padding:10px 0;border-bottom:1px solid #21262d;font-size:13px;gap:8px;}
+.ing-row:last-child{border-bottom:none;}
+.ing-name{color:#c9d1d9;flex:1;}
+.ing-amt{color:#f39c12;font-weight:700;font-size:12px;text-align:right;white-space:nowrap;}
 
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
-        }
-
-        .card-items { padding: 14px 16px; }
-
-        .order-item-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.07);
-        }
-
-        .order-item-row:last-child { border-bottom: none; }
-
-        .item-left { display: flex; gap: 10px; align-items: center; }
-
-        .item-qty {
-            background: #e74c3c;
-            color: white;
-            width: 24px;
-            height: 24px;
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            font-size: 12px;
-            flex-shrink: 0;
-        }
-
-        .item-name {
-            font-weight: 600;
-            font-size: 14px;
-            line-height: 1.3;
-        }
-
-        .item-note {
-            font-size: 12px;
-            color: #f39c12;
-            margin-top: 3px;
-        }
-
-        .card-waiter {
-            padding: 8px 16px;
-            font-size: 11px;
-            color: rgba(255,255,255,0.4);
-            background: rgba(0,0,0,0.1);
-            border-top: 1px solid rgba(255,255,255,0.05);
-        }
-
-        .empty-state {
-            grid-column: 1/-1;
-            text-align: center;
-            padding: 80px 20px;
-            color: rgba(255,255,255,0.3);
-        }
-
-        .empty-state-icon { font-size: 72px; margin-bottom: 16px; }
-        .empty-state h3 { font-size: 22px; margin-bottom: 8px; }
-
-        .priority-high {
-            position: relative;
-        }
-
-        .priority-high::before {
-            content: '🔥 URGENT';
-            position: absolute;
-            top: -10px;
-            right: 12px;
-            background: #e74c3c;
-            color: white;
-            font-size: 10px;
-            font-weight: 700;
-            padding: 2px 8px;
-            border-radius: 4px;
-            letter-spacing: 0.5px;
-        }
-    </style>
+/* CHEF HISTORY MODAL */
+.history-modal-overlay {
+  position:fixed;
+  top:0; left:0; right:0; bottom:0;
+  background:rgba(0,0,0,0.75);
+  backdrop-filter:blur(4px);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  z-index:9999;
+  padding:20px;
+}
+.history-modal-card {
+  background:#161b22;
+  border:1px solid #30363d;
+  border-radius:16px;
+  max-width:760px;
+  width:100%;
+  max-height:85vh;
+  display:flex;
+  flex-direction:column;
+  box-shadow:0 20px 60px rgba(0,0,0,0.8);
+  overflow:hidden;
+}
+.hm-header {
+  padding:18px 24px;
+  background:#21262d;
+  border-bottom:1px solid #30363d;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+.hm-title { font-size:18px; font-weight:800; color:white; display:flex; align-items:center; gap:8px; }
+.hm-close { background:transparent; border:none; color:#8b949e; font-size:22px; cursor:pointer; padding:0 6px; }
+.hm-close:hover { color:white; }
+.hm-stats {
+  display:flex;
+  gap:14px;
+  padding:14px 24px;
+  background:#111827;
+  border-bottom:1px solid #30363d;
+  font-size:12px;
+}
+.hm-stat-box {
+  background:#1f2937;
+  padding:8px 16px;
+  border-radius:8px;
+  border:1px solid #374151;
+}
+.hm-stat-val { font-size:18px; font-weight:900; color:#f39c12; }
+.hm-stat-lbl { color:#9ca3af; font-size:10px; text-transform:uppercase; font-weight:700; margin-top:2px; }
+.hm-body {
+  padding:16px 24px;
+  overflow-y:auto;
+  flex:1;
+}
+.hm-table {
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+  text-align:left;
+}
+.hm-table th {
+  padding:10px 12px;
+  color:#8b949e;
+  font-size:11px;
+  text-transform:uppercase;
+  border-bottom:1px solid #30363d;
+  font-weight:700;
+}
+.hm-table td {
+  padding:12px;
+  border-bottom:1px solid #21262d;
+  color:#e6edf3;
+}
+.hm-table tr:hover { background:rgba(255,255,255,0.02); }
+.status-badge {
+  padding:3px 8px;
+  border-radius:6px;
+  font-size:11px;
+  font-weight:700;
+}
+.sb-ready { background:rgba(39,174,96,0.2); color:#2ecc71; border:1px solid rgba(39,174,96,0.3); }
+.sb-prep  { background:rgba(243,156,18,0.2); color:#f39c12; border:1px solid rgba(243,156,18,0.3); }
+</style>
 </head>
 <body>
-<div id="root" style="display: none;"></div>
 
-<div id="loading-placeholder" style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:sans-serif;background:#1a1a2e;color:white;">
-  <div style="font-size:40px">📺</div>
-  <div style="font-size:16px;font-weight:700">Kitchen Display System</div>
-  <div style="font-size:13px;color:#888">Connecting to TV queue channel...</div>
+<div id="app" style="display:none">
+  <!-- Chef selection screen overlay -->
+  <div id="chef-overlay" class="chef-screen">
+    <div style="font-size:56px">👨‍🍳</div>
+    <h2 style="font-size:26px;font-weight:800;color:white;margin-top:12px">Select Your Cooking Station</h2>
+    <p style="color:#8b949e;margin-top:4px">Choose your name to load active tickets</p>
+    <div class="chef-grid" id="chef-grid"></div>
+  </div>
+
+  <div id="main-panel" style="display:none">
+    <div class="header">
+      <div style="display:flex; align-items:center; gap:12px;">
+         <img src="input_file_1.jpeg" style="width:48px; height:48px; object-fit:contain; mix-blend-mode:multiply;" alt="🔥" onerror="this.style.display='none'">
+         <h1>👨‍🍳 Kitchen Prep Display <small data-shop-name style="opacity:.55;font-size:.55em;font-weight:600">Restaurant</small></h1>
+      </div>
+      <div class="header-right">
+        <button onclick="openChefHistory()" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.25); color:white; padding:5px 12px; border-radius:8px; font-size:11px; cursor:pointer; font-weight:700; display:flex; align-items:center; gap:6px;">📋 My History</button>
+        <button onclick="doSignOutChef()" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:white; padding:5px 12px; border-radius:8px; font-size:11px; cursor:pointer;">↩ Switch Station</button>
+        <span id="chef-badge" style="font-weight:700; color:black; background:white; padding:5px 12px; border-radius:8px;">Chef: —</span>
+        <div class="queue-count" id="queue-count">0 dishes</div>
+        <span id="hdr-time" style="opacity:.7"></span>
+        <!-- FULLSCREEN BUTTON -->
+        <button id="fs-btn" class="fs-btn" onclick="toggleFullScreen()">⛶ Fullscreen</button>
+      </div>
+    </div>
+
+    <div class="layout">
+      <!-- QUEUE -->
+      <div class="queue-panel">
+        <div class="queue-title">Dish Queue</div>
+        <div id="queue-list">
+          <div class="queue-empty">
+            <div style="font-size:32px;margin-bottom:8px">⏳</div>
+            Loading orders from database…
+          </div>
+        </div>
+      </div>
+
+      <!-- RECIPE INTERACTIVE BOARD -->
+      <div class="recipe-panel" id="recipe-panel">
+        <div class="no-selection">
+          <div class="ns-icon">👈</div>
+          <div class="ns-title">Select a dish from the queue</div>
+          <p style="font-size:14px;margin-top:6px">Tap any dish to see step-by-step recipe</p>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
-<script type="text/babel">
-    const { useState, useEffect } = React;
+<!-- CHEF HISTORY POPUP MODAL -->
+<div id="history-modal" class="history-modal-overlay" onclick="if(event.target===this) closeChefHistory();">
+  <div class="history-modal-card">
+    <div class="hm-header">
+      <div class="hm-title" id="hm-modal-title">👨‍🍳 Cooking History</div>
+      <button class="hm-close" onclick="closeChefHistory()">✕</button>
+    </div>
+    <div class="hm-stats" id="hm-stats-bar">
+      <div class="hm-stat-box">
+        <div class="hm-stat-val" id="hm-total-dishes">0</div>
+        <div class="hm-stat-lbl">Dishes Prepared</div>
+      </div>
+      <div class="hm-stat-box">
+        <div class="hm-stat-val" id="hm-total-orders">0</div>
+        <div class="hm-stat-lbl">Orders Handled</div>
+      </div>
+    </div>
+    <div class="hm-body" id="hm-list-container">
+      <div style="text-align:center; padding:40px; color:#8b949e;">Loading history records…</div>
+    </div>
+  </div>
+</div>
 
-    const INITIAL_ORDERS = [];
-
-    // Convert sheet row to kitchen order format
-    function sheetToKitchenOrder(row) {
-        let items = [];
-        try { items = JSON.parse(row.Items || "[]").filter(function(i){ return i && !i.isDeal; }); } catch(e) {}
-
-        return {
-            id       : row.OrderID,
-            table    : row.TableNumber,
-            online   : (window.POS_ORDER && POS_ORDER.type(row)) || null,   // "delivery" | "pickup" | null
-            onlineLabel: window.POS_ORDER ? POS_ORDER.label(row) : "",
-            customer : row.CustomerName || "",
-            waiter   : row.WaiterName || "Staff",
-            status   : row.Status || "new",
-            notes    : row.Notes || "",
-            createdAt: row.OrderTime ? new Date(row.OrderTime).getTime() : Date.now(),
-            items    : items.map((it, i) => ({
-                id     : i,
-                name   : it.name || it.Name || "Item",
-                qty    : it.qty  || it.quantity || 1,
-                chef   : it.chef || "",
-                status : it.status || "new",
-                note   : it.note || "",
-            }))
-        };
-    }
-
-    function formatTime(ms) {
-        const totalSec = Math.floor(ms / 1000);
-        const mins = Math.floor(totalSec / 60);
-        const secs = totalSec % 60;
-        return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-    }
-
-    function Timer({ createdAt }) {
-        const [elapsed, setElapsed] = useState(Date.now() - createdAt);
-
-        useEffect(() => {
-            const interval = setInterval(() => {
-                setElapsed(Date.now() - createdAt);
-            }, 1000);
-            return () => clearInterval(interval);
-        }, [createdAt]);
-
-        const mins = Math.floor(elapsed / 60000);
-        const cls = mins >= 15 ? 'urgent' : mins >= 10 ? 'warning' : 'ok';
-
-        return (
-            <div className="card-timer">
-                <span style={{ opacity: 0.7, fontSize: '12px' }}>⏱ Wait time</span>
-                <span className={`timer-display ${cls}`}>{formatTime(elapsed)}</span>
-            </div>
-        );
-    }
-
-    function OrderCard({ order }) {
-        const isUrgent = (Date.now() - order.createdAt) > 15 * 60 * 1000;
-
-        let statusLabel = "Queue";
-        let badgeClass = "new";
-        if (order.status === "preparing") {
-            statusLabel = "Preparing";
-            badgeClass = "preparing";
-        } else if (order.status === "ready") {
-            statusLabel = "Ready";
-            badgeClass = "ready";
-        }
-
-        return (
-            <div className={`order-card status-${order.status} ${order.online ? 'online' : ''} ${isUrgent && order.status !== 'ready' ? 'priority-high' : ''}`}>
-                {order.online && (
-                    <div className={`online-strip ${order.online}`}>{order.onlineLabel}{order.customer ? ` · ${order.customer}` : ''}</div>
-                )}
-                <div className="card-header">
-                    <div>
-                        <div className="order-id">{order.id}</div>
-                        <div className="table-info">{order.online ? (order.online === 'delivery' ? '🛵 For delivery' : '🛍️ Customer collects') : (parseInt(order.table, 10) === 0 ? '🥡 Takeaway' : `🍽️ Table ${order.table}`)} &nbsp;·&nbsp; {order.items.length} items</div>
-                    </div>
-                    <span className={`status-badge ${badgeClass}`}>{statusLabel}</span>
-                </div>
-
-                <Timer createdAt={order.createdAt} />
-
-                <div className="card-items">
-                    {order.items.map((item, idx) => {
-                        let chefStatusText = "⏳ Queue";
-                        let statusColor = "rgba(255,255,255,0.4)";
-                        if (item.status === "preparing" || item.chef) {
-                            chefStatusText = `👨‍🍳 ${item.chef || "Cooking"}`;
-                            statusColor = "#f39c12";
-                        }
-                        if (item.status === "ready") {
-                            chefStatusText = `✅ Ready (${item.chef || "Done"})`;
-                            statusColor = "#27ae60";
-                        }
-                        return (
-                            <div key={idx} className="order-item-row">
-                                <div className="item-left">
-                                    <div className="item-qty">{item.qty}</div>
-                                    <div>
-                                        <div className="item-name">{item.name}</div>
-                                        {item.note && <div className="item-note">⚠️ {item.note}</div>}
-                                    </div>
-                                </div>
-                                <span style={{ fontSize: '12px', fontWeight: '800', color: statusColor }}>
-                                    {chefStatusText}
-                                </span>
-                            </div>
-                        );
-                    })}
-                </div>
-
-                {order.notes && (
-                    <div style={{ padding: '10px 16px', background: 'rgba(243,156,18,0.05)', fontSize: '12px', color: '#f39c12', borderTop: '1px solid rgba(255,255,255,0.05)', lineHeight: '1.4' }}>
-                        💬 {order.notes}
-                    </div>
-                )}
-
-                <div className="card-waiter">👤 Waiter: {order.waiter}</div>
-            </div>
-        );
-    }
-
-    function KitchenDisplay() {
-        const [orders, setOrders] = useState(INITIAL_ORDERS);
-        const [filter, setFilter] = useState('active');
-
-        useEffect(() => {
-            async function fetchOrders() {
-                if (!window.POS_GAPI) return;
-                if (!window.POS_GAPI.getSheetId()) {
-                    try { await window.POS_GAPI.initUserSheet(); } catch(e){}
-                }
-                if (!window.POS_GAPI.getSheetId()) return;
-                try {
-                    const res = await window.POS_GAPI.Orders.getAll();
-                    if (res && res.data) {
-                        const active = res.data
-                            .filter(o => !["served", "closed", "cancelled"].includes(String(o.Status || "").toLowerCase()))
-                            .map(sheetToKitchenOrder);
-                        
-                        setOrders(active);
-                    }
-                } catch(e) { console.error("Kitchen poll error:", e); }
-            }
-            
-            fetchOrders();
-            if (window.POS_ONLIVE) POS_ONLIVE(fetchOrders, "order.");   // LAN: instant push
-            const pollMs = (window.POS_CONFIG && window.POS_CONFIG.POLL_MS) || 5000;
-            const interval = setInterval(fetchOrders, pollMs);
-            return () => clearInterval(interval);
-        }, []);
-
-        const filtered = orders.filter(o => {
-            if (filter === 'active') return o.status !== 'ready';
-            if (filter === 'ready') return o.status === 'ready';
-            if (filter === 'new') return o.status === 'new';
-            if (filter === 'preparing') return o.status === 'preparing';
-            return true;
-        });
-
-        const counts = {
-            new: orders.filter(o => o.status === 'new').length,
-            preparing: orders.filter(o => o.status === 'preparing').length,
-            ready: orders.filter(o => o.status === 'ready').length,
-        };
-
-        return (
-            <div>
-                <div className="header">
-                    <h1>🍳 Kitchen Display <small data-shop-name style={{ opacity: 0.55, fontSize: "0.55em", fontWeight: 600 }}>{POS_SHOP.display()}</small></h1>
-                    <div className="header-stats">
-                        <div className="stat-box">
-                            <div className="stat-number" style={{ color: '#e74c3c' }}>{counts.new}</div>
-                            <div class="stat-label">In Queue</div>
-                        </div>
-                        <div className="stat-box">
-                            <div className="stat-number" style={{ color: '#f39c12' }}>{counts.preparing}</div>
-                            <div className="stat-label">Preparing</div>
-                        </div>
-                        <div className="stat-box">
-                            <div className="stat-number" style={{ color: '#27ae60' }}>{counts.ready}</div>
-                            <div className="stat-label">Ready</div>
-                        </div>
-                        <div id="user-badge" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}></div>
-                    </div>
-                </div>
-
-                <div className="filter-bar">
-                    <span style={{ opacity: 0.6, fontSize: '13px', marginRight: '4px' }}>Filter:</span>
-                    {['active', 'new', 'preparing', 'ready', 'all'].map(f => (
-                        <button
-                            key={f}
-                            className={`filter-btn ${filter === f ? 'active' : ''}`}
-                            onClick={() => setFilter(f)}
-                        >
-                            {f === 'active' ? 'Active cooking' : f.charAt(0).toUpperCase() + f.slice(1)}
-                            {f === 'new' && counts.new > 0 && ` (${counts.new})`}
-                            {f === 'preparing' && counts.preparing > 0 && ` (${counts.preparing})`}
-                            {f === 'ready' && counts.ready > 0 && ` (${counts.ready})`}
-                        </button>
-                    ))}
-                    <span style={{ marginLeft: 'auto', opacity: 0.5, fontSize: '12px' }}>
-                        🔄 Auto-refreshing every {((window.POS_CONFIG && window.POS_CONFIG.POLL_MS) || 5000) / 1000}s
-                    </span>
-                </div>
-
-                <div className="orders-grid">
-                    {filtered.length === 0 ? (
-                        <div className="empty-state">
-                            <div className="empty-state-icon">
-                                {filter === 'ready' ? '✅' : '🎉'}
-                            </div>
-                            <h3>{filter === 'ready' ? 'No orders ready' : 'All caught up!'}</h3>
-                            <p style={{ marginTop: '8px', fontSize: '14px' }}>
-                                {filter === 'ready' ? 'Completed orders will appear here' : 'Waiting for new orders...'}
-                            </p>
-                        </div>
-                    ) : filtered.map(order => (
-                        <OrderCard
-                            key={order.id}
-                            order={order}
-                        />
-                    ))}
-                </div>
-            </div>
-        );
-    }
-
-    window.startKitchenDisplay = function() {
-        const rootElement = document.getElementById('root');
-        const root = ReactDOM.createRoot(rootElement);
-        root.render(<KitchenDisplay />);
-    };
-</script>
+<div id="loading-placeholder" style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:sans-serif;background:#0d1117;color:#e6edf3;">
+  <div style="font-size:40px">👨‍🍳</div>
+  <div style="font-size:16px;font-weight:700">Prep Display</div>
+  <div style="font-size:13px;color:#888">Verifying station…</div>
+</div>
 
 <script>
-(function() {
-  function startAuth() {
-    if (typeof POS_AUTH === "undefined") {
-      console.error("POS_AUTH failed to load");
+// ── STATE ──
+var STATE = {
+  currentChef     : null,
+  staff           : [],
+  queue           : [],
+  selected        : null,  
+  recipe          : null,  
+  doneSteps       : [],    
+  timers          : {},
+  selectedKey     : null,
+  globalIntervalId: null,
+  queueIntervalId : null,
+  gateState       : "none",
+  inFlightFinished: {},
+  recipesCache    : {},
+  lastActivity    : Date.now()
+};
+
+// Activity tracking
+function resetActivity() {
+  STATE.lastActivity = Date.now();
+}
+['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll', 'click'].forEach(function(evt) {
+  window.addEventListener(evt, resetActivity, { passive: true });
+});
+
+// Fullscreen API Controller
+function toggleFullScreen() {
+  resetActivity();
+  if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.msFullscreenElement) {
+    var docEl = document.documentElement;
+    if (docEl.requestFullscreen) {
+      docEl.requestFullscreen().catch(function(){});
+    } else if (docEl.webkitRequestFullscreen) {
+      docEl.webkitRequestFullscreen();
+    } else if (docEl.msRequestFullscreen) {
+      docEl.msRequestFullscreen();
+    }
+  } else {
+    if (document.exitFullscreen) {
+      document.exitFullscreen().catch(function(){});
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    } else if (document.msExitFullscreen) {
+      document.msExitFullscreen();
+    }
+  }
+}
+
+function updateFullscreenBtn() {
+  var btn = document.getElementById("fs-btn");
+  if (!btn) return;
+  var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+  if (isFs) {
+    btn.innerHTML = "🗗 Exit";
+    btn.style.background = "rgba(231,76,60,0.3)";
+    btn.style.borderColor = "rgba(231,76,60,0.6)";
+  } else {
+    btn.innerHTML = "⛶ Fullscreen";
+    btn.style.background = "rgba(0,0,0,0.25)";
+    btn.style.borderColor = "rgba(255,255,255,0.3)";
+  }
+}
+
+['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(function(evt) {
+  document.addEventListener(evt, updateFullscreenBtn);
+});
+
+function getPosApi() {
+  return window.POS_GAPI || window.POS_API || null;
+}
+
+function cleanDishName(name) {
+  if (!name) return "";
+  return String(name)
+    .replace(/\(.*?\)/g, "")
+    .replace(/[-–—].*$/g, "")
+    .replace(/#\d+/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function safeParseItems(raw) {
+  return _safeParseItems(raw).filter(function(i){ return !(i && i.isDeal); });   // deal/discount lines are not kitchen work
+}
+function _safeParseItems(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (!raw || typeof raw !== "string") return [];
+  var trimmed = raw.trim();
+
+  try {
+    var res = JSON.parse(trimmed);
+    if (Array.isArray(res)) return res;
+    if (typeof res === "string") return safeParseItems(res);
+  } catch(e){}
+
+  try {
+    var fixed = trimmed.replace(/'/g, '"');
+    var res2 = JSON.parse(fixed);
+    if (Array.isArray(res2)) return res2;
+  } catch(e){}
+
+  var items = [];
+  trimmed.split(",").forEach(function(part) {
+    var p = part.trim();
+    if (p) items.push({ name: p, qty: 1 });
+  });
+  return items;
+}
+
+function safeParseSteps(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (!raw || typeof raw !== "string") return [];
+  var s = raw.trim();
+
+  try {
+    var res = JSON.parse(s);
+    if (Array.isArray(res)) return res;
+  } catch(e){}
+
+  try {
+    var res2 = JSON.parse(s.replace(/'/g, '"'));
+    if (Array.isArray(res2)) return res2;
+  } catch(e){}
+
+  var lines = s.split("\n").map(function(l){ return l.trim(); }).filter(Boolean);
+  if (lines.length) {
+    return lines.map(function(line, idx) {
+      var parts = line.split(":");
+      var title = parts.length > 1 ? parts[0].trim() : ("Step " + (idx + 1));
+      var desc = parts.length > 1 ? parts.slice(1).join(":").trim() : line;
+      return { title: title, description: desc, timerSec: 60, tip: "" };
+    });
+  }
+  return [];
+}
+
+function safeParseIngredients(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (!raw || typeof raw !== "string") return [];
+  var s = raw.trim();
+
+  try {
+    var res = JSON.parse(s);
+    if (Array.isArray(res)) return res;
+  } catch(e){}
+
+  try {
+    var res2 = JSON.parse(s.replace(/'/g, '"'));
+    if (Array.isArray(res2)) return res2;
+  } catch(e){}
+
+  var delims = s.indexOf("\n") >= 0 ? "\n" : ",";
+  var lines = s.split(delims).map(function(l){ return l.trim(); }).filter(Boolean);
+  if (lines.length) {
+    return lines.map(function(line) {
+      if (line.indexOf(":") >= 0) {
+        var p = line.split(":");
+        return { name: p[0].trim(), amount: p.slice(1).join(":").trim() };
+      }
+      if (line.indexOf("-") >= 0) {
+        var p2 = line.split("-");
+        return { name: p2[0].trim(), amount: p2.slice(1).join("-").trim() };
+      }
+      return { name: line, amount: "1 portion" };
+    });
+  }
+  return [];
+}
+
+function formatIngredientAmount(rawAmount, qty) {
+  var count = parseInt(qty, 10) || 1;
+  if (!rawAmount || count <= 1) return rawAmount || "—";
+  var trimmed = String(rawAmount).trim();
+
+  var match = trimmed.match(/^([\d\.]+)\s*(.*)$/);
+  if (match) {
+    var num = parseFloat(match[1]);
+    var unit = match[2] || "";
+    if (!isNaN(num)) {
+      var scaled = Math.round(num * count * 100) / 100;
+      if (unit === "pc" && scaled > 1) unit = "pcs";
+      if (unit === "slice" && scaled > 1) unit = "slices";
+      if (unit === "leaf" && scaled > 1) unit = "leaves";
+      if (unit === "clove" && scaled > 1) unit = "cloves";
+      if (unit === "sprig" && scaled > 1) unit = "sprigs";
+      return scaled + (unit ? " " + unit : "") + " (" + trimmed + " × " + count + ")";
+    }
+  }
+  return trimmed + " (×" + count + ")";
+}
+
+function tickClock() {
+  var el = document.getElementById("hdr-time");
+  if (el) el.textContent = new Date().toLocaleTimeString("en-GB");
+}
+
+function doSignOutChef() {
+  if (STATE.queueIntervalId) {
+    clearInterval(STATE.queueIntervalId);
+    STATE.queueIntervalId = null;
+  }
+  if (STATE.globalIntervalId) {
+    clearInterval(STATE.globalIntervalId);
+    STATE.globalIntervalId = null;
+  }
+  STATE.timers = {};
+  STATE.currentChef = null;
+  STATE.selected = null;
+  STATE.recipe = null;
+  STATE.selectedKey = null;
+  STATE.gateState = "none";
+  document.getElementById("main-panel").style.display = "none";
+  document.getElementById("chef-overlay").style.display = "flex";
+  loadChefSelection();
+}
+
+function loadChefSelection() {
+  var api = getPosApi();
+  var container = document.getElementById("chef-grid");
+  if (!container) return;
+
+  function renderGrid(names) {
+    if (!names || !names.length) {
+      container.innerHTML = '<div style="grid-column: 1 / -1; color:#8b949e; padding:30px; font-size:14px;">No active kitchen staff found.<br><span style="font-size:12px; color:#f39c12; margin-top:6px; display:inline-block;">Add staff in the Staff sheet tab or Manager Portal.</span></div>';
       return;
     }
-    POS_AUTH.init("kitchen-display", {
-      onReady: function(session) {
-        var root = document.getElementById("root");
-        if (root) root.style.display = "block";
-        var loader = document.getElementById("loading-placeholder");
-        if (loader) loader.style.display = "none";
+    container.innerHTML = names.map(function(name) {
+      return '<div class="chef-card" onclick="selectChef(\'' + name.replace(/'/g, "\\'") + '\')">' +
+        '<div class="chef-avatar">' + name.charAt(0).toUpperCase() + '</div>' +
+        '<div class="chef-name">' + name + '</div>' +
+        '</div>';
+    }).join("");
+  }
+
+  if (api && api.Staff && typeof api.Staff.getAll === "function") {
+    api.Staff.getAll().then(function(res) {
+      if (res && res.data && res.data.length > 0) {
+        var chefs = res.data.filter(function(s) {
+          var role = (s.Role || s.role || "").toLowerCase();
+          var status = (s.Status || s.status || "active").toLowerCase();
+          return status === "active" && role !== "driver";
+        }).map(function(s){ return s.Name || s.StaffName || s.ChefName || s.name; }).filter(Boolean);
+        renderGrid(chefs);
+      } else {
+        renderGrid([]);
+      }
+    }).catch(function(err) {
+      console.error("Kitchen Prep: Staff fetch error", err);
+      renderGrid([]);
+    });
+  } else if (api && typeof api.getRows === "function") {
+    api.getRows("Staff").then(function(rows) {
+      var chefs = (rows || []).filter(function(s) {
+        var role = (s.Role || s.role || "").toLowerCase();
+        var status = (s.Status || s.status || "active").toLowerCase();
+        return status === "active" && role !== "driver";
+      }).map(function(s){ return s.Name || s.StaffName || s.ChefName || s.name; }).filter(Boolean);
+      renderGrid(chefs);
+    }).catch(function() {
+      renderGrid([]);
+    });
+  } else {
+    renderGrid([]);
+  }
+}
+
+function selectChef(name) {
+  STATE.currentChef = name;
+  STATE.lastActivity = Date.now();
+  document.getElementById("chef-badge").textContent = "Chef: " + name;
+  document.getElementById("chef-overlay").style.display = "none";
+  document.getElementById("main-panel").style.display = "block";
+  
+  startGlobalInterval();
+  
+  if (STATE.queueIntervalId) clearInterval(STATE.queueIntervalId);
+  loadQueue();
+  var pollMs = (window.POS_CONFIG && window.POS_CONFIG.POLL_MS) || 4000;
+  STATE.queueIntervalId = setInterval(loadQueue, pollMs);
+  if (window.POS_ONLIVE && !window._prepLiveHooked) { window._prepLiveHooked = true; POS_ONLIVE(function(){ if (STATE.currentChef) loadQueue(); }, "order."); }   // LAN: instant push
+}
+
+// ── CHEF HISTORY CONTROLLER ──
+function openChefHistory() {
+  resetActivity();
+  if (!STATE.currentChef) return;
+  var modal = document.getElementById("history-modal");
+  var title = document.getElementById("hm-modal-title");
+  var container = document.getElementById("hm-list-container");
+  
+  title.innerHTML = "👨‍🍳 " + STATE.currentChef + "'s Cooking History";
+  container.innerHTML = '<div style="text-align:center; padding:40px; color:#8b949e;">Loading history…</div>';
+  modal.style.display = "flex";
+
+  var api = getPosApi();
+  if (!api || !api.Orders || typeof api.Orders.getAll !== "function") {
+    container.innerHTML = '<div style="text-align:center; padding:40px; color:#8b949e;">Database not connected.</div>';
+    return;
+  }
+
+  api.Orders.getAll().then(function(res) {
+    var orders = (res && res.data) ? res.data : [];
+    var chefHistory = [];
+    var orderSet = new Set();
+    var currentChefNorm = STATE.currentChef.trim().toLowerCase();
+
+    orders.forEach(function(order) {
+      var rawItems = order.Items || order.items || order.OrderItems || [];
+      var orderItems = safeParseItems(rawItems);
+      var orderId = order.OrderID || order.OrderId || order.orderId || order.id || "ORD";
+      var tableNo = order.TableNumber || order.Table || order.TableNo || order.table || "—";
+      var timeStr = order.OrderTime || order.orderTime || order.CreatedAt || "";
+
+      orderItems.forEach(function(item) {
+        var itChef = (item.chef || "").trim().toLowerCase();
+        if (itChef === currentChefNorm) {
+          orderSet.add(orderId);
+          chefHistory.push({
+            orderId  : orderId,
+            table    : tableNo,
+            tableText: tableText(order),
+            dish     : item.name || item.Name || item.dish || item.Dish || "Item",
+            qty      : parseInt(item.quantity || item.qty || 1, 10),
+            status   : (item.status || order.Status || "ready").toLowerCase(),
+            time     : timeStr
+          });
+        }
+      });
+    });
+
+    document.getElementById("hm-total-dishes").textContent = chefHistory.reduce(function(acc, h){ return acc + h.qty; }, 0);
+    document.getElementById("hm-total-orders").textContent = orderSet.size;
+
+    if (!chefHistory.length) {
+      container.innerHTML = '<div style="text-align:center; padding:40px; color:#8b949e;"><div style="font-size:32px;margin-bottom:8px">📋</div><div>No dishes recorded for <strong>' + STATE.currentChef + '</strong> yet.</div><div style="font-size:12px;margin-top:6px">Completed orders will appear here automatically.</div></div>';
+      return;
+    }
+
+    chefHistory.reverse();
+
+    var rowsHtml = chefHistory.map(function(h) {
+      var dateDisp = "—";
+      if (h.time) {
+        try {
+          var d = new Date(h.time);
+          dateDisp = d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) + ' · ' + d.toLocaleDateString([], {month:'short', day:'numeric'});
+        } catch(e) { dateDisp = h.time; }
+      }
+
+      var badgeCls = (h.status === "ready" || h.status === "completed" || h.status === "closed") ? "sb-ready" : "sb-prep";
+      var statusText = (h.status === "ready" || h.status === "completed" || h.status === "closed") ? "✓ Ready" : "🔥 Preparing";
+
+      return '<tr>' +
+        '<td style="font-weight:700;">' + h.orderId + '</td>' +
+        '<td>' + (h.tableText || ('Table ' + h.table)) + '</td>' +
+        '<td style="color:#f39c12; font-weight:700;">' + (h.qty > 1 ? h.qty + '× ' : '') + h.dish + '</td>' +
+        '<td><span class="status-badge ' + badgeCls + '">' + statusText + '</span></td>' +
+        '<td style="color:#8b949e; font-size:12px;">' + dateDisp + '</td>' +
+      '</tr>';
+    }).join("");
+
+    container.innerHTML = '<table class="hm-table"><thead><tr><th>Order ID</th><th>Table</th><th>Dish</th><th>Status</th><th>Time</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>';
+  }).catch(function(err) {
+    console.error("Chef history error:", err);
+    container.innerHTML = '<div style="text-align:center; padding:40px; color:#e74c3c;">Failed to load history from database.</div>';
+  });
+}
+
+function closeChefHistory() {
+  resetActivity();
+  document.getElementById("history-modal").style.display = "none";
+}
+
+// ── SYNC ORDERS FROM GOOGLE SHEETS ──
+function loadQueue() {
+  var api = getPosApi();
+  if (!api || !api.Orders || typeof api.Orders.getAll !== "function") {
+    STATE.queue = [];
+    renderQueue();
+    return;
+  }
+
+  // Pre-cache recipes from Recipes tab
+  var recipeFetch = (api.Recipes && typeof api.Recipes.getAll === "function")
+    ? api.Recipes.getAll()
+    : (typeof api.getRows === "function" ? api.getRows("Recipes").then(function(rows){ return { data: rows }; }) : Promise.resolve({ data: [] }));
+
+  recipeFetch.then(function(res) {
+    var rows = (res && res.data) ? res.data : (Array.isArray(res) ? res : []);
+    rows.forEach(function(r) {
+      var dName = (r.DishName || r.Dish || r.Name || r.ItemName || r.dish || r.name || "").trim().toLowerCase();
+      if (dName) {
+        STATE.recipesCache[dName] = r;
+        STATE.recipesCache[cleanDishName(dName)] = r;
+      }
+    });
+  }).catch(function(){});
+
+  // Fetch Orders
+  api.Orders.getAll().then(function(res) {
+    var orders = (res && res.data) ? res.data : [];
+    
+    var activeOrders = orders.filter(function(o) {
+      var st = (o.Status || o.status || "").toLowerCase().trim();
+      return st === "new" || st === "preparing";
+    });
+
+    STATE.queue = buildQueueFromOrders(activeOrders);
+    renderQueue();
+  }).catch(function(err) {
+    console.error("Kitchen Prep: error loading queue from sheet:", err);
+    STATE.queue = [];
+    renderQueue();
+  });
+}
+
+// ── SMART QUEUE BUILDER ──
+  // Online (Customer App) orders get a purple badge instead of "Table 99 / Table 0".
+  function onlineType(order) { return (window.POS_ORDER && POS_ORDER.type(order)) || null; }
+  function tableText(order) {
+    var t = onlineType(order);
+    if (t) return window.POS_ORDER.label(order);
+    var tn = order.TableNumber || order.Table || order.TableNo || order.table || "—";
+    return (parseInt(tn, 10) === 0) ? "🥡 Takeaway" : "Table " + tn;
+  }
+
+function buildQueueFromOrders(orders) {
+  var items = [];
+  orders.forEach(function(order) {
+    try {
+      var rawItems = order.Items || order.items || order.OrderItems || [];
+      var orderItems = safeParseItems(rawItems);
+      var orderId = order.OrderID || order.OrderId || order.orderId || order.id || "ORD";
+      var tableNo = order.TableNumber || order.Table || order.TableNo || order.table || "—";
+      var orderNotes = order.Notes || order.notes || "";
+
+      orderItems.forEach(function(item, itemIdx) {
+        var dishName = item.name || item.Name || item.dish || item.Dish || item.Item || item.title || "";
+        if (!dishName) return;
+
+        var itemStatus = (item.status || "new").toLowerCase().trim();
+        var totalQty = parseInt(item.quantity || item.qty || item.Qty || 1, 10);
         
-        if (typeof window.startKitchenDisplay === "function") {
-          window.startKitchenDisplay();
+        var preparedQty = parseInt(item.preparedQty || item.doneQty || (itemStatus === "ready" || itemStatus === "served" || itemStatus === "completed" ? totalQty : 0), 10);
+        var remainingQty = totalQty - preparedQty;
+
+        // 1. If all portions are already prepared/cooked, hide it
+        if (remainingQty <= 0) {
+          return;
         }
 
-        setTimeout(function() {
-          if (typeof POS_AUTH.renderUtilBar === "function") {
-            POS_AUTH.renderUtilBar("user-badge", "kitchen-display");
+        var uniqueItemKey = orderId + "#" + itemIdx + "#" + dishName;
+
+        // 2. Skip if completed in-flight
+        if (STATE.inFlightFinished[uniqueItemKey]) return;
+
+        // 3. Hide item if another chef has claimed / is cooking it
+        if (itemStatus === "preparing" && item.chef && item.chef !== STATE.currentChef) {
+          return;
+        }
+
+        // 4. Hide ONLY if explicitly marked "Bypass Prep"
+        var prepTime = (item.prepTime || item.PrepTime || "").trim();
+        if (prepTime.toLowerCase() === "bypass prep") {
+          return;
+        }
+
+        var elapsed = order.OrderTime || order.orderTime
+          ? (Date.now() - new Date(order.OrderTime || order.orderTime).getTime()) / 60000 : 0;
+
+        items.push({
+          key           : uniqueItemKey,
+          orderId       : orderId,
+          itemIdx       : itemIdx,
+          table         : tableNo,
+          online        : onlineType(order),
+          tableText     : tableText(order),
+          dish          : dishName,
+          qty           : remainingQty,
+          totalOrdered  : totalQty,
+          alreadyServed : preparedQty,
+          note          : item.note || item.Notes || orderNotes,
+          chef          : item.chef || "",
+          status        : itemStatus,
+          urgency       : elapsed > 15 ? "high" : elapsed > 8 ? "med" : "low"
+        });
+      });
+    } catch(e) {
+      console.warn("Kitchen Prep: error parsing order items", e);
+    }
+  });
+  return items;
+}
+
+function renderQueue() {
+  var el = document.getElementById("queue-list");
+  if (!el) return;
+
+  document.getElementById("queue-count").textContent = STATE.queue.length + " dishes";
+
+  if (!STATE.queue.length) {
+    el.innerHTML = '<div class="no-selection" style="padding:20px 10px;"><div style="font-size:32px;margin-bottom:8px">✅</div><div style="font-weight:700">All caught up!</div><div style="font-size:12px;color:#8b949e;margin-top:4px">No pending cook orders</div></div>';
+    return;
+  }
+
+  el.innerHTML = STATE.queue.map(function(item, idx) {
+    var key = item.key;
+    var isActive = STATE.selectedKey === key;
+    var backgroundTimer = STATE.timers[key];
+    var timerBadgeHtml = "";
+
+    if (backgroundTimer && backgroundTimer.running && backgroundTimer.remaining > 0) {
+      var m = Math.floor(backgroundTimer.remaining / 60);
+      var s = backgroundTimer.remaining % 60;
+      timerBadgeHtml = '<div class="qi-timer-badge">🔥 Cook ' + String(m).padStart(2, "0") + ':' + String(s).padStart(2, "0") + '</div>';
+    } else if (backgroundTimer && !backgroundTimer.running && backgroundTimer.remaining === 0) {
+      timerBadgeHtml = '<div class="qi-timer-badge" style="background:#27ae60; color:white;">✅ Done</div>';
+    }
+
+    var reorderBadge = (item.alreadyServed > 0) ? '<span class="reorder-pill">+' + item.qty + ' re-order</span>' : '';
+
+    return '<div class="queue-item' + (isActive ? " active" : "") + (item.online ? " online" : "") + '" onclick="selectDish(' + idx + ')">' +
+      '<div class="qi-header">' +
+        '<span class="qi-order">' + item.orderId + '</span>' +
+        (item.online ? '<span class="qi-online">' + item.tableText + '</span>' : '<span class="qi-table">' + (item.tableText || ('Table ' + item.table)) + '</span>') +
+      '</div>' +
+      '<div class="qi-dish">' +
+        '<span class="urgency-dot urg-' + item.urgency + '"></span>' +
+        (item.qty > 1 ? '<span class="qty-pill">x' + item.qty + '</span> ' : '') +
+        item.dish + ' ' + reorderBadge +
+      '</div>' +
+      (item.note ? '<div class="qi-note">⚠️ ' + item.note + '</div>' : '') +
+      timerBadgeHtml +
+    '</div>';
+  }).join("");
+}
+
+// ── FETCH & RENDER EXACT RECIPE FROM GOOGLE SHEETS ──
+function selectDish(idx) {
+  resetActivity();
+  var item = STATE.queue[idx];
+  if (!item) return;
+
+  var key = item.key;
+  STATE.selectedKey = key;
+  STATE.selected = item;
+  STATE.doneSteps = [];
+  STATE.gateState = "none";
+
+  renderQueue();
+
+  var backgroundTimer = STATE.timers[key];
+  if (backgroundTimer && backgroundTimer.recipeData) {
+    STATE.recipe = backgroundTimer.recipeData;
+    renderRecipe();
+    return;
+  }
+
+  document.getElementById("recipe-panel").innerHTML =
+    '<div class="loading-recipe"><div class="loading-spin">⚙️</div>' +
+    '<div>Loading recipe for ' + item.dish + '…</div></div>';
+
+  var api = getPosApi();
+  var normName = item.dish.trim().toLowerCase();
+  var cleanName = cleanDishName(item.dish);
+
+  function applyRecipeData(r) {
+    if (!r) {
+      STATE.recipe = null;
+      renderRecipe();
+      return;
+    }
+    
+    var rawSteps = r.Steps || r.steps || r.Recipe || r.Instructions || r.Directions || [];
+    var rawIngs = r.Ingredients || r.ingredients || r.Items || [];
+    
+    var parsedSteps = safeParseSteps(rawSteps);
+    var parsedIngs = safeParseIngredients(rawIngs);
+
+    if (!parsedSteps.length) {
+      STATE.recipe = null;
+      renderRecipe();
+      return;
+    }
+
+    STATE.recipe = {
+      prepTime   : r.PrepTime || r.prepTime || r.Prep || "—",
+      cookTime   : r.CookTime || r.cookTime || r.Cook || "—",
+      difficulty : r.Difficulty || r.difficulty || "Standard",
+      ingredients: parsedIngs,
+      steps      : parsedSteps.map(function(s, sIdx) {
+        return {
+          title: s.title || s.Title || ("Step " + (sIdx + 1)),
+          description: s.description || s.Description || s.desc || s.text || (typeof s === "string" ? s : ""),
+          timerSec: parseInt(s.timerSec || s.TimerSec || s.timer || s.time || 0, 10),
+          tip: s.tip || s.Tip || ""
+        };
+      })
+    };
+    renderRecipe();
+  }
+
+  // 1. Check pre-cached recipes first
+  if (STATE.recipesCache[normName] || STATE.recipesCache[cleanName]) {
+    applyRecipeData(STATE.recipesCache[normName] || STATE.recipesCache[cleanName]);
+    return;
+  }
+
+  // 2. Query Google Sheet Recipes Tab
+  var recipePromise = (api && api.Recipes && typeof api.Recipes.get === "function")
+    ? api.Recipes.get(item.dish)
+    : (typeof api.getRows === "function" ? api.getRows("Recipes").then(function(rows){
+        var found = (rows || []).find(function(row) {
+          var rName = (row.DishName || row.Dish || row.Name || row.ItemName || "").trim().toLowerCase();
+          return rName === normName || rName === cleanName || cleanDishName(rName) === cleanName;
+        });
+        return { data: found };
+      }) : Promise.resolve(null));
+
+  recipePromise.then(function(res) {
+    var r = (res && res.data) ? res.data : null;
+    applyRecipeData(r);
+  }).catch(function(err) {
+    console.warn("Failed fetching recipe from sheet:", err);
+    applyRecipeData(null);
+  });
+}
+
+function playTickChime() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    gain.gain.setValueAtTime(0.05, ctx.currentTime);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+  } catch(e){}
+}
+
+function updateSheetToPreparing() {
+  var api = getPosApi();
+  if (!api || !api.Orders || !STATE.selected) return;
+
+  var targetOrderId = STATE.selected.orderId;
+  var targetItemIdx = STATE.selected.itemIdx;
+  var targetDish = STATE.selected.dish;
+  var chefName = STATE.currentChef;
+
+  api.Orders.getAll().then(function(res) {
+    var orders = (res && res.data) ? res.data : [];
+    var order = orders.find(function(r) { return (r.OrderID || r.OrderId || r.orderId || r.id) === targetOrderId; });
+    if (!order) return;
+
+    var rawItems = order.Items || order.items || [];
+    var itemsArray = safeParseItems(rawItems);
+    
+    if (itemsArray[targetItemIdx]) {
+      itemsArray[targetItemIdx].chef = chefName;
+      itemsArray[targetItemIdx].status = "preparing";
+    } else {
+      for (var i = 0; i < itemsArray.length; i++) {
+        var itName = itemsArray[i].name || itemsArray[i].Name || itemsArray[i].dish || "";
+        if (itName.trim().toLowerCase() === targetDish.trim().toLowerCase() && (itemsArray[i].status || "").toLowerCase() !== "ready") {
+          itemsArray[i].chef = chefName;
+          itemsArray[i].status = "preparing";
+          break;
+        }
+      }
+    }
+
+    api.Orders.update({
+      orderId: targetOrderId,
+      status: "preparing",
+      items: itemsArray
+    });
+  });
+}
+
+function updateSheetToReady() {
+  var api = getPosApi();
+  if (!STATE.selected) return Promise.resolve();
+
+  var targetOrderId = STATE.selected.orderId;
+  var targetItemIdx = STATE.selected.itemIdx;
+  var targetDish = STATE.selected.dish;
+  var targetKey = STATE.selected.key;
+
+  STATE.inFlightFinished[targetKey] = true;
+
+  if (!api || !api.Orders || typeof api.Orders.getAll !== "function") {
+    return Promise.resolve();
+  }
+
+  return api.Orders.getAll().then(function(res) {
+    var orders = (res && res.data) ? res.data : [];
+    var order = orders.find(function(r) { return (r.OrderID || r.OrderId || r.orderId || r.id) === targetOrderId; });
+    if (!order) return;
+
+    var rawItems = order.Items || order.items || [];
+    var itemsArray = safeParseItems(rawItems);
+    
+    if (itemsArray[targetItemIdx]) {
+      var it = itemsArray[targetItemIdx];
+      var totalQ = parseInt(it.quantity || it.qty || 1, 10);
+      it.preparedQty = totalQ;
+      it.status = "ready";
+    } else {
+      for (var i = 0; i < itemsArray.length; i++) {
+        var itName = itemsArray[i].name || itemsArray[i].Name || itemsArray[i].dish || "";
+        if (itName.trim().toLowerCase() === targetDish.trim().toLowerCase() && (itemsArray[i].status || "").toLowerCase() !== "ready") {
+          var tQ = parseInt(itemsArray[i].quantity || itemsArray[i].qty || 1, 10);
+          itemsArray[i].preparedQty = tQ;
+          itemsArray[i].status = "ready";
+          break;
+        }
+      }
+    }
+
+    var allReady = itemsArray.every(function(it) {
+      var st = (it.status || "").toLowerCase();
+      var pTime = (it.prepTime || it.PrepTime || "").toLowerCase().trim();
+      var tQ = parseInt(it.quantity || it.qty || 1, 10);
+      var pQ = parseInt(it.preparedQty || 0, 10);
+      return st === "ready" || st === "served" || st === "completed" || pTime === "bypass prep" || (pQ >= tQ && tQ > 0);
+    });
+
+    return api.Orders.update({
+      orderId: targetOrderId,
+      status: allReady ? "ready" : "preparing",
+      items: itemsArray
+    });
+  });
+}
+
+// ── REJECT / RELEASE DISH ──
+function rejectAndReleaseDish() {
+  resetActivity();
+  if (!STATE.selected) return;
+
+  var btns = document.querySelectorAll(".bt-reject-dish, .bt-confirm-finish");
+  btns.forEach(function(b){ b.disabled = true; b.textContent = "Releasing..."; });
+
+  var targetOrderId = STATE.selected.orderId;
+  var targetItemIdx = STATE.selected.itemIdx;
+  var targetDish = STATE.selected.dish;
+  var key = STATE.selectedKey;
+
+  if (key && STATE.timers[key]) {
+    delete STATE.timers[key];
+  }
+  delete STATE.inFlightFinished[key];
+
+  var api = getPosApi();
+  var updatePromise = Promise.resolve();
+
+  if (api && api.Orders && typeof api.Orders.getAll === "function") {
+    updatePromise = api.Orders.getAll().then(function(res) {
+      var orders = (res && res.data) ? res.data : [];
+      var order = orders.find(function(r) { return (r.OrderID || r.OrderId || r.orderId || r.id) === targetOrderId; });
+      if (!order) return;
+
+      var rawItems = order.Items || order.items || [];
+      var itemsArray = safeParseItems(rawItems);
+
+      if (itemsArray[targetItemIdx]) {
+        itemsArray[targetItemIdx].chef = "";
+        itemsArray[targetItemIdx].status = "new";
+      } else {
+        for (var i = 0; i < itemsArray.length; i++) {
+          var itName = itemsArray[i].name || itemsArray[i].Name || itemsArray[i].dish || "";
+          if (itName.trim().toLowerCase() === targetDish.trim().toLowerCase()) {
+            itemsArray[i].chef = "";
+            itemsArray[i].status = "new";
+            break;
           }
-        }, 500);
-      },
-      onError: function(msg) { console.error("Auth error:", msg); }
+        }
+      }
+
+      var anyPreparing = itemsArray.some(function(it) {
+        return (it.status || "").toLowerCase() === "preparing";
+      });
+
+      return api.Orders.update({
+        orderId: targetOrderId,
+        status: anyPreparing ? "preparing" : "new",
+        items: itemsArray
+      });
     });
   }
 
-  if (typeof POS_AUTH !== "undefined") {
-    startAuth();
+  updatePromise.finally(function() {
+    STATE.selected = null;
+    STATE.selectedKey = null;
+    STATE.recipe = null;
+    STATE.gateState = "none";
+
+    renderQueue();
+    document.getElementById("recipe-panel").innerHTML =
+      '<div class="no-selection">' +
+        '<div class="ns-icon">👈</div>' +
+        '<div class="ns-title">Select a dish from the queue</div>' +
+        '<p style="font-size:14px;margin-top:6px">Tap any dish to see step-by-step recipe</p>' +
+      '</div>';
+    loadQueue();
+  });
+}
+
+function startGlobalInterval() {
+  if (STATE.globalIntervalId) return;
+  STATE.globalIntervalId = setInterval(function() {
+    var stateUpdated = false;
+    var now = Date.now();
+
+    // 1 MINUTE IDLE TIMEOUT CHECK
+    var hasActiveTimerRunning = Object.keys(STATE.timers).some(function(key) {
+      return STATE.timers[key] && STATE.timers[key].running;
+    });
+
+    if (STATE.currentChef && !hasActiveTimerRunning) {
+      if (now - STATE.lastActivity >= 60000) {
+        console.log("Kitchen Prep: 1 minute inactivity timeout. Returning to station select.");
+        doSignOutChef();
+        return;
+      }
+    }
+
+    // TIMER TICKING
+    Object.keys(STATE.timers).forEach(function(key) {
+      var t = STATE.timers[key];
+      if (!t || !t.running) return;
+
+      var r = t.recipeData;
+      if (!r || !r.steps || !r.steps[t.currentStepIdx]) return;
+
+      var currentStep = r.steps[t.currentStepIdx];
+      if (currentStep.timerSec === 0) return;
+
+      t.remaining--;
+      stateUpdated = true;
+
+      if (t.remaining <= 0) {
+        var nextIdx = t.currentStepIdx + 1;
+        if (nextIdx < r.steps.length) {
+          t.currentStepIdx = nextIdx;
+          t.remaining = r.steps[nextIdx].timerSec || 0;
+          playTickChime();
+        } else {
+          t.remaining = 0;
+          t.running = false;
+        }
+      }
+    });
+
+    if (stateUpdated) {
+      renderQueue(); 
+      if (STATE.selectedKey && STATE.timers[STATE.selectedKey]) {
+        renderRecipe(); 
+      }
+    }
+  }, 1000);
+}
+
+function handleStepAdvance() {
+  resetActivity();
+  var t = STATE.timers[STATE.selectedKey];
+  if (!t || !STATE.recipe) return;
+  
+  var nextIdx = t.currentStepIdx + 1;
+  if (nextIdx < STATE.recipe.steps.length) {
+    t.currentStepIdx = nextIdx;
+    t.remaining = STATE.recipe.steps[nextIdx].timerSec || 0;
+    playTickChime();
   } else {
-    var tries = 0;
-    var iv = setInterval(function() {
-      tries++;
-      if (typeof POS_AUTH !== "undefined") { clearInterval(iv); startAuth(); }
-      else if (tries > 50) { clearInterval(iv); startAuth(); }
-    }, 100);
+    t.remaining = 0;
+    t.running = false;
+  }
+  renderRecipe();
+}
+
+function toggleAutoCooking() {
+  resetActivity();
+  var key = STATE.selectedKey;
+  var backgroundTimer = STATE.timers[key];
+
+  if (!backgroundTimer) {
+    updateSheetToPreparing();
+    STATE.timers[key] = {
+      orderId: STATE.selected.orderId,
+      dish: STATE.selected.dish,
+      currentStepIdx: 0,
+      remaining: (STATE.recipe && STATE.recipe.steps[0]) ? (STATE.recipe.steps[0].timerSec || 0) : 0,
+      running: true,
+      recipeData: STATE.recipe,
+      gateState: "focus_cooking"
+    };
+  } else {
+    var currentStep = STATE.recipe.steps[backgroundTimer.currentStepIdx];
+    if (currentStep && currentStep.timerSec > 0) {
+      backgroundTimer.running = !backgroundTimer.running;
+    }
+  }
+  renderRecipe();
+}
+
+function stopCookingTimer() {
+  resetActivity();
+  if (STATE.selectedKey) {
+    delete STATE.timers[STATE.selectedKey];
+  }
+  STATE.gateState = "none";
+  renderRecipe();
+}
+
+function confirmRecipeFinished() {
+  resetActivity();
+  var btns = document.querySelectorAll(".bt-confirm-finish, .bt-controls button");
+  btns.forEach(function(b){ b.disabled = true; b.textContent = "Finishing..."; });
+
+  updateSheetToReady().then(function() {
+    if (STATE.selectedKey) {
+      delete STATE.timers[STATE.selectedKey];
+    }
+    STATE.selected = null;
+    STATE.selectedKey = null;
+    STATE.recipe = null;
+    STATE.gateState = "none";
+    
+    renderQueue();
+    document.getElementById("recipe-panel").innerHTML =
+      '<div class="no-selection">' +
+        '<div class="ns-icon">👈</div>' +
+        '<div class="ns-title">Select a dish from the queue</div>' +
+        '<p style="font-size:14px;margin-top:6px">Tap any dish to see step-by-step recipe</p>' +
+      '</div>';
+    loadQueue();
+  }).catch(function(err) {
+    console.error("Save error:", err);
+    STATE.selected = null;
+    STATE.selectedKey = null;
+    STATE.recipe = null;
+    STATE.gateState = "none";
+    renderQueue();
+    loadQueue();
+  });
+}
+
+function calculateTotalTimeRemaining(r, t) {
+  if (!r || !t || !r.steps) return 0;
+  var total = t.remaining;
+  for (var i = t.currentStepIdx + 1; i < r.steps.length; i++) {
+    total += r.steps[i].timerSec || 0; 
+  }
+  return total;
+}
+
+function renderRecipe() {
+  var panel = document.getElementById("recipe-panel");
+  var item  = STATE.selected;
+  var r     = STATE.recipe;
+  var key   = STATE.selectedKey;
+
+  if (!panel || !item) return;
+
+  if (!r || !r.steps || !r.steps.length) {
+    panel.innerHTML =
+      '<div class="no-selection">' +
+        '<div class="ns-icon">📋</div>' +
+        '<div class="ns-title">No recipe found in database for ' + item.dish + '</div>' +
+        '<p style="font-size:13px;margin-top:8px;max-width:380px;color:#8b949e">Add step-by-step instructions in the Recipes section of the manager portal.</p>' +
+        '<div style="display:flex; gap:12px; margin-top:24px;">' +
+          '<button class="bt-confirm-finish" style="font-size:14px; padding:12px 28px;" onclick="confirmRecipeFinished()">✅ Confirm Finish</button>' +
+          '<button class="bt-reject-dish" style="font-size:14px; padding:12px 20px;" onclick="rejectAndReleaseDish()">✋ Release</button>' +
+        '</div>' +
+      '</div>';
+    return;
+  }
+
+  var backgroundTimer = STATE.timers[key];
+  var localGate = backgroundTimer ? backgroundTimer.gateState : STATE.gateState;
+  var qty = item.qty || 1;
+
+  if (localGate === "hygiene") {
+    panel.innerHTML =
+      '<div class="gate-modal">' +
+        '<div class="gate-card">' +
+          '<div class="gate-icon">🧼</div>' +
+          '<div class="gate-title">Hygiene Check</div>' +
+          '<div class="gate-sub">Chef ' + (STATE.currentChef || '') + ', please ensure your hands are washed and sanitized before preparing <strong>' + (qty > 1 ? qty + '× ' : '') + item.dish + '</strong>.</div>' +
+          '<button class="gate-btn" onclick="STATE.gateState = \'ingredients\'; renderRecipe();">✅ Yes, I Washed My Hands</button>' +
+        '</div>' +
+      '</div>';
+    return;
+  }
+
+  if (localGate === "ingredients") {
+    var ingsHtml = (r.ingredients && r.ingredients.length)
+      ? r.ingredients.map(function(ing) {
+          var scaledAmount = formatIngredientAmount(ing.amount, qty);
+          return '<div class="ing-check-item">' +
+            '<input type="checkbox" checked style="accent-color:#f39c12; width:16px; height:16px;">' +
+            '<div style="flex:1;"><strong>' + ing.name + '</strong></div>' +
+            '<div style="color:#f39c12; font-weight:700;">' + scaledAmount + '</div>' +
+          '</div>';
+        }).join("")
+      : '<div style="color:#888; font-size:12px; padding:10px; text-align:center;">No ingredients listed</div>';
+
+    panel.innerHTML =
+      '<div class="gate-modal">' +
+        '<div class="gate-card">' +
+          '<div class="gate-icon">🍳</div>' +
+          '<div class="gate-title">Mise En Place Check</div>' +
+          (qty > 1 ? '<div class="batch-pill">🔥 BATCH SIZE: ' + qty + ' PORTIONS</div>' : '') +
+          '<div class="gate-sub">Confirm scaled ingredients for <strong>' + (qty > 1 ? qty + '× ' : '') + item.dish + '</strong>:</div>' +
+          '<div class="ing-check-list">' + ingsHtml + '</div>' +
+          '<button class="gate-btn" onclick="toggleAutoCooking();">✅ Yes, Ready to Cook</button>' +
+        '</div>' +
+      '</div>';
+    return;
+  }
+
+  // ── ACTIVE TIMED COOKING VIEW ──
+  if (localGate === "focus_cooking" && backgroundTimer) {
+    var stepIdx = backgroundTimer.currentStepIdx;
+    var currentStep = r.steps[stepIdx] || r.steps[0];
+    var isTimerComplete = !backgroundTimer.running && backgroundTimer.remaining === 0 && (stepIdx >= r.steps.length - 1);
+    var isManualStep = (currentStep.timerSec === 0);
+
+    var rem = backgroundTimer.remaining;
+    var m   = Math.floor(rem/60);
+    var s   = rem % 60;
+    var bigTimeDisp = String(m).padStart(2,"0") + ":" + String(s).padStart(2,"0");
+
+    var totalTimeSec = calculateTotalTimeRemaining(r, backgroundTimer);
+    var totM = Math.floor(totalTimeSec/60);
+    var totS = totalTimeSec % 60;
+    var totalTimeDisp = String(totM).padStart(2,"0") + ":" + String(totS).padStart(2,"0");
+
+    panel.innerHTML =
+      '<div class="focused-cooking-box">' +
+        '<div class="big-timer-box" style="margin-bottom:16px; background:#111420; display:flex; justify-content:space-between; align-items:center; padding:12px 24px;">' +
+          '<div style="text-align:left">' +
+            '<div class="bt-label" style="margin-bottom:2px">Interactive Cooking Dashboard</div>' +
+            '<div style="font-size:16px; color:#f39c12; font-weight:800;">' + (qty > 1 ? qty + '× ' : '') + item.dish + ' · ' + (item.tableText || ('Table ' + item.table)) + '</div>' +
+            '<div style="font-size:12px; color:#8b949e; margin-top:2px;">⏱ Total Recipe Remaining: <strong>' + totalTimeDisp + '</strong></div>' +
+          '</div>' +
+          '<div style="display:flex; align-items:center; gap:12px;">' +
+            '<div class="bt-display ' + (rem <= 10 && !isManualStep && !isTimerComplete ? 'urgent' : isTimerComplete ? 'done-color' : '') + '" style="font-size:36px; margin:0;">' +
+              (isManualStep && !isTimerComplete ? "MANUAL" : isTimerComplete ? "🎉 DONE!" : bigTimeDisp) +
+            '</div>' +
+            '<div class="bt-controls">' +
+              '<button class="bt-confirm-finish" onclick="confirmRecipeFinished()">✅ Confirm Finish</button>' +
+              '<button class="bt-reject-dish" onclick="rejectAndReleaseDish()">✋ Release</button>' +
+              (isManualStep && !isTimerComplete
+                ? '<button class="bt-ctrl" style="background:#f39c12; color:black; font-weight:800;" onclick="handleStepAdvance()">➡️ Next Step</button>'
+                : !isTimerComplete 
+                  ? '<button class="bt-ctrl bt-pause" style="background:' + (backgroundTimer.running ? '#e74c3c' : '#f39c12') + '; color:' + (backgroundTimer.running ? 'white' : 'black') + ';" onclick="toggleAutoCooking()">' + (backgroundTimer.running ? "⏸ Pause" : "▶ Resume") + '</button>'
+                  : ''
+              ) +
+              '<button class="bt-ctrl bt-stop" onclick="stopCookingTimer()">✕ Cancel</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="focus-step-card">' +
+          '<span class="focus-step-num">Step ' + (stepIdx + 1) + ' of ' + r.steps.length + (isManualStep ? " — Manual" : "") + '</span>' +
+          (qty > 1 ? '<div class="batch-pill" style="margin-top:-6px; margin-bottom:14px;">🔥 PREPARING BATCH OF ' + qty + '</div>' : '') +
+          '<div class="focus-step-title">' + currentStep.title + '</div>' +
+          '<div class="focus-step-desc">' + currentStep.description + '</div>' +
+          (currentStep.tip ? '<div class="focus-step-tip">💡 Chef Tip: ' + currentStep.tip + '</div>' : '') +
+        '</div>' +
+        '<div class="section-lbl">Recipe Steps Timeline</div>' +
+        '<div class="timeline-track">' +
+          r.steps.map(function(st, i) {
+            var isSActive = i === stepIdx;
+            var isSDone = i < stepIdx;
+            return '<div class="timeline-step ' + (isSActive ? 'active' : isSDone ? 'done' : '') + '">' +
+              '<div class="timeline-name">' + (i+1) + '. ' + st.title + '</div>' +
+              '<div style="font-size:9px; color:#888;">⏱ ' + (st.timerSec > 0 ? st.timerSec + "s" : "Manual") + '</div>' +
+            '</div>';
+          }).join("") +
+        '</div>' +
+      '</div>';
+    return;
+  }
+
+  var done = STATE.doneSteps.length;
+  var total = r.steps.length;
+
+  panel.innerHTML =
+    '<div class="recipe-header" style="display:flex; justify-content:space-between; align-items:center;">' +
+      '<div>' +
+        '<div class="recipe-title">' +
+          (qty > 1 ? '<span class="qty-pill" style="font-size:16px; padding:3px 10px;">x' + qty + '</span>' : '') +
+          item.dish +
+        '</div>' +
+        '<div class="recipe-meta">' +
+          '<span>⏱ Prep: ' + r.prepTime + '</span>' +
+          '<span>🔥 Cook: ' + r.cookTime + '</span>' +
+          '<span>⭐ ' + r.difficulty + '</span>' +
+          (item.note ? '<span style="color:#f39c12">⚠️ ' + item.note + '</span>' : '') +
+          '<span class="' + (done === total && total > 0 ? "meta-ok" : "meta-warn") + '">✅ ' + done + '/' + total + ' steps done</span>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex; gap:10px; align-items:center;">' +
+        '<button class="bt-confirm-finish" style="padding:12px 18px; font-size:13px;" onclick="confirmRecipeFinished()">✅ Confirm Finish</button>' +
+        '<button class="bt-reject-dish" style="padding:12px 16px; font-size:13px;" onclick="rejectAndReleaseDish()">✋ Release</button>' +
+        '<button class="gate-btn" style="padding:12px 24px; font-size:14px; width:auto;" onclick="STATE.gateState = \'hygiene\'; renderRecipe();">🔥 START COOKING' + (qty > 1 ? ' (' + qty + 'x)' : '') + '</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="recipe-content">' +
+      '<div class="steps-section">' +
+        '<div class="section-lbl">Preparation Steps</div>' +
+        r.steps.map(function(step, i) {
+          var isDone = STATE.doneSteps.indexOf(i) >= 0;
+          var durText = step.timerSec > 0 ? Math.floor(step.timerSec/60) + "m" + (step.timerSec%60 ? " "+step.timerSec%60+"s" : "") : "Manual";
+          return '<div class="step-card ' + (isDone ? "s-done" : "") + '">' +
+            '<div class="step-header">' +
+              '<div class="step-num">' + (isDone ? "✓" : (i+1)) + '</div>' +
+              '<div class="step-title-text">' + step.title + '</div>' +
+              '<div class="step-dur">⏱ ' + durText + '</div>' +
+            '</div>' +
+            '<div class="step-desc">' + step.description + '</div>' +
+            (step.tip ? '<div class="step-tip">💡 ' + step.tip + '</div>' : '') +
+            '<div class="step-actions">' +
+              (isDone
+                ? '<button class="undo-btn" onclick="undoStep(' + i + ')">↩ Undo</button>'
+                : '<button class="done-btn" onclick="markDone(' + i + ')">✓ Done</button>') +
+            '</div>' +
+          '</div>';
+        }).join("") +
+      '</div>' +
+      '<div class="side-panel">' +
+        '<div class="section-lbl">Required Ingredients ' + (qty > 1 ? '(Scaled for ' + qty + ')' : '') + '</div>' +
+        (r.ingredients && r.ingredients.length
+          ? r.ingredients.map(function(ing){
+              var scaled = formatIngredientAmount(ing.amount, qty);
+              return '<div class="ing-row"><span class="ing-name">' + ing.name + '</span><span class="ing-amt">' + scaled + '</span></div>';
+            }).join("")
+          : '<div style="color:#888;font-size:13px;">No ingredients listed.</div>') +
+      '</div>' +
+    '</div>';
+}
+
+function markDone(i) {
+  resetActivity();
+  if (STATE.doneSteps.indexOf(i) < 0) STATE.doneSteps.push(i);
+  renderRecipe();
+}
+
+function undoStep(i) {
+  resetActivity();
+  STATE.doneSteps = STATE.doneSteps.filter(function(d){ return d !== i; });
+  renderRecipe();
+}
+
+// ── AUTH INITIALIZATION ──
+(function init() {
+  function start() {
+    var root = document.getElementById("app");
+    if (root) root.style.display = "block";
+    var loader = document.getElementById("loading-placeholder");
+    if (loader) loader.style.display = "none";
+
+    tickClock();
+    setInterval(tickClock, 1000);
+    loadChefSelection();
+  }
+
+  if (typeof POS_AUTH !== "undefined") {
+    POS_AUTH.init("kitchen-prep-display", {
+      onReady: start,
+      onError: start
+    });
+  } else {
+    start();
   }
 })();
 </script>
