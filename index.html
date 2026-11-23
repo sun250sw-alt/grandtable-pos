@@ -234,7 +234,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <div class="hero">
     <div class="hero-tag">🍽️ Restaurant POS System</div>
     <h1>Welcome back to<br><span>Command Centre</span></h1>
-    <p>All your restaurant apps in one place — powered by Google Sheets.</p>
+    <p>All your restaurant apps in one place — one simple system.</p>
     <div class="hero-stats">
       <span><strong>8</strong> Apps</span>
       <span><strong>12</strong> Sheets</span>
@@ -393,8 +393,8 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <div class="sheets-head">
       <div class="sheets-icon">📊</div>
       <div>
-        <div class="sheets-title">Google Sheets Backend</div>
-        <div class="sheets-sub">All apps read & write live to your Google Drive — auto-created on first run</div>
+        <div class="sheets-title">Your Data</div>
+        <div class="sheets-sub">All apps share the same live data — set up automatically on first run</div>
       </div>
     </div>
     <div class="sheets-grid">
@@ -423,7 +423,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   </div>
 
   <div class="footer">
-    Restaurant POS · GitHub Pages · Google Sheets Backend · Google OAuth<br>
+    Restaurant POS<br>
     All apps share one authenticated session — sign in once, use everywhere
   </div>
 
@@ -448,6 +448,26 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     },
     onError: (msg) => console.error("Auth error:", msg),
   });
+</script>
+<!-- fullscreen toggle -->
+<script>
+(function () {
+  var d = document, el = d.documentElement;
+  var can = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!can) return;
+  var b = d.createElement("button");
+  b.id = "pos-fs-btn"; b.type = "button"; b.setAttribute("aria-label", "Full screen"); b.title = "Full screen";
+  var nav = !!d.querySelector(".bottom-nav, .nav");
+  b.style.cssText = "position:fixed;right:10px;bottom:" + (d.title.indexOf("Order") >= 0 ? "84px" : "10px") + ";z-index:99999;width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:rgba(20,20,35,.65);color:#fff;font-size:18px;line-height:1;cursor:pointer;opacity:.6;display:flex;align-items:center;justify-content:center;padding:0";
+  function isFs() { return d.fullscreenElement || d.webkitFullscreenElement; }
+  function paint() { b.textContent = isFs() ? "✕" : "⛶"; b.title = isFs() ? "Exit full screen" : "Full screen"; }
+  b.onclick = function () {
+    try { if (isFs()) { (d.exitFullscreen || d.webkitExitFullscreen).call(d); } else { (el.requestFullscreen || el.webkitRequestFullscreen).call(el); } } catch (e) {}
+  };
+  b.onmouseenter = function () { b.style.opacity = 1; }; b.onmouseleave = function () { b.style.opacity = .6; };
+  d.addEventListener("fullscreenchange", paint); d.addEventListener("webkitfullscreenchange", paint);
+  paint(); (d.body || el).appendChild(b);
+})();
 </script>
 </body>
 </html>
