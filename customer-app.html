@@ -610,6 +610,11 @@ window.POS_DEALS = (() => {
     // Saves data: background refreshes pause when the screen is hidden or untouched for a while, and resume on the next touch.
     let lastAct = Date.now();
     ["pointerdown", "keydown", "touchstart", "scroll"].forEach(e => window.addEventListener(e, () => { lastAct = Date.now(); }, { passive: true }));
+    // coming back to the app (or touching it after a long pause) refreshes rewards straight away
+    window.__gtResume = [];
+    const fireResume = () => { try { window.__gtResume.forEach(f => f()); } catch (e) {} };
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) fireResume(); });
+    window.addEventListener("pointerdown", () => { if (Date.now() - lastAct > 60000) fireResume(); }, true);
     const pageActive = (ms) => !document.hidden && Date.now() - lastAct < (ms || 10 * 60 * 1000);
     function jwtExp(t) { const p = jwtPayload(t); return p.exp ? p.exp * 1000 : 0; }
     function isLive(a) { return !!(a && a.idToken && jwtExp(a.idToken) > Date.now() + 60000); }
@@ -974,8 +979,8 @@ window.POS_DEALS = (() => {
             if (!(acct && acct.member && isLive(acct))) return;
             let stop = false;
             const go = () => scriptPost({ action: "receipts", idToken: acct.idToken }).then(j => { if (!stop && j && j.success && j.rewards) setRewards(j.rewards); }).catch(() => {});
-            go(); const iv = setInterval(() => { if (pageActive()) go(); }, 60000);
-            return () => { stop = true; clearInterval(iv); };
+            go(); const iv = setInterval(() => { if (pageActive()) go(); }, 45000); window.__gtResume.push(go);
+            return () => { stop = true; clearInterval(iv); window.__gtResume = window.__gtResume.filter(f => f !== go); };
         }, [acct && acct.member && acct.member.memberId, acct && acct.idToken]);
         const [, setClock] = useState(0);
         useEffect(() => { const iv = setInterval(() => { setDealIdx(i => i + 1); setClock(c => c + 1); }, 4500); return () => clearInterval(iv); }, []);
